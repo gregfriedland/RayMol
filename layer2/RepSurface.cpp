@@ -1562,8 +1562,17 @@ void RepSurface::render(RenderInfo* info)
     return;
   }
 
-  auto alpha = SettingGet_f(
-      G, cs->Setting.get(), obj->Setting.get(), cSetting_transparency);
+  // Through MaterialEffectiveTransparency, as the build's two reads are
+  // (#524, #528). This alpha feeds ray->transparentf() for a ONE-colour
+  // surface -- a multi-colour one takes the per-vertex VA array the build
+  // already baked it into -- and the picking gate below, whose job is to let
+  // a click through a transparent surface. Read raw, a glass surface traced
+  // opaque when uniformly coloured and translucent when not, and swallowed
+  // every click in the viewport while plainly see-through.
+  auto alpha = MaterialEffectiveTransparency(G, cs->Setting.get(),
+      obj->Setting.get(), cRepSurface,
+      SettingGet_f(
+          G, cs->Setting.get(), obj->Setting.get(), cSetting_transparency));
   alpha = 1.0F - alpha;
   if (fabs(alpha - 1.0) < R_SMALL4)
     alpha = 1.0F;

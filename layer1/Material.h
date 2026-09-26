@@ -204,6 +204,62 @@ bool MaterialRepEmitsStickBalls(PyMOLGlobals* G, const CoordSet* cs,
     const CSetting* set1, const CSetting* set2);
 
 /**
+ * What the CPU ray tracer (`ray`) does with a material (#499).
+ *
+ * `ray` has none of the Metal shaders, so a material reaches it as the few
+ * knobs its lighting model already has, best effort:
+ *
+ *   - `wobble` is a `ray_texture` mode -- the bump textures `ray` has had all
+ *     along. marble -> 2 (Swirl 1), clay -> 1 (Matte 1), rubber -> 4 (Matte 2),
+ *     frosted_glass -> 1 (Matte 1, on top of its implied transparency).
+ *     Only the MODE comes from the material. The texture's knobs stay the
+ *     user's `ray_texture_settings`, because CRay holds ONE WobbleParam triple
+ *     per render: a material that brought its own would be overwritten by the
+ *     next representation's, silently. So a marble surface renders exactly as
+ *     the same surface under `ray_texture 2`, which is what makes the mapping
+ *     testable.
+ *   - `specular`, `diffuse` and `specTint` shape the highlight per PRIMITIVE:
+ *     the highlight is scaled by `specular`, the lit diffuse term by `diffuse`,
+ *     and `specTint` mixes the highlight from white (0) toward the primitive's
+ *     own colour (1). The base colour itself is never changed.
+ *
+ * `default` is {0, 1, 1, 0}: no texture and today's lighting, byte for byte.
+ * So are glass and jelly -- the glass family reaches `ray` through the
+ * transparency it implies at rep-build time (MaterialEffectiveTransparency),
+ * and only frosted_glass adds a texture on top.
+ */
+struct MaterialRayParams {
+  int wobble = 0;
+  float specular = 1.0f;
+  float diffuse = 1.0f;
+  float specTint = 0.0f;
+};
+
+/**
+ * MaterialRayParams for a material id. An id with no row, or one not
+ * implemented, gets `default`'s.
+ */
+MaterialRayParams MaterialRayParamsFor(int id);
+
+/**
+ * The `ray_texture` mode a representation is traced with: an explicit
+ * `ray_texture` (non-zero at any level) wins outright; otherwise the mode the
+ * representation's material implies, after the draw-time degradations
+ * (MaterialResolveForDraw), so `ray` and the viewport agree about what the rep
+ * is made of.
+ *
+ * "Explicit" means non-zero. `ray_texture 0` is also the default, and a
+ * setting cannot tell "the user chose none" from "nobody chose", so a material
+ * on a rep whose `ray_texture` is 0 at every level gets the material's texture.
+ * To trace a marble surface without the swirl, pick another material.
+ *
+ * @param rayTexture the `ray_texture` the caller resolved for this rep
+ */
+int MaterialRayWobble(PyMOLGlobals* G, const CSetting* set1,
+    const CSetting* set2, int repType, int rayTexture,
+    const CoordSet* cs = nullptr);
+
+/**
  * Name of a material id, or nullptr when no row has that id.
  */
 const char* MaterialGetName(int id);

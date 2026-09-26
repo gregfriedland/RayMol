@@ -264,6 +264,78 @@ MaterialParams MaterialResolve(int id, int repType)
   return row->params;
 }
 
+MaterialRayParams MaterialRayParamsFor(int id)
+{
+  /* A switch rather than a column in kMaterialTable: these numbers mean
+     something only to `ray`'s lighting model, and none of the Metal code reads
+     them. Unlisted ids (default, the glass family, an id with no row) take the
+     neutral {0, 1, 1, 0}, which is today's `ray`, byte for byte.
+
+     The textures are `ray_texture` modes as the Rendering menu names them
+     (modules/pymol/_gui.py): 1 Matte 1, 2 Swirl 1, 4 Matte 2. Swirl 1 is a
+     smooth cosine field over the surface position -- the only mode that reads
+     as veining. Matte 1 perturbs every sample's normal at random, a fine dry
+     grain (unglazed clay); Matte 2 perturbs it through a coarser positional
+     lookup, a mottled skin (rubber). These three ALSO keep default's
+     highlight, so "clay under ray" and "default under ray_texture 1" are the
+     same image -- the property the mapping is tested by. frosted_glass takes
+     Matte 1 as well, on top of the transparency it already implies.
+
+     The highlight knobs are best effort, and deliberately few. matte drops the
+     highlight entirely, as its Lambert shader does. plastic is a brighter
+     white highlight on unchanged diffuse. metallic dims the diffuse term and
+     tints the highlight toward the surface's own colour, which is what makes
+     a metal read as metal without an environment to reflect. */
+  MaterialRayParams r;
+  if (!MaterialIsImplemented(id)) {
+    return r;
+  }
+  switch (id) {
+  case cMaterial_matte:
+    r.specular = 0.0f;
+    break;
+  case cMaterial_plastic:
+    r.specular = 1.6f;
+    break;
+  case cMaterial_metallic:
+    r.specular = 1.4f;
+    r.diffuse = 0.6f;
+    r.specTint = 0.8f;
+    break;
+  case cMaterial_marble:
+    r.wobble = 2;
+    break;
+  case cMaterial_clay:
+    r.wobble = 1;
+    break;
+  case cMaterial_rubber:
+    r.wobble = 4;
+    break;
+  case cMaterial_frosted_glass:
+    /* Its transparency is already glass's; without a texture it traced as
+       plain glass. Matte 1's scattered normals frost the highlights, which is
+       the part of the look `ray` can do. */
+    r.wobble = 1;
+    break;
+  default:
+    break;
+  }
+  return r;
+}
+
+int MaterialRayWobble(PyMOLGlobals* G, const CSetting* set1,
+    const CSetting* set2, int repType, int rayTexture, const CoordSet* cs)
+{
+  if (rayTexture != 0) {
+    return rayTexture; // an explicit ray_texture wins outright
+  }
+  if (!MaterialSettingForRep(repType)) {
+    return 0; // this rep takes no material; skip the resolve entirely
+  }
+  return MaterialRayParamsFor(
+      MaterialResolveForDraw(G, set1, set2, repType, cs).mode).wobble;
+}
+
 const char* MaterialGetName(int id)
 {
   const MaterialRow* row = MaterialFindRow(id);

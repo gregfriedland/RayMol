@@ -2538,6 +2538,50 @@ static PyObject* CmdGetMaterialDrawParams(PyObject* self, PyObject* args)
   return result;
 }
 
+/* What the CPU ray tracer uses for one representation (#499): the final
+   `ray_texture` mode after "an explicit ray_texture wins", the material id
+   stamped on its primitives, and that id's highlight knobs. The same two
+   calls CoordSet::render makes, so a test asserts what `ray` is handed rather
+   than what the setting says. */
+static PyObject* CmdGetMaterialRayParams(PyObject* self, PyObject* args)
+{
+  PyMOLGlobals* G = nullptr;
+  const char* oname = "";
+  int repType = 0;
+  int state = 0;
+  if (!PyArg_ParseTuple(args, "Osi|i", &self, &oname, &repType, &state)) {
+    API_HANDLE_ERROR;
+    return APIAutoNone(nullptr);
+  }
+  API_SETUP_PYMOL_GLOBALS;
+  if (!G) {
+    return APIAutoNone(nullptr);
+  }
+  APIEnterBlocked(G);
+  PyObject* result = nullptr;
+  pymol::CObject* obj = ExecutiveFindObjectByName(G, oname);
+  auto* objmol = dynamic_cast<ObjectMolecule*>(obj);
+  if (!objmol) {
+    PyErr_Format(PyExc_ValueError, "no such molecular object: %s", oname);
+  } else {
+    int const resolved =
+        (state == 0) ? objmol->getCurrentState() : (state < 0 ? 0 : state - 1);
+    CoordSet* cs = objmol->getCoordSet(resolved);
+    const CSetting* set1 = cs ? cs->Setting.get() : nullptr;
+    const CSetting* set2 = objmol->Setting.get();
+    int const wobble = MaterialRayWobble(G, set1, set2, repType,
+        SettingGet_i(G, set1, set2, cSetting_ray_texture), cs);
+    int const id = MaterialSettingForRep(repType)
+                       ? MaterialResolveForDraw(G, set1, set2, repType, cs).mode
+                       : 0;
+    MaterialRayParams const r = MaterialRayParamsFor(id);
+    result = Py_BuildValue(
+        "(iifff)", wobble, id, r.specular, r.diffuse, r.specTint);
+  }
+  APIExitBlocked(G);
+  return result;
+}
+
 /* Was `line_stick_helper` still on when the LINES rep was built (#496)?
 
    The setting says what the user asked for; this says what the build decided.
@@ -6950,6 +6994,7 @@ static PyMethodDef Cmd_methods[] = {
   {"get_built_transparency", CmdGetBuiltTransparency, METH_VARARGS},
   {"get_built_line_stick_helper", CmdGetBuiltLineStickHelper, METH_VARARGS},
   {"get_material_draw_params", CmdGetMaterialDrawParams, METH_VARARGS},
+  {"get_material_ray_params", CmdGetMaterialRayParams, METH_VARARGS},
   {"get_object_peel", CmdGetObjectPeel, METH_VARARGS},
   {"get_origin", CmdGetOrigin, METH_VARARGS},
   {"get_position", CmdGetPosition, METH_VARARGS},
