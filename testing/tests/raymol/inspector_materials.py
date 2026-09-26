@@ -19,6 +19,8 @@ Runs on a RayMol --testing build:
     pymol -ckqy testing/testing.py --run testing/tests/raymol/inspector_materials.py
 """
 import json
+import os
+import re
 
 from pymol import appkit_inspector as ai
 from pymol import cmd, materials, setting, testing
@@ -304,6 +306,23 @@ class TestWhichObjectsGetTheRows(testing.PyMOLTestCase):
         for key in ('refl', 'legacy_dead'):
             self.assertNotIn(key, m)
 
+    def testObjectKindsMatchExecutiveGetType(self):
+        """OBJECT_KINDS is a hand-kept copy of ExecutiveGetType's labels, so
+        read the switch and compare, in order. Skipped outside a repo checkout:
+        a source-reading test that cannot find its source has checked
+        nothing."""
+        root = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir,
+                            os.pardir)
+        path = os.path.normpath(os.path.join(root, 'layer3', 'Executive.cpp'))
+        if not os.path.isfile(path):
+            self.skipTest('layer3/Executive.cpp not present; not a repo checkout')
+        with open(path) as handle:
+            src = handle.read()
+        start = src.index('ExecutiveGetType(PyMOLGlobals* G, const char* name)\n{')
+        body = src[start:src.index('\n}\n', start)]
+        labels = tuple(re.findall(r'return "(object:[^"]*)";', body))
+        self.assertEqual(labels, ai.OBJECT_KINDS)
+
     def testBothGatesAreAnsweredForEVERYObjectKind(self):
         """Enumerated over the WHOLE of cmd.get_type's object vocabulary, not a
         hand-picked subset.
@@ -311,9 +330,13 @@ class TestWhichObjectsGetTheRows(testing.PyMOLTestCase):
         The previous version listed six of the twelve labels and omitted
         `object:ramp` -- which is a GADGET, the one kind the peel walk
         structurally cannot reach, and therefore the one the predicate had
-        wrong. The suite was green with the defect in it. Driving the loop from
-        ai.OBJECT_KINDS means a label added to ExecutiveGetType without a
-        decision here shows up as a KeyError rather than as silence.
+        wrong. The suite was green with the defect in it. The loop is driven
+        from ai.OBJECT_KINDS, and testObjectKindsMatchExecutiveGetType ties
+        that tuple to the C switch; together, a label added to
+        ExecutiveGetType fails one of the two tests until it has a decision
+        here. (Without that second test nothing would: a label missing from
+        OBJECT_KINDS would simply fall to peel=True, which is the safe side,
+        but silent.)
 
         Peel is not a material question: SceneCollectPeelObjects walks
         `NonGadgetObjs`, and MaterialObjectWantsPeel returns an explicit

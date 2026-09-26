@@ -739,7 +739,8 @@ _NO_PEEL_ROW_KINDS = ('object:group', 'object:ramp')
 #: (layer3/Executive.cpp). Here so a test can enumerate the gates over the
 #: whole vocabulary instead of over a hand-picked subset -- the previous test
 #: listed six of these twelve and omitted `object:ramp`, which is the one that
-#: was wrong, so the suite was green with the defect in it.
+#: was wrong, so the suite was green with the defect in it. A hand-kept copy:
+#: inspector_materials.py reads the C switch and fails when the two diverge.
 OBJECT_KINDS = ('object:molecule', 'object:map', 'object:mesh', 'object:slice',
                 'object:surface', 'object:measurement', 'object:cgo',
                 'object:group', 'object:volume', 'object:alignment',

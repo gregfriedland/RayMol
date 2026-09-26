@@ -342,19 +342,25 @@ enum MaterialCommands {
     /// modules/pymol/materials.py silently.
     static func runBundle(_ attr: String, on obj: String) -> String {
         // The object name lands inside a PYTHON string literal, which is
-        // itself inside a multi-line command that `cmd.do` SPLITS ON NEWLINES.
-        // So there are two levels to get right, and they fail differently:
+        // itself inside a multi-line command that `cmd.do` splits with
+        // `str.splitlines()`. So there are two levels to get right, and they
+        // fail differently:
         //
         //   * a quote or a backslash breaks the literal — a SyntaxError, the
         //     chip does nothing;
-        //   * a NEWLINE breaks the command, which is worse. cmd.do runs each
-        //     fragment as its own command, so a name containing
-        //     "\npython end\n..." closes the block early, discards the
-        //     malformed buffer, and executes what follows as PyMOL commands.
+        //   * a LINE BREAK breaks the command, which is worse. cmd.do runs
+        //     each fragment as its own command, so a name containing
+        //     "<break>python end<break>..." closes the block early, discards
+        //     the malformed buffer, and executes what follows as PyMOL
+        //     commands. "Line break" is whatever splitlines says it is: \n and
+        //     \r, but also \v, \f, \x1c-\x1e, \x85, U+2028 and U+2029.
         //
-        // Escaping the newline to a two-character \n fixes both levels at
-        // once: the outer string gains no split point, and Python's literal
-        // parser turns it back into a newline inside the string.
+        // So the literal is built from printable ASCII only. Everything else
+        // — every control character and every non-ASCII scalar — is written
+        // as a \u / \U escape, which splitlines cannot see and Python's
+        // literal parser turns back into the original character. Enumerating
+        // the separators instead would be a list to keep in step with
+        // CPython; "printable ASCII or escaped" has no list.
         //
         // Reachability, stated accurately because an earlier version of this
         // comment overstated it: `validate_object_names` defaults to 1 and
@@ -363,10 +369,16 @@ enum MaterialCommands {
         // the Python `object=` argument (or a session restored from one). A
         // hardening gap rather than a live hole — but it is a gap in a defence
         // this function exists to provide.
-        let safe = obj.replacingOccurrences(of: "\\", with: "\\\\")
-                      .replacingOccurrences(of: "'", with: "\\'")
-                      .replacingOccurrences(of: "\n", with: "\\n")
-                      .replacingOccurrences(of: "\r", with: "\\r")
+        var safe = ""
+        for u in obj.unicodeScalars {
+            switch u.value {
+            case 0x5C: safe += "\\\\"
+            case 0x27: safe += "\\'"
+            case 0x20...0x7E: safe.unicodeScalars.append(u)
+            case 0...0xFFFF: safe += String(format: "\\u%04x", u.value)
+            default: safe += String(format: "\\U%08x", u.value)
+            }
+        }
         return "python\nfrom pymol import materials; materials.\(attr)('\(safe)', _self=cmd)\npython end"
     }
 

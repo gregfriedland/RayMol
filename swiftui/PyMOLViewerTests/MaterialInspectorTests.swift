@@ -241,15 +241,28 @@ final class MaterialInspectorTests: XCTestCase {
         // Backslash first, or escaping the quote would double-escape it.
         XCTAssertTrue(MaterialCommands.runBundle("clay", on: "a\\b")
                         .contains("materials.clay('a\\\\b'"))
-        // The newline is the one that can INJECT: cmd.do would run the tail as
-        // its own commands. It must not survive into the emitted string.
-        let injected = MaterialCommands.runBundle("clay", on: "a\npython end\nb")
-        XCTAssertFalse(injected.contains("a\npython end"), injected)
-        XCTAssertTrue(injected.contains("materials.clay('a\\npython end\\nb'"), injected)
-        // ...and the whole command still has exactly the two newlines its own
-        // block structure needs, not three.
-        XCTAssertEqual(injected.filter { $0 == "\n" }.count, 2)
-        XCTAssertFalse(MaterialCommands.runBundle("clay", on: "a\rb").contains("\r"))
+        // A line break is the one that can INJECT: cmd.do splits with
+        // str.splitlines() and would run the tail as its own commands. "Line
+        // break" is splitlines' list, not just \n -- every one of these must
+        // come out as an escape.
+        let separators: [Unicode.Scalar] = ["\n", "\r", "\u{0B}", "\u{0C}",
+            "\u{1C}", "\u{1D}", "\u{1E}", "\u{85}", "\u{2028}", "\u{2029}"]
+        for sep in separators {
+            let name = "a\(Character(sep))python end\(Character(sep))b"
+            let cmd = MaterialCommands.runBundle("clay", on: name)
+            // Exactly the two newlines the block structure needs, and nothing
+            // else that is not printable ASCII.
+            let stray = cmd.unicodeScalars.filter {
+                $0 != "\n" && !(0x20...0x7E).contains($0.value)
+            }
+            XCTAssertTrue(stray.isEmpty, "U+\(String(sep.value, radix: 16)) survived: \(cmd)")
+            XCTAssertEqual(cmd.unicodeScalars.filter { $0 == "\n" }.count, 2, cmd)
+            let hex = String(format: "%04x", sep.value)
+            XCTAssertTrue(cmd.contains("materials.clay('a\\u\(hex)python end\\u\(hex)b'"), cmd)
+        }
+        // Beyond the BMP the escape is the eight-digit form Python reads.
+        XCTAssertTrue(MaterialCommands.runBundle("clay", on: "a\u{1F600}")
+                        .contains("materials.clay('a\\U0001f600'"))
     }
 
     // MARK: - the two scene-wide rows
