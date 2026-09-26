@@ -316,7 +316,7 @@ class TestWhichObjectsGetTheRows(testing.PyMOLTestCase):
         path = os.path.normpath(os.path.join(root, 'layer3', 'Executive.cpp'))
         if not os.path.isfile(path):
             self.skipTest('layer3/Executive.cpp not present; not a repo checkout')
-        with open(path) as handle:
+        with open(path, encoding='utf-8') as handle:
             src = handle.read()
         start = src.index('ExecutiveGetType(PyMOLGlobals* G, const char* name)\n{')
         body = src[start:src.index('\n}\n', start)]

@@ -225,11 +225,13 @@ final class MaterialInspectorTests: XCTestCase {
     }
 
     /// An object name reaches a PYTHON string literal that is itself inside a
-    /// command `cmd.do` splits on newlines — two levels, failing differently.
+    /// command `cmd.do` splits with `str.splitlines()` — two levels, failing
+    /// differently.
     ///
-    /// Every escaped character is exercised, so dropping any one of the four
-    /// `replacingOccurrences` calls fails this. The first version tested only
-    /// the quote, and a mutation removing the backslash escape survived it.
+    /// Every case of the escape is exercised — backslash, quote, all ten
+    /// splitlines separators and an astral scalar — so breaking any one of
+    /// them fails this. The first version tested only the quote, and a
+    /// mutation removing the backslash escape survived it.
     ///
     /// Reachability: `validate_object_names` defaults to 1 and rewrites these
     /// characters to underscores, so this needs that setting off plus the
