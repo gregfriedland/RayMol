@@ -8110,7 +8110,8 @@ void RendererMetal::buildImpostorPipelines()
   for (int f = 0; f < cMaterialFamily_count; ++f) {
     id<MTLFunction> fn = materialFragmentFunction(lib, @"sphere_impostor_fragment", f);
     if (!fn) {
-      NSLog(@"RendererMetal: sphere impostor fragment missing (family %d)", f);
+      // materialFragmentFunction has already logged a real failure; an
+      // unimplemented family is skipped silently, as in the other builders.
       continue;
     }
     psd.fragmentFunction = fn;

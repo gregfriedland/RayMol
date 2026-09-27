@@ -2215,7 +2215,10 @@ static NormalColorFormatSize GetNormalColorFormatSize(PyMOLGlobals* G)
 
   fmt.normalFormat =
       VERTEX_NORMAL_SIZE == 3 ? VertexFormat::Float3 : VertexFormat::Float4;
-  if (SettingGet<int>(G, cSetting_cgo_shader_ub_normal)) {
+  // Packed normals are a GL-path option only. The Metal renderer (G->Renderer
+  // set) binds a_Normal as Float3 for the raster and the RT normals alike, so
+  // a Byte3Norm normal would be read as garbage there -- CGOGL asserts it.
+  if (!G->Renderer && SettingGet<int>(G, cSetting_cgo_shader_ub_normal)) {
     fmt.normalFormat = VERTEX_NORMAL_SIZE == 3 ? VertexFormat::Byte3Norm
                                                : VertexFormat::Byte4Norm;
   }
