@@ -207,7 +207,8 @@ int MaterialKnobs(int id, const MaterialKnob** knobs);
 /**
  * The FINAL parameters a draw uses: MaterialResolveForDraw, with reflect / tint /
  * rough zeroed for every family that does not own them (all but reflective and
- * glass).
+ * glass), then the layer's Custom overrides of the knobs its material has
+ * (MaterialKnobs, #568).
  *
  * The draw site is a thin caller of this, so the rules stay in one place and
  * can be asserted from Python without a Metal context.

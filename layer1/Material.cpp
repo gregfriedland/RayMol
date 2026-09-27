@@ -507,7 +507,7 @@ const MaterialKnob kReflective[] = {
     {kKnob_reflect, "Reflection", 0.0f, 1.0f},
     {kKnob_tint, "Reflection tint", 0.0f, 1.0f},
     {kKnob_rough, "Roughness", 0.0f, 1.0f}};
-const MaterialKnob kGlass[] = {{kKnob_rough, "Reflection blur", 0.0f, 1.0f}};
+const MaterialKnob kGlass[] = {{kKnob_rough, "Roughness", 0.0f, 1.0f}};  // glints + reflection blur
 const MaterialKnob kFrostedGlass[] = {{kKnob_rough, "Frost", 0.0f, 1.0f}};
 const MaterialKnob kJelly[] = {{kKnob_rough, "Skin reflection blur", 0.0f, 1.0f},
     {kKnob_p0, "Absorption", 0.0f, 6.0f},

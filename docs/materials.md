@@ -127,7 +127,7 @@ is ignored:
 |---|---|
 | `plastic` | `reflect` Reflection, `tint` Reflection tint, `rough` Roughness |
 | `metallic` | `reflect` Reflection, `tint` Reflection tint, `rough` Roughness |
-| `glass` | `rough` Reflection blur |
+| `glass` | `rough` Roughness |
 | `frosted_glass` | `rough` Frost |
 | `jelly` | `rough` Skin reflection blur, `knob1` Absorption, `knob2` Inner glow, `knob3` Wet highlight |
 | `matte` | `knob1` Grain, `knob2` Grain frequency |
@@ -142,9 +142,10 @@ unset surface_material_rough, myprotein          # back to metallic's own
 ```
 
 Two knobs only show under a condition: **Grain frequency** changes nothing
-while **Grain** is 0 (matte's own grain is 0), and a **Reflection blur** blurs
-the environment the material reflects, so it is invisible while `material_env`
-is the flat background colour.
+while **Grain** is 0 (matte's own grain is 0), and jelly's **Skin reflection
+blur** blurs only the environment its wet skin reflects, so it is invisible
+while `material_env` is the flat background colour. (Glass's **Roughness**
+also widens and softens its glints, so it shows either way.)
 
 `default` has no knobs. A global value is not an override: only the object's
 (or state's) own value counts. Scenes capture them with the material. The CPU

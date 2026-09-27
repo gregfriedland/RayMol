@@ -69,6 +69,16 @@ class TestMaterialDocs(testing.PyMOLTestCase):
 
 
 class TestCustomKnobsAreDocumented(testing.PyMOLTestCase):
+    def testTheOverrideFamilyHasASettingsRow(self):
+        """The 36 `<rep>_material_<knob>` settings are documented as one
+        pattern row of the Settings table; material_settings() above does not
+        match them by name, so this is what keeps that row."""
+        from pymol import setting as _s
+        self.assertTrue(any('_material_' in n for n in _s.get_name_list()))
+        with open(DOC, encoding='utf-8') as handle:
+            rows = first_cells(section(handle.read(), 'Settings'))
+        self.assertIn('<rep>_material_<knob>', rows)
+
     def testEveryMaterialsKnobsAreItsRow(self):
         """Custom's knobs (#568) differ per MATERIAL, not per family -- marble
         reads p[1] as vein scale and never reads p[0] -- so the table has a row

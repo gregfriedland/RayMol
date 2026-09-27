@@ -2454,8 +2454,12 @@ static PyObject* CmdGetMaterialKnobs(PyObject*, PyObject* args)
       Py_DECREF(list);
       return APIAutoNone(nullptr);
     }
-    PyList_Append(list, item);
+    int const appended = PyList_Append(list, item);
     Py_DECREF(item);
+    if (appended != 0) {
+      Py_DECREF(list);
+      return APIAutoNone(nullptr);
+    }
   }
   return list;
 }
