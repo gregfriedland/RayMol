@@ -208,7 +208,8 @@ class _Preserved:
     """The snapshot lives on the instance and is installed under _LIVE only
     while it is being put back, so nested preserved() blocks each restore
     their own state, and nothing that walks the scene dicts (session_save,
-    prune) can see a phantom entry while the block is running."""
+    prune) sees a phantom entry while the block body runs -- only during the
+    brief restore in __exit__, which session_save filters anyway."""
     def __init__(self, _self):
         self._self = _self
 
@@ -216,6 +217,10 @@ class _Preserved:
         self._settings = _capture(self._self)
         self._objects = _capture_object_settings(self._self)
         self._focus = _capture_focus(self._self)
+        try:
+            self._had_focus = _FOCUS_SEL in (self._self.get_names('selections') or [])
+        except Exception:
+            self._had_focus = True   # unknown: never delete what may be the user's
         return self
 
     def __exit__(self, *exc):
@@ -229,6 +234,14 @@ class _Preserved:
             # enter_scene redefines the autofocus target at every scene cut
             # the scrub passes, so it is part of what must come back.
             _apply_focus(_LIVE, self._self)
+            # _apply_focus clears to an EMPTY selection; if there was none at
+            # all before the block, there must be none after it.
+            if not self._had_focus:
+                try:
+                    if _FOCUS_SEL in (self._self.get_names('selections') or []):
+                        self._self.delete(_FOCUS_SEL)
+                except Exception:
+                    pass
         finally:
             for d in (_scene_settings, _scene_object_settings,
                       _scene_object_capture, _scene_focus):

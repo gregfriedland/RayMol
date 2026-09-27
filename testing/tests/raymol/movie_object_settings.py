@@ -88,7 +88,7 @@ class TestMovieObjectSettings(testing.PyMOLTestCase):
                       'authoring left %r live at frame %d' % (after, here))
         return seen
 
-    def assertStepsBetweenTheScenes(self, seen):
+    def assertStepsBetweenTheScenes(self, seen, loops_back=False):
         # o4 reads as material_default when it has no override of its own
         s1 = ('marble', '0.10000', 'matte', 'default')
         s2 = ('clay', '0.90000', 'plastic', 'rubber')
@@ -100,8 +100,13 @@ class TestMovieObjectSettings(testing.PyMOLTestCase):
         self.assertGreater(firsts2, 2)
         # ...and back to s1 after it (the loop cut): o4's s2-only override must
         # be UNSET, not left at rubber
-        later = [v for f, v in sorted(seen.items()) if f > firsts2 and v[0] == 'marble']
-        if later:
+        # Only the paths whose movie actually cuts back to s1 (the loop cut)
+        # can show it; make_movie and rebuild end inside s2, so for them this is
+        # asserted not at all rather than skipped silently.
+        if loops_back:
+            later = [v for f, v in sorted(seen.items())
+                     if f > firsts2 and v[0] == 'marble']
+            self.assertTrue(later, 'no cut back to s1 to check the unset on')
             self.assertEqual(later[0], s1)
 
     def testPlaceSceneLeavesTheSessionAloneAndPlaybackSteps(self):
@@ -110,11 +115,13 @@ class TestMovieObjectSettings(testing.PyMOLTestCase):
         am.place_scene(40, 's2')
         # the autofocus target is part of what authoring must leave alone
         self.assertEqual(cmd.count_atoms('dof_focus'), self.live_focus)
-        self.assertStepsBetweenTheScenes(self.assertAuthoringLeftTheSessionAlone())
+        self.assertStepsBetweenTheScenes(
+            self.assertAuthoringLeftTheSessionAlone(), loops_back=True)
 
     def testTheScenesTemplateLeavesTheSessionAloneAndPlaybackSteps(self):
         am.append_template('scenes', seconds_per_scene=1.0, scenes=['s1', 's2'])
-        self.assertStepsBetweenTheScenes(self.assertAuthoringLeftTheSessionAlone())
+        self.assertStepsBetweenTheScenes(
+            self.assertAuthoringLeftTheSessionAlone(), loops_back=True)
 
     def testRebuildLeavesTheSessionAloneAndPlaybackSteps(self):
         spec = [{'frame': 1, 'scene': base64.b64encode(b's1').decode(),
@@ -143,3 +150,11 @@ class TestPreserved(testing.PyMOLTestCase):
                 cmd.set('stick_material', 'rubber', 'o1')
             self.assertEqual(cmd.get('stick_material', 'o1'), 'clay')
         self.assertEqual(cmd.get('stick_material', 'o1'), 'marble')
+
+    def testNoFocusSelectionBeforeMeansNoneAfter(self):
+        from pymol import raymol_scenes as rs
+        cmd.reinitialize()
+        cmd.fragment('ala', 'o1')
+        with rs.preserved():
+            cmd.select('dof_focus', 'o1')
+        self.assertNotIn('dof_focus', cmd.get_names('selections'))
