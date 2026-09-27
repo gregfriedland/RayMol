@@ -281,3 +281,34 @@ class TestCustomMaterial(testing.PyMOLTestCase):
         m = self.rep()['material']
         self.assertEqual(m['custom'], ['knob5'])
         self.assertAlmostEqual(m['knobs']['knob5'], 0.25, places=4)
+
+    def testADegradedLayerDrawsDefaultAndOffersNoKnobs(self):
+        """Glass on a ball-and-stick degrades to `default`: the layer draws
+        material 0, so the Inspector must not offer Custom there."""
+        cmd.set('stick_material', 'glass', 'm1')
+        cmd.set('stick_ball', 1, 'm1')
+        cmd.set('stick_material_rough', 0.5, 'm1')
+        m = self.rep()['material']
+        self.assertEqual(m['drawn'], 0)
+        self.assertEqual(m['custom'], [])
+        cmd.set('stick_ball', 0, 'm1')
+        by_name = {n: i for i, n in setting.get_material_names(1)}
+        self.assertEqual(self.rep()['material']['drawn'], by_name['glass'])
+
+    def testALeftoverOverrideIsNotCustom(self):
+        """An override the drawn material has no knob for is ignored by the
+        core, so it must not make the row read Custom."""
+        cmd.set('stick_material', 'metallic', 'm1')
+        cmd.set('stick_material_rough', 0.05, 'm1')
+        cmd.set('stick_material', 'marble', 'm1')     # marble has no rough
+        self.assertEqual(self.rep()['material']['custom'], [])
+
+    def testEachLayerReportsItsOwnOverrides(self):
+        cmd.show('spheres', 'm1')
+        cmd.set('sphere_material', 'metallic', 'm1')
+        cmd.set('stick_material', 'metallic', 'm1')
+        cmd.set('sphere_material_rough', 0.07, 'm1')
+        spheres = self.rep('spheres')['material']
+        self.assertEqual(spheres['custom'], ['rough'])
+        self.assertAlmostEqual(spheres['knobs']['rough'], 0.07, places=4)
+        self.assertEqual(self.rep('sticks')['material']['custom'], [])

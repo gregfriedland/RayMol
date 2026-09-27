@@ -170,7 +170,8 @@ final class MaterialInspectorTests: XCTestCase {
 
     func testTheRepPayloadCarriesTheCustomState() {
         let st = PyMOLEngine.parseMaterialCustom(
-            ["material": ["knobs": ["reflect": 0.6, "rough": 0.05], "custom": ["rough"]]])
+            ["material": ["drawn": 3, "knobs": ["reflect": 0.6, "rough": 0.05], "custom": ["rough"]]])
+        XCTAssertEqual(st?.drawn, 3)
         XCTAssertEqual(st?.knobs["rough"], 0.05)
         XCTAssertEqual(st?.custom, ["rough"])
         XCTAssertTrue(st?.isCustom ?? false)

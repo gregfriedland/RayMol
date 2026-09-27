@@ -3983,6 +3983,7 @@ final class PyMOLEngine: ObservableObject {
     static func parseMaterialCustom(_ r: [String: Any]) -> MaterialCustomState? {
         guard let m = r["material"] as? [String: Any] else { return nil }
         var st = MaterialCustomState()
+        st.drawn = (m["drawn"] as? NSNumber)?.intValue ?? 0
         if let ks = m["knobs"] as? [String: Any] {
             for (k, v) in ks { st.knobs[k] = (v as? NSNumber)?.doubleValue ?? 0 }
         }

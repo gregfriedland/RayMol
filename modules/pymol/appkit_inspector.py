@@ -123,10 +123,16 @@ def _custom_prefix(rep_name):
 
 def _custom_state(rep_name, obj, explicit):
     """What the Inspector's Custom sliders need for one rep (#569):
-    {'knobs': {suffix: value the draw uses}, 'custom': [suffixes overridden on
-    the object]}. `explicit` is the set of setting indices the object itself
-    carries (cmd.get_object_settings), so a global value never reads as an
-    override -- the core does not treat it as one either."""
+    {'drawn': the material id the layer DRAWS with, 'knobs': {suffix: value
+    the draw uses}, 'custom': [overridden suffixes that material has]}.
+
+    `drawn` is the draw's own answer, not the setting: glass on spheres or on
+    ball-and-stick degrades to `default` (0), which has no knobs, so Custom
+    must not be offered there. `custom` counts only the knobs `drawn` has --
+    an override left over from another material (the core ignores it) must
+    not make the row read Custom. `explicit` is the set of setting indices the
+    object itself carries (cmd.get_object_settings), so a global value never
+    reads as an override; the core does not treat it as one either."""
     try:
         from pymol import _cmd, setting
         from pymol.constants import repres
@@ -139,9 +145,11 @@ def _custom_state(rep_name, obj, explicit):
             return None
         values = [params[2], params[3], params[4]] + list(params[5])[:6]
         knobs = {k: float(v) for k, v in zip(CUSTOM_KNOBS, values)}
-        custom = [k for k in CUSTOM_KNOBS
-                  if setting._get_index('%s_material_%s' % (prefix, k)) in explicit]
-        return {'knobs': knobs, 'custom': custom}
+        drawn = int(params[1]) if int(params[0]) != 0 else 0
+        has = {row[0] for row in _cmd.get_material_knobs(drawn)}
+        custom = [k for k in CUSTOM_KNOBS if k in has and
+                  setting._get_index('%s_material_%s' % (prefix, k)) in explicit]
+        return {'drawn': drawn, 'knobs': knobs, 'custom': custom}
     except Exception:
         return None
 

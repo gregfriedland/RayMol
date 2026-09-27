@@ -90,6 +90,9 @@ struct MaterialKnobInfo: Equatable {
 
 /// A rep's Custom material state, from the rep payload's `material` entry.
 struct MaterialCustomState: Equatable {
+    /// The material the layer DRAWS with -- 0 when it has degraded to
+    /// `default` (glass on spheres or ball-and-stick), which has no knobs.
+    var drawn: Int = 0
     var knobs: [String: Double] = [:]   // suffix -> the value the draw uses
     var custom: Set<String> = []        // suffixes the object overrides
     var isCustom: Bool { !custom.isEmpty }
@@ -4001,7 +4004,12 @@ private struct MaterialSection: View {
         engine.materialNames.first(where: { $0.id == baseID })?.name
             ?? (baseID == 0 ? "default" : "#\(baseID)")
     }
-    private var knobs: [MaterialKnobInfo] { engine.materialKnobs[baseID] ?? [] }
+    /// The knobs of the material the layer DRAWS with. Not the setting's: a
+    /// degraded layer draws `default` and has none, so Custom is not offered.
+    private var knobs: [MaterialKnobInfo] {
+        guard let drawn = custom?.drawn, drawn == baseID else { return [] }
+        return engine.materialKnobs[drawn] ?? []
+    }
     private var isCustom: Bool { custom?.isCustom ?? false }
     private var showsKnobs: Bool { !knobs.isEmpty && (isCustom || customOpen) }
 
@@ -4068,7 +4076,8 @@ private struct MaterialSection: View {
             Button("Inherit", action: inherit)
         } label: {
             HStack(spacing: 3) {
-                Text(CustomMaterial.label(base: baseName, isCustom: isCustom || customOpen))
+                // "Custom" once something is tuned, not merely opened.
+                Text(CustomMaterial.label(base: baseName, isCustom: isCustom))
                     .font(.system(size: 10))
                 Text("⌄").font(.system(size: 9))
             }
@@ -4104,6 +4113,7 @@ private struct MaterialSection: View {
     }
 
     private func reset() {
+        customOpen = false
         engine.runCommand(CustomMaterial.clear(prop.setting, on: objName), naming: objName)
         engine.refreshExpandedDetail()
     }
