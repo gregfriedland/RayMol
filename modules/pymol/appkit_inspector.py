@@ -53,9 +53,16 @@ MATERIAL_REPS = {
 }
 
 
+# The Custom material's knobs (#568), in the order MaterialKnobSlot has them.
+CUSTOM_KNOBS = ('reflect', 'tint', 'rough', 'knob1', 'knob2', 'knob3',
+                'knob4', 'knob5', 'knob6')
+
+
 def material_names():
-    """The materials the Inspector dropdown may offer, as [[id, name], ...] with
-    `default` first.
+    """The materials the Inspector dropdown may offer, as
+    [[id, name, knobs], ...] with `default` first. `knobs` is the material's
+    Custom knobs (#569), [[suffix, label, min, max], ...] -- only the ones its
+    shader reads -- so the Custom sliders come from the core too.
 
     Only the IMPLEMENTED ones: a material whose shader has not landed yet is a
     real id that can be set by name from the command line and round-trips
@@ -63,8 +70,16 @@ def material_names():
     silently renders as `default`. Emitted once at startup rather than on every
     poll -- the table cannot change within a session."""
     try:
-        from pymol import setting
-        return [[int(i), str(n)] for (i, n) in setting.get_material_names(1)]
+        from pymol import setting, _cmd
+        out = []
+        for (i, n) in setting.get_material_names(1):
+            try:
+                knobs = [[str(k), str(l), float(lo), float(hi)]
+                         for (k, l, lo, hi) in _cmd.get_material_knobs(int(i))]
+            except Exception:
+                knobs = []
+            out.append([int(i), str(n), knobs])
+        return out
     except Exception:
         return []
 
@@ -97,6 +112,38 @@ def _material_id(rep_name, obj):
         return float(value) if value is not None else 0.0
     except Exception:
         return 0.0
+
+
+def _custom_prefix(rep_name):
+    """`cartoon` / `surface` / `stick` / `sphere`: the stem of the rep's Custom
+    override settings, `<stem>_material_<knob>` (#568)."""
+    entry = MATERIAL_REPS.get(rep_name)
+    return entry[0][:-len('_material')] if entry else None
+
+
+def _custom_state(rep_name, obj, explicit):
+    """What the Inspector's Custom sliders need for one rep (#569):
+    {'knobs': {suffix: value the draw uses}, 'custom': [suffixes overridden on
+    the object]}. `explicit` is the set of setting indices the object itself
+    carries (cmd.get_object_settings), so a global value never reads as an
+    override -- the core does not treat it as one either."""
+    try:
+        from pymol import _cmd, setting
+        from pymol.constants import repres
+        prefix = _custom_prefix(rep_name)
+        if not prefix:
+            return None
+        params = _cmd.get_material_draw_params(
+            cmd._COb, obj or '', repres[MATERIAL_REPS[rep_name][1]])
+        if not params:
+            return None
+        values = [params[2], params[3], params[4]] + list(params[5])[:6]
+        knobs = {k: float(v) for k, v in zip(CUSTOM_KNOBS, values)}
+        custom = [k for k in CUSTOM_KNOBS
+                  if setting._get_index('%s_material_%s' % (prefix, k)) in explicit]
+        return {'knobs': knobs, 'custom': custom}
+    except Exception:
+        return None
 
 
 # Per-rep color-override setting (default -1 / -6 = inherit the atom color).
@@ -379,6 +426,10 @@ def _build(objs):
         # object; attached to the rep whose transparency setting is overridden so
         # the expanded card can show "per-atom: min–max" and a Clear action.
         summ = transp_summary(o)
+        try:
+            explicit = {e[0] for e in (cmd.get_object_settings(o) or [])}
+        except Exception:
+            explicit = set()
         for r in REPS:
             try:
                 present = cmd.count_atoms('(%s) & rep %s' % (o, r)) > 0
@@ -397,6 +448,10 @@ def _build(objs):
             col = _rep_color(o, REP_COLOR[r]) if r in REP_COLOR else 'inherit'
             cols = {s: _rep_color(o, s) for s in REP_EXTRA_COLORS.get(r, [])}
             rep = {'rep': r, 'vis': 1, 'vals': vals, 'color': col, 'colors': cols}
+            if r in MATERIAL_REPS:
+                cs = _custom_state(r, o, explicit)
+                if cs is not None:
+                    rep['material'] = cs
             tset = REP_TRANSP.get(r)
             tsumm = summ.get(tset) if tset else None
             if tsumm and tsumm[2]:

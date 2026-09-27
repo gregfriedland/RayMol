@@ -135,6 +135,16 @@ is ignored:
 | `rubber` | `knob1` Grain, `knob2` Grain frequency, `knob3` Highlight, `knob4` Sheen |
 | `marble` | `knob2` Vein scale, `knob5` Vein contrast, `knob6` Vein sharpness |
 
+In the **Inspector**, a layer's Material menu has **Custom…** under the
+materials whenever the current material has knobs. Choosing it keeps that
+material and shows its knobs as sliders at the values it draws with; moving
+one tunes that layer only, and the menu then reads **Custom (metallic)**.
+**Reset** goes back to the material's own values, and picking any material
+from the menu clears the tuning. To tune a different material, pick it first,
+then Custom.
+
+From the command line:
+
 ```
 set surface_material, metallic, myprotein
 set surface_material_rough, 0.05, myprotein      # a sharper metallic, this layer only

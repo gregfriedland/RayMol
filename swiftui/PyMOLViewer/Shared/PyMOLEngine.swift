@@ -218,6 +218,8 @@ final class PyMOLEngine: ObservableObject {
     /// looks this build cannot draw. Only the IMPLEMENTED rows arrive here --
     /// the rest are real ids that still work by name from the command line.
     @Published var materialNames: [(id: Int, name: String)] = []
+    /// Each material's Custom knobs (#569), by material id. Same MATERIALS line.
+    @Published var materialKnobs: [Int: [MaterialKnobInfo]] = [:]
     /// How many times the material table has been asked for; see
     /// requestMaterialsIfNeeded().
     private var materialRequests = 0
@@ -3950,7 +3952,44 @@ final class PyMOLEngine: ObservableObject {
 
     private func parseMaterialsFeedback(_ line: String) {
         guard let out = PyMOLEngine.parseMaterials(line) else { return }
-        DispatchQueue.main.async { self.materialNames = out }
+        let knobs = PyMOLEngine.parseMaterialKnobs(line)
+        DispatchQueue.main.async {
+            self.materialNames = out
+            self.materialKnobs = knobs
+        }
+    }
+
+    /// `MATERIALS:[[id, name, [[suffix, label, min, max], ...]], ...]` -> the
+    /// knobs by id. A row without the third element (an older core) has none.
+    static func parseMaterialKnobs(_ line: String) -> [Int: [MaterialKnobInfo]] {
+        let json = String(line.dropFirst("MATERIALS:".count))
+        guard let data = json.data(using: .utf8),
+              let rows = try? JSONSerialization.jsonObject(with: data) as? [[Any]]
+        else { return [:] }
+        var out: [Int: [MaterialKnobInfo]] = [:]
+        for r in rows where r.count >= 3 {
+            guard let id = r[0] as? Int, let ks = r[2] as? [[Any]] else { continue }
+            out[id] = ks.compactMap { k in
+                guard k.count >= 4, let s = k[0] as? String, let l = k[1] as? String,
+                      let lo = (k[2] as? NSNumber)?.doubleValue,
+                      let hi = (k[3] as? NSNumber)?.doubleValue, lo < hi else { return nil }
+                return MaterialKnobInfo(suffix: s, label: l, min: lo, max: hi)
+            }
+        }
+        return out
+    }
+
+    /// A rep payload's `material` entry -> MaterialCustomState, or nil.
+    static func parseMaterialCustom(_ r: [String: Any]) -> MaterialCustomState? {
+        guard let m = r["material"] as? [String: Any] else { return nil }
+        var st = MaterialCustomState()
+        if let ks = m["knobs"] as? [String: Any] {
+            for (k, v) in ks { st.knobs[k] = (v as? NSNumber)?.doubleValue ?? 0 }
+        }
+        if let cs = m["custom"] as? [Any] {
+            st.custom = Set(cs.compactMap { $0 as? String })
+        }
+        return st
     }
 
     // the feedback line is just the "OBJDETAIL:ready" trigger) → objectDetails +
@@ -3989,7 +4028,8 @@ final class PyMOLEngine: ObservableObject {
                         values: values,
                         color: r["color"] as? String ?? "inherit",
                         settingColors: settingColors,
-                        atomTransp: atomTransp)
+                        atomTransp: atomTransp,
+                        material: PyMOLEngine.parseMaterialCustom(r))
                 }
             }
         }
