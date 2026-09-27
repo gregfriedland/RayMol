@@ -3,10 +3,15 @@
 The prototype (`proto/rt-self-reflections`) read every material knob from a
 `RAYMOL_*` environment variable -- `RAYMOL_MATERIAL`, `RAYMOL_MARBLE_*`,
 `RAYMOL_GLASS_*`, `RAYMOL_RUBBER_*`, `RAYMOL_MAT_P*`, `RAYMOL_WAX_*`,
-`RAYMOL_OIT_PEEL`. The epic ported each one BY HAND into the material table and
+`RAYMOL_OIT_PEEL` -- and its render scripts drove the reflection through
+`RAYMOL_RT_REFLECT*`. The epic ported each one BY HAND into the material table and
 the settings, so a shipped build reads none of them. This file keeps it that
 way: a knob that comes back as a getenv would render differently depending on
 the shell the app was launched from, invisibly to `.pse`, `get` and every test.
+
+It is a literal scan: a line that NAMES a knob fails it, comments included
+(write "the prototype's marble scale knob", not the variable), and a name
+assembled from pieces at runtime is not seen.
 
 Source-reading, so skipped (not passed) outside a repo checkout.
 
@@ -21,9 +26,10 @@ from pymol import testing
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), os.pardir,
                                      os.pardir, os.pardir))
 
-# Every RAYMOL_ name the prototype's renderer and modules read that tuned a
-# material, spelled out rather than derived, so a returning knob is caught by
-# NAME and not only by prefix.
+# Every RAYMOL_ name the prototype read that tuned a material, spelled out
+# rather than derived, so a returning knob is caught by NAME and not only by
+# prefix: 25 read by its renderer, and the five RT_REFLECT names its render
+# scripts (prototype_renders/scripts) turned into metal_rt_reflect* settings.
 PROTOTYPE_MATERIAL_KNOBS = (
     'RAYMOL_MATERIAL',
     'RAYMOL_GLASS_COVER', 'RAYMOL_GLASS_FROST', 'RAYMOL_GLASS_IOR',
@@ -35,20 +41,24 @@ PROTOTYPE_MATERIAL_KNOBS = (
     'RAYMOL_RUBBER_SPEC',
     'RAYMOL_WAX_P0', 'RAYMOL_WAX_P1', 'RAYMOL_WAX_P2', 'RAYMOL_WAX_P3',
     'RAYMOL_OIT_PEEL',
+    'RAYMOL_RT_REFLECT', 'RAYMOL_RT_REFLECT_ENV', 'RAYMOL_RT_REFLECT_ROUGH',
+    'RAYMOL_RT_REFLECT_SAMPLES', 'RAYMOL_RT_REFLECT_TINT',
 )
 
-# ...and the families #502 names, so a NEW knob in one of them is caught too.
+# ...and their families -- the eight #502 names, plus the shipped material
+# names -- so a NEW knob in one of them is caught too.
 MATERIAL_KNOB = re.compile(
     r'RAYMOL_(MATERIAL|MARBLE_|GLASS_|RUBBER_|MAT_P|WAX_|RT_REFLECT|OIT_PEEL'
     r'|JELLY|CLAY|MATTE|PLASTIC|METALLIC|FROST)')
 
-# The one RAYMOL_ read the Metal renderer keeps: a frame-timing log for
-# performance work (#501), which changes nothing that is drawn. It predates
-# the epic (fa6b1c347).
+# The one RAYMOL_ read the Metal renderer keeps: a frame-timing log, written to
+# a file, which changes nothing that is drawn and can serve #501's frames/s
+# measurements. It predates the epic (fa6b1c347, 2026-09-03).
 METAL_ALLOWED = {'RAYMOL_GPU_TIMING'}
 
 SHIPPED_DIRS = ('layer0', 'layer1', 'layer2', 'layer3', 'layer4', 'layer5',
-                'layerGraphics', 'modules/pymol', 'swiftui/PyMOLViewer')
+                'layerGraphics', 'modules/pymol', 'modules/raymol_mcp',
+                'swiftui/PyMOLViewer')
 SOURCE_EXT = ('.c', '.cpp', '.h', '.hpp', '.m', '.mm', '.swift', '.py',
               '.metal')
 
@@ -82,6 +92,11 @@ class TestNoMaterialEnvKnobs(testing.PyMOLTestCase):
         self.assertEqual(stray, {})
 
     def testNoShippedSourceNamesAMaterialKnob(self):
+        # os.walk of a missing directory yields nothing, so a renamed tree
+        # would pass this silently; every one must exist and hold sources.
+        for subdir in SHIPPED_DIRS:
+            self.assertTrue(any(True for _ in sources(subdir)),
+                            '%s is missing or has no sources' % subdir)
         hits = []
         for subdir in SHIPPED_DIRS:
             for path, text in sources(subdir):
@@ -91,10 +106,18 @@ class TestNoMaterialEnvKnobs(testing.PyMOLTestCase):
                         hits.append('%s:%d: %s' % (path, lineno, line.strip()))
         self.assertEqual(hits, [])
 
-    def testThePatternStillRecognisesEveryPrototypeKnob(self):
-        # A guard on the guard: if the regex drifted, the scan above would
-        # pass on anything.
-        for knob in PROTOTYPE_MATERIAL_KNOBS:
+    def testThePatternCoversTheFamiliesNotJustTheNames(self):
+        # The scan above checks the named knobs literally, so the regex only
+        # earns its place for names NOT in the tuple. Check it on exactly
+        # those: one new name per family.
+        for knob in ('RAYMOL_MATERIAL_ID', 'RAYMOL_MARBLE_NEWKNOB',
+                     'RAYMOL_GLASS_ABSORB', 'RAYMOL_RUBBER_BUMP',
+                     'RAYMOL_MAT_P4', 'RAYMOL_WAX_P4',
+                     'RAYMOL_RT_REFLECT_BIAS', 'RAYMOL_OIT_PEEL_K',
+                     'RAYMOL_JELLY_ABSORB', 'RAYMOL_CLAY_GRAIN',
+                     'RAYMOL_MATTE_WRAP', 'RAYMOL_PLASTIC_SPEC',
+                     'RAYMOL_METALLIC_TINT', 'RAYMOL_FROST_TAPS'):
+            self.assertNotIn(knob, PROTOTYPE_MATERIAL_KNOBS)
             self.assertTrue(MATERIAL_KNOB.search(knob), knob)
         self.assertFalse(MATERIAL_KNOB.search('RAYMOL_GPU_TIMING'))
         self.assertFalse(MATERIAL_KNOB.search('RAYMOL_MCP_PORT'))
