@@ -204,12 +204,11 @@ def main():
                             and mat not in rt_expected):
                         rt_same.append('%s_%s_%s' % (rep, bg, mat))
     locks = lock_metrics(out, manifest) if np is not None else {}
-    # A render without --lock-check has no lock images at all: that is a run
-    # that skipped the check, which is said; a PARTIAL set is missing images.
+    # render.py writes lock_check.reps = [] when --lock-check was not given,
+    # so "not run" is exactly "nothing was asked for". When the check WAS
+    # asked for, every absent lock image is missing -- all of them included.
     lock_missing = locks.pop('_missing', [])
-    n_lock = 2 * len(manifest['lock_check']['materials']) * len(
-        manifest['lock_check']['reps'])
-    lock_not_run = len(lock_missing) == n_lock
+    lock_not_run = not manifest['lock_check']['reps']
     if not lock_not_run:
         missing.extend(lock_missing)
     swims = [k for k, v in locks.items() if not v['locked']]

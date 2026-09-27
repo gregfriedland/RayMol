@@ -216,7 +216,8 @@ materials.chrome('ligand')
 - The named metals **do** write colour, on the selection. That is what
   separates a metal look from the `metallic` material.
 - `clay` and `marble` switch on screen-space shadows and occlusion
-  (`metal_shadows`, `metal_ssao`), which work everywhere, and set the
+  (`metal_shadows`, `metal_ssao`), which work without ray tracing (except that
+  cartoons get no occlusion: `metal_ssao_cartoon` is off by default), and set the
   ray-traced ones (`metal_rt_shadow*`, `metal_rt_ao_*`), which need
   `metal_raytrace`. The bundles deliberately don't switch that on.
 
