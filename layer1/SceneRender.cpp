@@ -2265,6 +2265,22 @@ void SceneRenderMetal(PyMOLGlobals* G)
         (SettingGetGlobal_b(G, cSetting_depth_cue) && fog_density != 0.0f) ? 1
                                                                            : 0;
     const float* bg = ColorGet(G, SettingGetGlobal_color(G, cSetting_bg_rgb));
+    // The environment's copy of the background, taken NOW (#540). For a 24-bit
+    // RGB colour -- which is what the app's themes (`bg_color 0xRRGGBB`) and
+    // `set bg_rgb, [r, g, b]` store -- ColorGet returns its one shared scratch
+    // buffer, and the metal_outline_color lookup below (default "0x000000",
+    // also 24-bit RGB) overwrites it with black before `bg` is read again.
+    // Read late, the environment the reflective and glass materials reflect
+    // under material_env 0 was black, which made plastic and metallic render
+    // identically with ray tracing off.
+    //
+    // `bg` itself is deliberately left as it was: the post chain still reads
+    // it after the overwrite, so today's in-app fog fades toward black on
+    // every themed background. That is a pre-existing look (#542), and
+    // `default` must render as it does today; changing it is a separate
+    // decision, not a side effect of a materials fix.
+    float envBg[3];
+    copy3f(bg, envBg);
     // Drive the Metal scene-clear from bg_rgb (the GL path uses glClearColor;
     // the Metal renderer never read the setting, so the background stayed black).
     // Applied to the next beginFrame's clear — imperceptible at 60 fps. The clear
@@ -2355,7 +2371,7 @@ void SceneRenderMetal(PyMOLGlobals* G)
     // The environment the reflective materials sample (#493). Pushed every
     // frame; the renderer rebuilds the cubemap only when one of these changes.
     G->Renderer->setEnvironment(SettingGetGlobal_i(G, cSetting_material_env),
-        bg[0], bg[1], bg[2]);
+        envBg[0], envBg[1], envBg[2]);
     G->Renderer->setReflectionParams(
         SettingGetGlobal_b(G, cSetting_metal_rt_reflect_env) ? 1 : 0,
         SettingGetGlobal_i(G, cSetting_metal_rt_reflect_samples));

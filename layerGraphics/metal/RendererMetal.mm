@@ -1028,6 +1028,20 @@ void RendererMetal::endOffscreen()
   if (_cmdBuffer) {
     [_cmdBuffer commit];
     [_cmdBuffer waitUntilCompleted];  // completion handler writes the PNG
+    // RAYMOL_GPU_TIMING: one line per OFFSCREEN frame too (#501). The live
+    // path's two-second window never fills for a single export, and an export
+    // is the only frame a headless run -- or a locked screen, which draws no
+    // live frames at all -- can time. Same variable, same file.
+    static const char* offscreenTimingPath = getenv("RAYMOL_GPU_TIMING");
+    if (offscreenTimingPath && *offscreenTimingPath) {
+      if (FILE* f = fopen(offscreenTimingPath, "a")) {
+        fprintf(f, "offscreen %lux%lu gpu_ms=%.2f\n",
+                (unsigned long)_sceneColor.width,
+                (unsigned long)_sceneColor.height,
+                (_cmdBuffer.GPUEndTime - _cmdBuffer.GPUStartTime) * 1000.0);
+        fclose(f);
+      }
+    }
     _cmdBuffer = nil;
   }
   _offscreen = false;
@@ -1927,9 +1941,9 @@ void RendererMetal::ensurePostTargets(NSUInteger w, NSUInteger h)
   _peelPassDesc.depthAttachment.texture = nil;
   _peelPassDesc.depthAttachment.loadAction = MTLLoadActionLoad;
   _peelPassDesc.depthAttachment.storeAction = MTLStoreActionStore;
-  // No stencil attachment: neither peel depth state touches stencil, and on a
-  // tile-based GPU attaching it would load and write out a full-frame stencil
-  // per peeled object per grid cell for nothing.
+  // The stencil attachment is set with the depth in ensurePeelTargets, with
+  // DontCare load and store: the pipelines require it (#538), and DontCare
+  // keeps it from costing any memory traffic.
   _peelPassDesc.stencilAttachment.texture = nil;
 
   // The peeled object's OIT pass: the same MRT targets as _oitPassDesc (so the
@@ -4134,6 +4148,20 @@ bool RendererMetal::ensurePeelTargets()
   if (!_peelDepth) return false;
   _peelPassDesc.depthAttachment.texture = _peelDepth;
   _oitPeelPassDesc.depthAttachment.texture = _peelDepth;
+  // The stencil plane of the same texture, attached with DontCare on both
+  // ends (#538). Every pipeline bound in these passes -- the colour-less
+  // pre-pass ones and the OIT ones -- is built with
+  // stencilAttachmentPixelFormat Depth32Float_Stencil8, and Metal API
+  // validation asserts when a pipeline names a stencil format the pass has no
+  // texture for: every glass, frosted_glass and jelly object aborted under
+  // validation on the first peeled frame. DontCare/DontCare keeps what leaving
+  // it off was for: neither peel depth state touches stencil, and on a
+  // tile-based GPU it is never loaded from or written back to memory.
+  for (MTLRenderPassDescriptor* d in @[ _peelPassDesc, _oitPeelPassDesc ]) {
+    d.stencilAttachment.texture = _peelDepth;
+    d.stencilAttachment.loadAction = MTLLoadActionDontCare;
+    d.stencilAttachment.storeAction = MTLStoreActionDontCare;
+  }
   return true;
 }
 
