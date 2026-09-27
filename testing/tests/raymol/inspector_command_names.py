@@ -90,6 +90,7 @@ class TestInspectorCommandNames(testing.PyMOLTestCase):
             engine = handle.read()
         self.assertIn('"disable \\(name)", naming: name)', engine)
         self.assertIn('"set state, \\(k), \\(name)", naming: name)', engine)
+        self.assertIn('"set state, \\(n), \\(name)", naming: name)', engine)
 
     def testTheGuardRefusesByTheNameAlphabet(self):
         body = self.src[self.src.index('func runCommand(_ command: String, naming'):]
