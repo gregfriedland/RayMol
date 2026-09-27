@@ -823,8 +823,8 @@ def _drawn_family(obj, rep_name):
     Not the family of the material the SETTING holds. `MaterialResolve`
     degrades clear and frosted glass to `default` on sphere impostors, and
     `MaterialResolveForDraw` does the same for such sticks when they emit
-    stick_ball spheres (jelly is exempt from both, #526) -- and a degraded rep draws as family 0, which reads the
-    legacy triple. get_material_draw_params is documented as "the FINAL
+    stick_ball spheres (jelly is exempt from both, #526) -- and a degraded
+    rep draws as family 0, which reads the legacy triple. get_material_draw_params is documented as "the FINAL
     material parameters a representation draws with ... after the legacy-slider
     decision", which is exactly the question being asked here.
 
@@ -862,8 +862,9 @@ def _legacy_reflection_is_dead(obj, reps):
         all.
 
     So the family must be glass, and it must be the family the rep DRAWS with
-    rather than the one its setting names -- glass degrades to `default` on
-    spheres and on ball-and-stick sticks, and `default` reads the triple.
+    rather than the one its setting names -- clear and frosted glass degrade
+    to `default` on spheres and on ball-and-stick sticks, and `default` reads
+    the triple.
 
     A rep with NO material setting (ribbon, mesh, lines, dots, labels) draws
     with `default` shading and reads it too, so one of those on screen keeps the
