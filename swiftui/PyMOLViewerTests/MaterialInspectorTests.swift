@@ -81,6 +81,27 @@ final class MaterialInspectorTests: XCTestCase {
     // in one place without the other breaks a test rather than the feature
     // quietly.
 
+    /// The control says what it does (#567): Nearest only is peel ON (1),
+    /// All is peel OFF (0). Swapping the two values would be a control whose
+    /// words do the opposite of what they say.
+    func testTranslucentLayersLabelsMapToThePeelValues() {
+        let byLabel = Dictionary(uniqueKeysWithValues:
+            TranslucentLayers.options.map { ($0.label, $0.value) })
+        XCTAssertEqual(byLabel["Auto"], -1)
+        XCTAssertEqual(byLabel["Nearest only"], 1)
+        XCTAssertEqual(byLabel["All"], 0)
+        XCTAssertEqual(TranslucentLayers.options.count, 3)
+    }
+
+    /// The caption is the explanation the old "Peel transp." row lacked, and
+    /// for Auto it has to say what Auto currently MEANS.
+    func testTranslucentLayersCaptionSaysWhatHappens() {
+        XCTAssertTrue(TranslucentLayers.caption(peel: 1, resolved: false).contains("One skin"))
+        XCTAssertTrue(TranslucentLayers.caption(peel: 0, resolved: true).contains("Every layer"))
+        XCTAssertTrue(TranslucentLayers.caption(peel: -1, resolved: true).contains("nearest only"))
+        XCTAssertTrue(TranslucentLayers.caption(peel: -1, resolved: false).contains("all layers"))
+    }
+
     func testThePeelControlWritesTheTriStateOnTheObject() {
         XCTAssertEqual(MaterialCommands.setPeel(-1, on: "m1"),
                        "set transparency_peel, -1, m1")
