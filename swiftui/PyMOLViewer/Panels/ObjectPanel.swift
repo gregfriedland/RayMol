@@ -1398,32 +1398,65 @@ func isLegalObjectName(_ name: String) -> Bool {
     }
 }
 
+/// Whether `token` can be interpolated into a PyMOL command without splitting
+/// it (#531), for strings that are NOT object names and so may legitimately
+/// fall outside isLegalObjectName: MSA names (the MSA store allows e.g.
+/// `données` or `aln:1`), scene names (spaces allowed), and a group name the
+/// user is typing. Refuses exactly what can end or split a command: control
+/// characters and every line break `cmd.do` splits on (str.splitlines), `;`
+/// (PyMOL's command separator) and `,` (its argument separator).
+func isCommandSafeToken(_ token: String) -> Bool {
+    !token.isEmpty && token.unicodeScalars.allSatisfy { u in
+        switch u.value {
+        case 0x00...0x1F, 0x7F, 0x85, 0x2028, 0x2029: return false
+        case 0x3B, 0x2C: return false            // ; ,
+        default: return true
+        }
+    }
+}
+
 extension PyMOLEngine {
-    /// Run a command built by interpolating object, selection or group NAMES
-    /// into PyMOL command language (#531).
+    /// Run a command built by interpolating NAMES into PyMOL command language
+    /// (#531).
     ///
-    /// Every name the Inspector shows came from PyMOL, and with
-    /// `validate_object_names` on (the default) ObjectMakeValidName keeps them
-    /// inside `[A-Za-z0-9+-.^_]`. With it off, a name can carry a line break,
-    /// `;` or `,`, and interpolated raw it would split the command -- running
-    /// its tail as commands of its own. Rather than escape each of ~60 builders
-    /// (PyMOL command language has no general quoting), refuse the command when
-    /// any name is outside PyMOL's own alphabet, and say so on the console
-    /// without echoing the name. The ordinary case is untouched: every legal
-    /// name passes, so every command runs exactly as it did.
-    ///
-    /// NOT used for names the USER is typing (a new group name): those are
-    /// input, which PyMOL itself sanitises, not names read back from it. Nor
-    /// for scene names, which PyMOL allows to contain spaces.
-    func runCommand(_ command: String, naming names: String...) {
-        guard names.allSatisfy(isLegalObjectName) else {
-            runCommand("python\nprint(' Inspector: skipped an action -- an object or "
-                + "selection name contains characters a PyMOL command cannot carry "
-                + "(possible when validate_object_names is off). Rename it with "
-                + "cmd.set_name.')\npython end")
+    /// Every object, selection and group name the Inspector shows came from
+    /// PyMOL, and with `validate_object_names` on (the default)
+    /// ObjectMakeValidName keeps them inside `[A-Za-z0-9+-.^_]`. With it off,
+    /// a name can carry a line break, `;` or `,`, and interpolated raw it would
+    /// split the command -- running its tail as commands of its own. PyMOL
+    /// command language has no general quoting, so rather than escape each of
+    /// ~60 builders, refuse the command when a name is outside PyMOL's own
+    /// alphabet (`naming:`), or when a non-object token -- an MSA name, a scene
+    /// name, a group name the user typed -- contains anything that can split a
+    /// command (`tokens:`, see isCommandSafeToken). The console says why
+    /// without echoing the name. Every legal name passes, so in the ordinary
+    /// case every command runs exactly as it did.
+    func runCommand(_ command: String, naming names: String..., tokens: [String] = []) {
+        guard names.allSatisfy(isLegalObjectName),
+              tokens.allSatisfy(isCommandSafeToken) else {
+            refuseUnsafeCommand()
             return
         }
         runCommand(command)
+    }
+
+    func runCommand(_ command: String, tokens: String...) {
+        runCommand(command, tokens: Array(tokens))
+    }
+
+    func runCommand(_ command: String, tokens: [String]) {
+        guard tokens.allSatisfy(isCommandSafeToken) else {
+            refuseUnsafeCommand()
+            return
+        }
+        runCommand(command)
+    }
+
+    func refuseUnsafeCommand() {
+        runCommand("python\nprint(' Inspector: skipped an action -- a name contains "
+            + "characters a PyMOL command cannot carry (possible when "
+            + "validate_object_names is off). cmd.get_names() lists the objects; "
+            + "rename the odd one with cmd.set_name.')\npython end")
     }
 }
 
@@ -1775,7 +1808,7 @@ struct ObjectPanel: View {
                         if !g.isEmpty && g != member {
                             // PyMOL creates the group on first reference, so this
                             // both creates it and moves the object in.
-                            engine.runCommand("group \(g), \(member)", naming: member)
+                            engine.runCommand("group \(g), \(member)", naming: member, tokens: [g])
                             openGroups.insert(g)   // show the result immediately
                         }
                     }
@@ -2209,11 +2242,11 @@ private struct AlignmentRowView: View {
         .contextMenu {
             Button("Reveal target") { reveal() }
                 .disabled(!targetExists)
-            Button("Detach") { engine.runCommand("msa_detach \(entry.name)", naming: entry.name) }
+            Button("Detach") { engine.runCommand("msa_detach \(entry.name)", tokens: entry.name) }
                 .disabled(entry.attachment == nil)
             Divider()
             Button("Delete", role: .destructive) {
-                engine.runCommand("msa_delete \(entry.name)", naming: entry.name)
+                engine.runCommand("msa_delete \(entry.name)", tokens: entry.name)
             }
         }
     }
@@ -4972,7 +5005,7 @@ struct ScenesPane: View {
     private func sceneChip(_ name: String) -> some View {
         let sel = name == engine.currentScene
         return Button {
-            engine.runCommand("scene \(name), recall, animate=1")
+            engine.runCommand("scene \(name), recall, animate=1", tokens: name)
         } label: {
             Text(name)
                 .font(.system(size: 14, weight: .bold, design: .monospaced))
@@ -5020,7 +5053,7 @@ struct ScenesPane: View {
     // Persist the dragged chip order to PyMOL.
     private func applySceneOrder() {
         guard !sceneOrder.isEmpty else { return }
-        engine.runCommand("scene_order " + sceneOrder.joined(separator: " "))
+        engine.runCommand("scene_order " + sceneOrder.joined(separator: " "), tokens: sceneOrder)
     }
 
     // Compact icon+label button; several sit on one row (Update/Prev/Next/Delete).

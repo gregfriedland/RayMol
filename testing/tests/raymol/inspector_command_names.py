@@ -23,9 +23,19 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), os.pardir,
 PANEL = os.path.join(ROOT, 'swiftui', 'PyMOLViewer', 'Panels',
                      'ObjectPanel.swift')
 
-# The variables that hold a name read back from PyMOL in ObjectPanel.swift.
-NAME_VARS = ('name', 'objName', 'entry.name', 'sel.name', 'member',
-             'target.name', 'g.name', 'escaped')
+# Every variable ObjectPanel.swift interpolates a name or name-like token
+# through. A new builder that interpolates one of these must be guarded.
+NAME_VARS = ('name', 'objName', 'entry.name', 'entry.target', 'entry.chain',
+             'sel.name', 'member', 'target.name', 'g.name', 'escaped', 'sele',
+             'new', 'mobile', 'target', 'selection', 'g')
+
+# Commands passed in NON-literally (a variable or a builder call) cannot be
+# checked for interpolation at the call site, so each must carry a guard --
+# except these, which build their text from no name at all.
+UNNAMED_BUILDERS = ('CameraCommands.setAutofocus(',)
+
+ENGINE = os.path.join(ROOT, 'swiftui', 'PyMOLViewer', 'Shared',
+                      'PyMOLEngine.swift')
 
 
 def calls(text):
@@ -52,21 +62,34 @@ class TestInspectorCommandNames(testing.PyMOLTestCase):
         unguarded = []
         n = 0
         for line, arg in calls(self.src):
-            # `scene <name>, ...`: scene names are not object names -- PyMOL
-            # allows spaces in them -- so they are deliberately not guarded.
-            if arg.lstrip().startswith('"scene '):
+            guarded = 'naming:' in arg or 'tokens:' in arg
+            literal = arg.lstrip().startswith('"')
+            if not literal:
+                # built elsewhere: needs a guard unless it names nothing
+                if not guarded and not arg.lstrip().startswith(UNNAMED_BUILDERS):
+                    unguarded.append('%d: non-literal %s' % (line, arg.strip()[:40]))
+                n += 1
                 continue
             names = [v for v in NAME_VARS if '\\(%s)' % v in arg]
             if names:
                 n += 1
-                if 'naming:' not in arg:
+                if not guarded:
                     unguarded.append('%d: %s' % (line, names))
         # the scan must find the builders, or it checks nothing
         self.assertGreater(n, 40)
         self.assertEqual(unguarded, [])
 
+    def testTheEngineHelpersTheInspectorCallsAreGuarded(self):
+        # setObjectEnabled (the visibility checkbox) and the state-playback
+        # timer build their commands inside PyMOLEngine, out of the scan above.
+        with open(ENGINE, encoding='utf-8') as handle:
+            engine = handle.read()
+        self.assertIn('"disable \\(name)", naming: name)', engine)
+        self.assertIn('"set state, \\(k), \\(name)", naming: name)', engine)
+
     def testTheGuardRefusesByTheNameAlphabet(self):
         body = self.src[self.src.index('func runCommand(_ command: String, naming'):]
         body = body[:body.index('\n    }\n')]
         self.assertIn('names.allSatisfy(isLegalObjectName)', body)
+        self.assertIn('tokens.allSatisfy(isCommandSafeToken)', body)
         self.assertIn('return', body)
