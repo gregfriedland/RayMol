@@ -1398,6 +1398,71 @@ func isLegalObjectName(_ name: String) -> Bool {
     }
 }
 
+/// Whether `token` can be interpolated into a PyMOL command without splitting
+/// it (#531), for strings that are NOT object names and so may legitimately
+/// fall outside isLegalObjectName: MSA names (the MSA store allows e.g.
+/// `données` or `aln:1`), scene names (spaces allowed), and a group name the
+/// user is typing. Refuses exactly what can end or split a command: control
+/// characters and every line break `cmd.do` splits on (str.splitlines), `;`
+/// (PyMOL's command separator), `,` (its argument separator), and `\` -- a
+/// line ending in a backslash is a continuation, so PyMOL would merge the
+/// NEXT command into this one and lose both.
+func isCommandSafeToken(_ token: String) -> Bool {
+    !token.isEmpty && token.unicodeScalars.allSatisfy { u in
+        switch u.value {
+        case 0x00...0x1F, 0x7F, 0x85, 0x2028, 0x2029: return false
+        case 0x3B, 0x2C, 0x5C: return false      // ; , backslash
+        default: return true
+        }
+    }
+}
+
+extension PyMOLEngine {
+    /// Run a command built by interpolating NAMES into PyMOL command language
+    /// (#531).
+    ///
+    /// Every object, selection and group name the Inspector shows came from
+    /// PyMOL, and with `validate_object_names` on (the default)
+    /// ObjectMakeValidName keeps them inside `[A-Za-z0-9+-.^_]`. With it off,
+    /// a name can carry a line break, `;` or `,`, and interpolated raw it would
+    /// split the command -- running its tail as commands of its own. PyMOL
+    /// command language has no general quoting, so rather than escape each of
+    /// ~60 builders, refuse the command when a name is outside PyMOL's own
+    /// alphabet (`naming:`), or when a non-object token -- an MSA name, a scene
+    /// name, a group name the user typed -- contains anything that can split a
+    /// command (`tokens:`, see isCommandSafeToken). The console says why
+    /// without echoing the name. Every legal name passes, so in the ordinary
+    /// case every command runs exactly as it did.
+    func runCommand(_ command: String, naming names: String..., tokens: [String] = []) {
+        guard names.allSatisfy(isLegalObjectName),
+              tokens.allSatisfy(isCommandSafeToken) else {
+            refuseUnsafeCommand()
+            return
+        }
+        runCommand(command)
+    }
+
+    func runCommand(_ command: String, tokens: String...) {
+        runCommand(command, tokens: Array(tokens))
+    }
+
+    func runCommand(_ command: String, tokens: [String]) {
+        guard tokens.allSatisfy(isCommandSafeToken) else {
+            refuseUnsafeCommand()
+            return
+        }
+        runCommand(command)
+    }
+
+    func refuseUnsafeCommand() {
+        runCommand("python\nprint(' Inspector: skipped an action -- a name contains "
+            + "characters a PyMOL command cannot carry (possible when "
+            + "validate_object_names is off). cmd.get_names() lists the objects; "
+            + "rename the odd one with cmd.set_name (an alignment: msa_rename).')"
+            + "\npython end")
+    }
+}
+
 /// Whether `name` can be given to a brand-new object.
 ///
 /// Legal, and not already taken: `create` against a name that already exists
@@ -1544,7 +1609,7 @@ private func runActionCommand(_ key: String, name: String, engine: PyMOLEngine) 
     case "center_all_reset":   cmd = "python\nfor _o in cmd.get_names('public_objects'):\n    cmd.matrix_reset(_o, mode=1)\npython end"
     default:                   return
     }
-    engine.runCommand(cmd)
+    engine.runCommand(cmd, naming: name)
 }
 
 /// Action ("A") menu for the global "all" row — a focused, scene-wide subset.
@@ -1684,7 +1749,7 @@ struct ObjectPanel: View {
                         // the button: this is the path that actually builds a
                         // command string, so it is where a bad name has to stop.
                         if canNameNewObject(new, existing: engine.objects.map(\.name)) {
-                            engine.runCommand(copyToNewObjectCommand(sele: sele, name: new))
+                            engine.runCommand(copyToNewObjectCommand(sele: sele, name: new), naming: sele, new)
                         }
                     }
                     engine.pendingCopyToNew = nil
@@ -1746,7 +1811,7 @@ struct ObjectPanel: View {
                         if !g.isEmpty && g != member {
                             // PyMOL creates the group on first reference, so this
                             // both creates it and moves the object in.
-                            engine.runCommand("group \(g), \(member)")
+                            engine.runCommand("group \(g), \(member)", naming: member, tokens: [g])
                             openGroups.insert(g)   // show the result immediately
                         }
                     }
@@ -1939,7 +2004,7 @@ struct ObjectPanel: View {
         let opening = !openGroups.contains(name)
         if opening { openGroups.insert(name) } else { openGroups.remove(name) }
         let escaped = name.replacingOccurrences(of: "'", with: "")
-        engine.runCommand("group \(escaped), , action=\(opening ? "open" : "close")")
+        engine.runCommand("group \(escaped), , action=\(opening ? "open" : "close")", naming: escaped)
     }
 
     private func emptyHint(_ text: String) -> some View {
@@ -2180,11 +2245,11 @@ private struct AlignmentRowView: View {
         .contextMenu {
             Button("Reveal target") { reveal() }
                 .disabled(!targetExists)
-            Button("Detach") { engine.runCommand("msa_detach \(entry.name)") }
+            Button("Detach") { engine.runCommand("msa_detach \(entry.name)", tokens: entry.name) }
                 .disabled(entry.attachment == nil)
             Divider()
             Button("Delete", role: .destructive) {
-                engine.runCommand("msa_delete \(entry.name)")
+                engine.runCommand("msa_delete \(entry.name)", tokens: entry.name)
             }
         }
     }
@@ -2201,7 +2266,8 @@ private struct AlignmentRowView: View {
             ? entry.target
             : "(\(entry.target)) and chain \(entry.chain)"
         engine.setObjectEnabled(entry.target, true)
-        engine.runCommand("zoom \(selection), animate=-1")
+        engine.runCommand("zoom \(selection), animate=-1",
+                          naming: entry.target, entry.chain.isEmpty ? "A" : entry.chain)
     }
 
     private var tooltip: String {
@@ -2396,14 +2462,14 @@ private func actionMenuContent(_ items: [ActionMenuItem], name: String, engine: 
                 let groups = engine.objects.filter { $0.isGroup && $0.name != name }
                 ForEach(groups) { g in
                     Button(g.name) {
-                        engine.runCommand("group \(g.name), \(name), action=add")
+                        engine.runCommand("group \(g.name), \(name), action=add", naming: g.name, name)
                     }
                 }
                 if !groups.isEmpty { Divider() }
                 Button("New Group…") { engine.pendingGroupFor = name }
                 if engine.objects.first(where: { $0.name == name })?.parent != nil {
                     Divider()
-                    Button("Remove from Group") { engine.runCommand("ungroup \(name)") }
+                    Button("Remove from Group") { engine.runCommand("ungroup \(name)", naming: name) }
                 }
             }
         case .copyToObject(let label):
@@ -2428,7 +2494,7 @@ private func actionMenuContent(_ items: [ActionMenuItem], name: String, engine: 
                     Divider()
                     ForEach(targets) { target in
                         Button(target.name) {
-                            engine.runCommand(copyToObjectCommand(sele: name, target: target.name))
+                            engine.runCommand(copyToObjectCommand(sele: name, target: target.name), naming: name, target.name)
                         }
                     }
                 }
@@ -2474,7 +2540,7 @@ private func runAlignCommand(mobile: String, target: String, engine: PyMOLEngine
     let cmd = "python\ncmd.align(\"polymer and name CA and (\(mobile))\", "
         + "\"polymer and name CA and (\(target))\", quiet=0, "
         + "object=\"aln_\(mobile)_to_\(target)\", reset=1)\npython end"
-    engine.runCommand(cmd)
+    engine.runCommand(cmd, naming: mobile, target)
 }
 
 private struct ActionMenuButton: View {
@@ -2517,20 +2583,20 @@ private struct ShowButton: View {
                 // cartoon_side_chain_helper yields the CA from the cartoon so the
                 // stick connects cleanly. Hydrogens excluded.
                 Button("as sticks") {
-                    engine.runCommand("show sticks, (\(name)) and \(kSidechainPred) and not hydro; set cartoon_side_chain_helper, 1, \(name)")
+                    engine.runCommand("show sticks, (\(name)) and \(kSidechainPred) and not hydro; set cartoon_side_chain_helper, 1, \(name)", naming: name)
                 }
                 Button("as lines") {
-                    engine.runCommand("show lines, (\(name)) and \(kSidechainPred) and not hydro; set cartoon_side_chain_helper, 1, \(name)")
+                    engine.runCommand("show lines, (\(name)) and \(kSidechainPred) and not hydro; set cartoon_side_chain_helper, 1, \(name)", naming: name)
                 }
                 Button("as spheres") {
-                    engine.runCommand("show spheres, (\(name)) and sidechain")
+                    engine.runCommand("show spheres, (\(name)) and sidechain", naming: name)
                 }
             }
             // Hydrogens are a selection, not a rep, so they sit beside "side
             // chains" rather than in the shared rep list (#353). Same command
             // as A → Hydrogens → show.
             Button("hydrogens") {
-                engine.runCommand("show sticks, (\(name)) and hydro")
+                engine.runCommand("show sticks, (\(name)) and hydro", naming: name)
             }
             Divider()
             ForEach(Array(showHideOptions.enumerated()), id: \.offset) { _, opt in
@@ -2540,7 +2606,7 @@ private struct ShowButton: View {
                     // "everything" is meaningful for Hide but not Show — you
                     // can't turn on every representation at once sensibly.
                     Button(opt.label) {
-                        engine.runCommand("show \(rep), \(name)")
+                        engine.runCommand("show \(rep), \(name)", naming: name)
                     }
                 }
             }
@@ -2566,17 +2632,17 @@ private struct HideButton: View {
             Button("side chains") {
                 // Same predicate as S ▸ side chains, so hiding takes back exactly
                 // what showing put up — including proline's N (#405).
-                engine.runCommand("hide sticks, (\(name)) and \(kSidechainPred); hide lines, (\(name)) and \(kSidechainPred)")
+                engine.runCommand("hide sticks, (\(name)) and \(kSidechainPred); hide lines, (\(name)) and \(kSidechainPred)", naming: name)
             }
             // Hydrogens are a selection, not a rep, so they sit beside "side
             // chains" rather than in the shared rep list (#353). Mirrors
             // upstream mol_hide's hydrogens submenu (menu.py hide_hydro).
             Menu("hydrogens") {
                 Button("all") {
-                    engine.runCommand("hide (\(name) and hydro)")
+                    engine.runCommand("hide (\(name) and hydro)", naming: name)
                 }
                 Button("nonpolar") {
-                    engine.runCommand("hide (\(name) and hydro and (elem C extend 1))")
+                    engine.runCommand("hide (\(name) and hydro and (elem C extend 1))", naming: name)
                 }
             }
             Divider()
@@ -2585,7 +2651,7 @@ private struct HideButton: View {
                     Divider()
                 } else if let rep = opt.rep {
                     Button(opt.label) {
-                        engine.runCommand("hide \(rep), \(name)")
+                        engine.runCommand("hide \(rep), \(name)", naming: name)
                     }
                 }
             }
@@ -2614,9 +2680,9 @@ private struct LabelMenuButton: View {
                 } else if let expr = opt.expr {
                     Button(opt.label) {
                         if expr.isEmpty {
-                            engine.runCommand("label \(name)")
+                            engine.runCommand("label \(name)", naming: name)
                         } else {
-                            engine.runCommand("label \(name), \(expr)")
+                            engine.runCommand("label \(name), \(expr)", naming: name)
                         }
                     }
                 }
@@ -2768,20 +2834,20 @@ private struct ColorMenuButton: View {
     private func applyColor(command: String) {
         if command.hasPrefix("util.") {
             let funcName = String(command.dropFirst(5))
-            engine.runCommand("python\ncmd.util.\(funcName)('\(name)')\npython end")
+            engine.runCommand("python\ncmd.util.\(funcName)('\(name)')\npython end", naming: name)
         } else if command == "spectrum" {
-            engine.runCommand("spectrum count, selection=\(name)")
+            engine.runCommand("spectrum count, selection=\(name)", naming: name)
         } else if command == "spectrum_b" {
             // Color by B-factor: blue (low) → white → red (high), the classic
             // temperature look. Falls back gracefully if b is uniform/zero.
-            engine.runCommand("spectrum b, blue_white_red, \(name)")
+            engine.runCommand("spectrum b, blue_white_red, \(name)", naming: name)
         } else {
-            engine.runCommand("color \(command), \(name)")
+            engine.runCommand("color \(command), \(name)", naming: name)
         }
     }
 
     private func applyCustomColor(_ color: Color) {
-        engine.runCommand("set_color raymol_custom, \(rgb01List(color))\ncolor raymol_custom, \(name)")
+        engine.runCommand("set_color raymol_custom, \(rgb01List(color))\ncolor raymol_custom, \(name)", naming: name)
     }
 }
 
@@ -3322,7 +3388,7 @@ private struct RepColorControl: View {
     }
 
     private func setOverride(_ c: String) {
-        engine.runCommand("set \(colorSetting), \(c), \(objName)")
+        engine.runCommand("set \(colorSetting), \(c), \(objName)", naming: objName)
     }
     // Apply an atom-level coloring scheme, resetting this rep to inherit so the
     // scheme is visible on it (PyMOL has no true per-rep scheme coloring).
@@ -3330,16 +3396,16 @@ private struct RepColorControl: View {
         setOverride("\(defaultColor)")
         switch s {
         case "spectrum":
-            engine.runCommand("spectrum count, selection=\(objName)")
+            engine.runCommand("spectrum count, selection=\(objName)", naming: objName)
         case "spectrum_b":
-            engine.runCommand("spectrum b, blue_white_red, \(objName)")
+            engine.runCommand("spectrum b, blue_white_red, \(objName)", naming: objName)
         default:   // util.cnc / util.cbc / util.cbss
-            engine.runCommand("python\ncmd.\(s)('\(objName)')\npython end")
+            engine.runCommand("python\ncmd.\(s)('\(objName)')\npython end", naming: objName)
         }
     }
     private func applyCustom(_ color: Color) {
         let nm = "tmp_\(sanitizeName(objName))_\(rep)"
-        engine.runCommand("set_color \(nm), \(rgb01List(color))\nset \(colorSetting), \(nm), \(objName)")
+        engine.runCommand("set_color \(nm), \(rgb01List(color))\nset \(colorSetting), \(nm), \(objName)", naming: objName)
     }
 }
 
@@ -3391,11 +3457,11 @@ private struct SettingColorControl: View {
     }
 
     private func setColor(_ c: String) {
-        engine.runCommand("set \(setting), \(c), \(objName)")
+        engine.runCommand("set \(setting), \(c), \(objName)", naming: objName)
     }
     private func applyCustom(_ color: Color) {
         let nm = "tmp_\(sanitizeName(objName))_\(rep)_ctr"
-        engine.runCommand("set_color \(nm), \(rgb01List(color))\nset \(setting), \(nm), \(objName)")
+        engine.runCommand("set_color \(nm), \(rgb01List(color))\nset \(setting), \(nm), \(objName)", naming: objName)
     }
 }
 
@@ -3411,13 +3477,13 @@ private struct ObjectColorRow: View {
                 .foregroundColor(PanelTheme.headerColor)
             Spacer()
             Menu {
-                Button("by element") { engine.runCommand("python\ncmd.util.cnc('\(objName)')\npython end") }
-                Button("by chain")   { engine.runCommand("python\ncmd.util.cbc('\(objName)')\npython end") }
-                Button("by ss")      { engine.runCommand("python\ncmd.util.cbss('\(objName)')\npython end") }
-                Button("spectrum")   { engine.runCommand("spectrum count, selection=\(objName)") }
+                Button("by element") { engine.runCommand("python\ncmd.util.cnc('\(objName)')\npython end", naming: objName) }
+                Button("by chain")   { engine.runCommand("python\ncmd.util.cbc('\(objName)')\npython end", naming: objName) }
+                Button("by ss")      { engine.runCommand("python\ncmd.util.cbss('\(objName)')\npython end", naming: objName) }
+                Button("spectrum")   { engine.runCommand("spectrum count, selection=\(objName)", naming: objName) }
                 Divider()
                 ForEach(Array(inspectorNamedColors.enumerated()), id: \.offset) { _, c in
-                    Button(c.name) { engine.runCommand("color \(c.name), \(objName)") }
+                    Button(c.name) { engine.runCommand("color \(c.name), \(objName)", naming: objName) }
                 }
             } label: {
                 Text("Set").font(.system(size: 10))
@@ -3433,7 +3499,7 @@ private struct ObjectColorRow: View {
 
     private func applyCustom(_ color: Color) {
         let nm = "tmp_\(sanitizeName(objName))_obj"
-        engine.runCommand("set_color \(nm), \(rgb01List(color))\ncolor \(nm), \(objName)")
+        engine.runCommand("set_color \(nm), \(rgb01List(color))\ncolor \(nm), \(objName)", naming: objName)
     }
 }
 
@@ -3778,18 +3844,18 @@ private struct ObjectCard: View {
                     .font(.system(size: 10)).foregroundColor(PanelTheme.textColor)
                     .frame(width: 78, alignment: .leading)
                 ToggleSetting(value: (meta?.overlayAll ?? false) ? 1 : 0) { on in
-                    engine.runCommand("set all_states, \(on ? 1 : 0), \(entry.name)")
+                    engine.runCommand("set all_states, \(on ? 1 : 0), \(entry.name)", naming: entry.name)
                 }
                 Spacer(minLength: 0)
-                stateActionButton("Fit") { engine.runCommand("intra_fit \(entry.name)") }
-                stateActionButton("Split") { engine.runCommand("split_states \(entry.name)") }
-                stateActionButton("Sync") { engine.runCommand("unset state, \(entry.name)") }
+                stateActionButton("Fit") { engine.runCommand("intra_fit \(entry.name)", naming: entry.name) }
+                stateActionButton("Split") { engine.runCommand("split_states \(entry.name)", naming: entry.name) }
+                stateActionButton("Sync") { engine.runCommand("unset state, \(entry.name)", naming: entry.name) }
             }
         }
     }
 
     private func setState(_ n: Int) {
-        engine.runCommand("set state, \(n), \(entry.name)")
+        engine.runCommand("set state, \(n), \(entry.name)", naming: entry.name)
     }
 
     private func stateActionButton(_ title: String, _ action: @escaping () -> Void) -> some View {
@@ -3817,16 +3883,16 @@ private struct ObjectCard: View {
                 .frame(width: 78, alignment: .leading)
             ToggleSetting(value: shown ? 1 : 0) { on in
                 if on {
-                    engine.runCommand("show \(rep), \(entry.name)")
+                    engine.runCommand("show \(rep), \(entry.name)", naming: entry.name)
                     engine.keptHidden[entry.name]?.remove(rep)
                 } else {
-                    engine.runCommand("hide \(rep), \(entry.name)")
+                    engine.runCommand("hide \(rep), \(entry.name)", naming: entry.name)
                     engine.keptHidden[entry.name, default: []].insert(rep)
                 }
             }
             Spacer(minLength: 0)
             Button {
-                engine.runCommand("hide \(rep), \(entry.name)")
+                engine.runCommand("hide \(rep), \(entry.name)", naming: entry.name)
                 engine.keptHidden[entry.name]?.remove(rep)
                 if selectedRep == rep { selectedRep = nil }
             } label: {
@@ -3875,7 +3941,7 @@ private struct RepChips: View {
                 Menu {
                     ForEach(inactive, id: \.self) { rep in
                         Button(RepCatalog.display(rep)) {
-                            engine.runCommand("show \(rep), \(objName)")
+                            engine.runCommand("show \(rep), \(objName)", naming: objName)
                             engine.keptHidden[objName]?.remove(rep)
                             onSelect(rep)
                         }
@@ -3943,7 +4009,7 @@ private struct ObjectMaterialRows: View {
             HStack(spacing: 6) {
                 TriStateSetting(value: meta.peel,
                                 options: [(-1, "Auto"), (0, "Off"), (1, "On")]) {
-                    engine.runCommand(MaterialCommands.setPeel($0, on: objName))
+                    engine.runCommand(MaterialCommands.setPeel($0, on: objName), naming: objName)
                     engine.refreshExpandedDetail()
                 }
                 // What auto currently MEANS. The whole point of -1 is that the
@@ -4049,11 +4115,11 @@ private struct ObjectMaterialRows: View {
     }
 
     private func set(_ setting: String, _ v: Double) {
-        engine.runCommand(MaterialCommands.setReflect(setting, v, on: objName))
+        engine.runCommand(MaterialCommands.setReflect(setting, v, on: objName), naming: objName)
     }
 
     private func clearReflection() {
-        engine.runCommand(MaterialCommands.clearReflect(on: objName))
+        engine.runCommand(MaterialCommands.clearReflect(on: objName), naming: objName)
         engine.refreshExpandedDetail()
     }
 
@@ -4176,8 +4242,8 @@ private struct RepPropertyGrid: View {
     // keeping the object-level slider value; a rebuild refreshes the baked
     // cartoon/surface geometry, then re-poll so the row disappears promptly.
     private func clearAtomTransp(_ setting: String) {
-        engine.runCommand("unset \(setting), (\(objName))")
-        engine.runCommand("rebuild \(objName)")
+        engine.runCommand("unset \(setting), (\(objName))", naming: objName)
+        engine.runCommand("rebuild \(objName)", naming: objName)
         engine.refreshExpandedDetail()
     }
 
@@ -4266,7 +4332,7 @@ private struct RepPropertyGrid: View {
     /// function rather than reimplementing its list of settings here, where a
     /// copy would drift from `modules/pymol/materials.py` silently.
     private func runBundle(_ attr: String) {
-        engine.runCommand(MaterialCommands.runBundle(attr, on: objName))
+        engine.runCommand(MaterialCommands.runBundle(attr, on: objName), naming: objName)
         engine.refreshExpandedDetail()
     }
 
@@ -4282,7 +4348,7 @@ private struct RepPropertyGrid: View {
 
     private func set(_ setting: String, _ value: Double) {
         let s = (value == value.rounded()) ? String(Int(value)) : String(format: "%.4f", value)
-        engine.runCommand("set \(setting), \(s), \(objName)")
+        engine.runCommand("set \(setting), \(s), \(objName)", naming: objName)
         // The displayed value comes from a poll that runs at most every ~500ms,
         // so without this the menu keeps the bullet on the old entry until the
         // next tick. The sliders and toggles hold local state to hide that lag;
@@ -4294,7 +4360,7 @@ private struct RepPropertyGrid: View {
     /// Drop the object-level override so the row inherits the rep global (and
     /// then `material_default`) again.
     private func unset(_ setting: String) {
-        engine.runCommand("unset \(setting), \(objName)")
+        engine.runCommand("unset \(setting), \(objName)", naming: objName)
         engine.refreshExpandedDetail()
     }
 
@@ -4942,7 +5008,7 @@ struct ScenesPane: View {
     private func sceneChip(_ name: String) -> some View {
         let sel = name == engine.currentScene
         return Button {
-            engine.runCommand("scene \(name), recall, animate=1")
+            engine.runCommand("scene \(name), recall, animate=1", tokens: name)
         } label: {
             Text(name)
                 .font(.system(size: 14, weight: .bold, design: .monospaced))
@@ -4990,7 +5056,7 @@ struct ScenesPane: View {
     // Persist the dragged chip order to PyMOL.
     private func applySceneOrder() {
         guard !sceneOrder.isEmpty else { return }
-        engine.runCommand("scene_order " + sceneOrder.joined(separator: " "))
+        engine.runCommand("scene_order " + sceneOrder.joined(separator: " "), tokens: sceneOrder)
     }
 
     // Compact icon+label button; several sit on one row (Update/Prev/Next/Delete).
@@ -5256,7 +5322,7 @@ struct SelectionBuilderSheet: View {
                     HStack(spacing: 10) {
                         Toggle("", isOn: Binding(
                             get: { sel.isEnabled },
-                            set: { on in engine.runCommand("\(on ? "enable" : "disable") \(sel.name)") }))
+                            set: { on in engine.runCommand("\(on ? "enable" : "disable") \(sel.name)", naming: sel.name) }))
                             .labelsHidden()
                         Text(sel.name).font(.system(size: 13))
                         if let c = sel.atomCount { Text("(\(c))").font(.caption).foregroundStyle(.secondary) }
@@ -5265,7 +5331,7 @@ struct SelectionBuilderSheet: View {
                             Image(systemName: "pencil")
                         }.buttonStyle(.borderless)
                         Button(role: .destructive) {
-                            engine.runCommand("delete \(sel.name)")
+                            engine.runCommand("delete \(sel.name)", naming: sel.name)
                         } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
                     }
                 }
