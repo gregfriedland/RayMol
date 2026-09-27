@@ -112,7 +112,12 @@ OBJECT_CAPTURE = [
     # captured here and deliberately absent from raymol_scene_anim.INTERPOLATE.
     "cartoon_material", "surface_material", "stick_material", "sphere_material",
     "transparency_peel",
-]
+    # Custom material overrides (#568): per layer, object-scoped, and part of
+    # what the layer is made of -- so they step with the material at a cut.
+] + ["%s_material_%s" % (rep, knob)
+     for rep in ("cartoon", "surface", "stick", "sphere")
+     for knob in ("reflect", "tint", "rough", "knob1", "knob2", "knob3",
+                  "knob4", "knob5", "knob6")]
 
 # The OBJECT_CAPTURE names in force when a given scene was STORED. Recall reads
 # "name absent from this scene's per-object map" as "the object had no override,

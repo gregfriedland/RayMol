@@ -56,6 +56,7 @@ set surface_material, glas, myprotein
 | `material_default` | global | `default` | Fallback for every representation above that has no material of its own. |
 | `material_env` | global | `0` | What the reflective and glass-family materials reflect: `0` the background colour, `1` a studio, `2` nothing. |
 | `metal_rt_transparent` | global | `0` | Let transparent geometry cast traced shadows and ambient occlusion and appear in traced reflections (see [Environment and ray tracing](#environment-and-ray-tracing)). |
+| `<rep>_material_<knob>` | object | unset | The layer's Custom overrides of its material's own knobs, for `cartoon`, `surface`, `stick` and `sphere` (see [Custom](#custom-tuning-a-layers-material)). |
 | `transparency_peel` | object | `-1` | Keep only the nearest transparent layer of the object: `-1` auto (on for glass-family materials), `0` off, `1` on. |
 
 **Resolution order.** Each representation takes:
@@ -112,6 +113,54 @@ ball-and-stick, with its implied alpha.
 
 **Procedural patterns are locked to the object** in the viewport. They don't
 slide when you rotate, pan or zoom.
+
+## Custom: tuning a layer's material
+
+Each layer can tune its material without becoming a different one. The
+overrides are object-scoped settings named `<rep>_material_<knob>`, for the
+`cartoon`, `surface`, `stick` and `sphere` layers; an unset one means the
+material's own value. They tune the material, never replace it, and each
+material has only the knobs its shader reads -- an override of any other knob
+is ignored:
+
+| Material | Knobs |
+|---|---|
+| `plastic` | `reflect` Reflection, `tint` Reflection tint, `rough` Roughness |
+| `metallic` | `reflect` Reflection, `tint` Reflection tint, `rough` Roughness |
+| `glass` | `rough` Roughness |
+| `frosted_glass` | `rough` Frost |
+| `jelly` | `rough` Skin reflection blur, `knob1` Absorption, `knob2` Inner glow, `knob3` Wet highlight |
+| `matte` | `knob1` Grain, `knob2` Grain frequency |
+| `clay` | `knob1` Grain, `knob2` Grain frequency, `knob3` Edge darkening |
+| `rubber` | `knob1` Grain, `knob2` Grain frequency, `knob3` Highlight, `knob4` Sheen |
+| `marble` | `knob2` Vein scale, `knob5` Vein contrast, `knob6` Vein sharpness |
+
+```
+set surface_material, metallic, myprotein
+set surface_material_rough, 0.05, myprotein      # a sharper metallic, this layer only
+unset surface_material_rough, myprotein          # back to metallic's own
+```
+
+Some knobs only show under a condition:
+
+- **Grain frequency** changes nothing while **Grain** is 0 (matte's own grain
+  is 0).
+- A blur of what the material reflects needs something to reflect: jelly's
+  **Skin reflection blur**, and plastic's and metallic's **Roughness**, are
+  invisible while `material_env` is the flat background colour -- unless Metal
+  ray tracing traces the reflection, which the reflective Roughness also blurs.
+  (Glass's **Roughness** also widens and softens its glints, so it shows either
+  way.)
+
+An override belongs to the LAYER, not to the material: it stays when the
+layer's material changes and then tunes the new material's knob in the same
+slot. The Inspector clears a layer's overrides when you pick a material; from
+the command line, `unset` them when switching.
+
+`default` has no knobs. A global value is not an override: only the object's
+(or state's) own value counts. Scenes capture the object-level values with the
+material. The CPU
+`ray` command maps materials by name and does not see these.
 
 ## Transparency and peel
 

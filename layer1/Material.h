@@ -175,10 +175,40 @@ MaterialParams MaterialResolve(int id, int repType);
 MaterialParams MaterialResolveForDraw(PyMOLGlobals* G, const CSetting* set1,
     const CSetting* set2, int repType, const CoordSet* cs = nullptr);
 
+/* The knobs of the Custom material (#568). A slot is one of the overridable
+   MaterialParams fields; the per-rep override settings are ordered the same
+   way (`<rep>_material_reflect`, `_tint`, `_rough`, `_knob1`..`_knob6`). */
+enum MaterialKnobSlot {
+  kKnob_reflect = 0,
+  kKnob_tint,
+  kKnob_rough,
+  kKnob_p0,   // knob1
+  kKnob_p1,
+  kKnob_p2,
+  kKnob_p3,
+  kKnob_p4,
+  kKnob_p5,   // knob6
+  kMaterialKnobSlotCount
+};
+
+struct MaterialKnob {
+  int slot;            // MaterialKnobSlot
+  const char* label;   // what it does, for the Inspector
+  float min, max;      // a sensible slider range (the core clamps nothing)
+};
+
+/**
+ * The knobs material `id` has -- the slots its shader actually reads -- in
+ * display order. Returns their count (0 for `default` and unimplemented ids)
+ * and points `*knobs` at them. An override of any other slot is ignored.
+ */
+int MaterialKnobs(int id, const MaterialKnob** knobs);
+
 /**
  * The FINAL parameters a draw uses: MaterialResolveForDraw, with reflect / tint /
  * rough zeroed for every family that does not own them (all but reflective and
- * glass).
+ * glass), then the layer's Custom overrides of the knobs its material has
+ * (MaterialKnobs, #568).
  *
  * The draw site is a thin caller of this, so the rules stay in one place and
  * can be asserted from Python without a Metal context.
