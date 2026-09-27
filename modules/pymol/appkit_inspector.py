@@ -162,6 +162,7 @@ SCENE_SETTINGS = ['metal_raytrace', 'metal_rt_shadows', 'metal_shadows', 'metal_
                   'metal_rt_shadow_intensity', 'metal_rt_scale',
                   'metal_rt_reflect', 'metal_rt_reflect_tint', 'metal_rt_reflect_rough',
                   'metal_rt_reflect_env', 'metal_rt_reflect_samples',
+                  'metal_rt_transparent',
                   'metal_outline', 'metal_outline_width', 'metal_msaa',
                   'metal_tonemap', 'metal_exposure',
                   'metal_sss_wrap', 'metal_dof', 'metal_dof_focus',

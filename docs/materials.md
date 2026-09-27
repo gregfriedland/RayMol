@@ -58,6 +58,7 @@ set surface_material, glas, myprotein
 | `sphere_material` | object | `default` | Material of the sphere representation. |
 | `material_default` | global | `default` | Fallback for every representation above that has no material of its own. |
 | `material_env` | global | `0` | What the reflective and glass-family materials reflect: `0` the background colour, `1` a studio, `2` nothing. |
+| `metal_rt_transparent` | global | `0` | Let transparent geometry cast traced shadows and ambient occlusion and appear in traced reflections (see [Environment and ray tracing](#environment-and-ray-tracing)). |
 | `transparency_peel` | object | `-1` | Keep only the nearest transparent layer of the object: `-1` auto (on for glass-family materials), `0` off, `1` on. |
 
 **Resolution order.** Each representation takes:
@@ -159,10 +160,26 @@ materials also trace real reflections of the structure itself. This is an
 upgrade on top of the environment reflection, not a replacement, so turning
 ray tracing off leaves the environment reflection alone.
 
-**Transparent geometry is not in the ray-traced scene.** Glass, frosted glass
-and jelly (like any transparent representation) cast no traced shadow, get
-no traced ambient occlusion, and don't appear in other objects'
-reflections (#532).
+**Transparent geometry is left out of the ray-traced scene unless you ask
+for it.** By default, glass, frosted glass and jelly (like any transparent
+representation) cast no traced shadow or ambient occlusion and don't appear
+in other objects' reflections. `set metal_rt_transparent, 1` puts them in
+(#532):
+
+- **Shadows.** A transparent object lets through `1 - alpha` of the light, so
+  jelly (alpha 0.85) casts a dark shadow and clear glass (0.15) a faint one.
+  Each transparent object counts once along a ray, so a closed glass shell
+  shadows once rather than at both of its walls. This needs traced shadows
+  (`metal_rt_shadows`, on by default).
+- **Ambient occlusion.** A transparent object occludes in proportion to its
+  alpha.
+- **Reflections.** A reflective material's traced reflection shows the
+  nearest transparent surface, blended over what lies behind it by its alpha.
+- **What it does not do.** Transparent geometry still receives no traced
+  shadow or ambient occlusion itself, and it is not traced in `grid_mode`.
+- **Cost.** On a scene with one 55%-transparent molecular surface it makes the
+  ray-traced pass about 2.5 times slower (23 to about 57 ms per 1400×1000 export
+  frame on an M1 Max), which is why it is off by default.
 
 **Where the near clipping plane cuts into a structure, the cut face may miss
 its traced reflection** (#503). The ray-traced scene deliberately ignores the
@@ -307,4 +324,5 @@ page labels them instead of failing:
 
 - clear and frosted glass on spheres, which must still match `default`;
 - plastic and metallic on a dark background without ray tracing;
-- the glass family's ray-tracing invariance (#532).
+- the glass family's ray-tracing invariance (#532; the gallery renders with
+  `metal_rt_transparent` off).

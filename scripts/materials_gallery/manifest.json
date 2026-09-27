@@ -113,7 +113,7 @@
       "frosted_glass",
       "jelly"
     ],
-    "comment": "Transparent geometry is not in the Metal ray-traced scene (#532), so these render identically with metal_raytrace 0 and 1; expected, not flagged."
+    "comment": "Transparent geometry is not in the Metal ray-traced scene unless metal_rt_transparent is on (#532; off by default and in the gallery), so these render identically with metal_raytrace 0 and 1; expected, not flagged."
   },
   "expected_identical_pairs": [
     {

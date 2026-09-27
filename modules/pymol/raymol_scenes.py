@@ -30,7 +30,7 @@ CAPTURE = [
     "metal_rt_samples", "metal_rt_ao_radius", "metal_rt_ao_intensity",
     "metal_rt_shadow_intensity", "metal_rt_scale", "metal_outline", "metal_outline_width",
     "metal_rt_reflect", "metal_rt_reflect_tint", "metal_rt_reflect_rough",
-    "metal_rt_reflect_env", "metal_rt_reflect_samples",
+    "metal_rt_reflect_env", "metal_rt_reflect_samples", "metal_rt_transparent",
     "material_default", "material_env",
     # The per-rep materials are OBJECT-level settings, so they have a global
     # fallback as well as per-object overrides -- exactly like metal_rt_reflect

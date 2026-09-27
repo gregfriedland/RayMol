@@ -175,6 +175,7 @@ public:
   void setRepContour(bool enabled, const float* rgba, float widthPx) override;
   void setRepMaterial(const MaterialParams& params) override;
   void setReflectionParams(int env, int samples) override;
+  void setRTTransparent(bool enabled) override { _rtTransparent = enabled; }
   void setRepScreenAO(bool exempt) override;
   void invalidateVBOCache(uint64_t key) override;
   void invalidateVBOCacheEntry(const void* cpuData) override;
@@ -750,6 +751,11 @@ private:
     std::vector<float> triCols;
     std::vector<float> triNrms;  // 9 floats per triangle: per-vertex normals
     std::vector<float> sphereCols;
+    // metal_rt_transparent (#532): per-triangle / per-sphere ALPHA, the mean of
+    // the vertex alphas the draw carries. Only a transparent occurrence reads
+    // it; an opaque one ignores it.
+    std::vector<float> triAlpha;
+    std::vector<float> sphereAlpha;
     uint64_t params = 0;         // draw-call scalars the extraction used
     uint64_t gen = 0;            // bumped on every (re)extraction; 0 = never
   };
@@ -797,6 +803,14 @@ private:
   void rtNoteGeometry(const void* key, const void* alias, uint64_t params,
       Extract&& extract)
   {
+    // metal_rt_transparent (#532): a draw inside the transparent pass goes to
+    // its OWN record, built into a separate acceleration structure, so every
+    // opaque query (and so every default frame) is untouched. grid_mode keeps
+    // transparent geometry out: its per-cell instance masks are not built for
+    // the transparent structure.
+    const bool transparent = _oitActive;
+    if (transparent && (!_rtTransparent || !_rtFrameCells.empty()))
+      return;
     RTGeom& g = _rtGeomCache[key];
     if (g.gen == 0 || g.params != params) {
       g.spheres.clear();
@@ -804,6 +818,8 @@ private:
       g.triCols.clear();
       g.triNrms.clear();
       g.sphereCols.clear();
+      g.triAlpha.clear();
+      g.sphereAlpha.clear();
       extract(g);
       g.params = params;
       g.gen = ++_rtGeomGen;
@@ -816,6 +832,10 @@ private:
     // acceleration-structure rebuild. rtDropGeometry keeps the same rule.
     if (g.spheres.empty() && g.tris.empty())
       return;
+    if (transparent) {
+      rtNoteTransparent(key, g.gen);
+      return;
+    }
     _rtFrameKeys.push_back(key);
 
     // Pose delta = base^-1 · M_obj: divides the shared camera out of this draw's
@@ -861,6 +881,34 @@ private:
       _rtFrameSig = (_rtFrameSig ^ bb) * 1099511628211ULL;
     }
   }
+  // The transparent half of rtNoteGeometry: same pose / clip record, into the
+  // transparent frame record and its signature.
+  void rtNoteTransparent(const void* key, uint64_t gen);
+  // metal_rt_transparent (#532). The transparent frame record, parallel to the
+  // opaque one above, and the structure built from it: one primitive AS of
+  // world triangles (spheres tessellated), with per-triangle colour+alpha,
+  // normals and occurrence index for the shaders.
+  bool _rtTransparent = false;
+  std::vector<const void*> _rtTFrameKeys;
+  std::vector<Mat4> _rtTFrameXform;
+  std::vector<std::array<float, 2>> _rtTFrameClip;
+  uint64_t _rtTFrameSig = 0;
+  uint64_t _rtTBuiltSig = 0;
+  bool _rtTReady = false;
+  size_t _rtTTriCount = 0;
+  id<MTLAccelerationStructure> _rtTransAS = nil;
+  id<MTLBuffer> _rtTColBuffer = nil;   // float4/tri: rgb, alpha
+  id<MTLBuffer> _rtTNrmBuffer = nil;   // 9 floats/tri: world-space vertex normals
+  id<MTLBuffer> _rtTOccBuffer = nil;   // uint32/tri: occurrence (one object's rep)
+  id<MTLLibrary> _rtLib = nil;         // kept to specialise the transparent pipelines
+  id<MTLRenderPipelineState> _rtAOPipelineT = nil;
+  id<MTLRenderPipelineState> _rtResolvePipelineT = nil;
+  bool _rtTCompileTried = false;
+  void ensureRayTracingTransAS();
+  void buildRTPipelines(bool transparent, id<MTLRenderPipelineState>* ao,
+      id<MTLRenderPipelineState>* composite);
+  void releaseRayTracingTransAS();
+
   // Drop the cached RT geometry derived from a CPU buffer that is about to be
   // freed (or whose contents changed). Handles both primary and alias keys.
   void rtDropGeometry(const void* cpuData);
