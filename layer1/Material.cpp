@@ -445,25 +445,74 @@ MaterialParams MaterialResolveForDraw(PyMOLGlobals* G, const CSetting* set1,
 }
 
 static MaterialParams MaterialFinalizeParams(
-    PyMOLGlobals* G, const CSetting* set1, const CSetting* set2,
+    PyMOLGlobals* G, const CSetting* set1, const CSetting* set2, int repType,
     MaterialParams params);
 
 MaterialParams MaterialDrawParams(PyMOLGlobals* G, const CSetting* set1,
     const CSetting* set2, int repType, const CoordSet* cs)
 {
-  return MaterialFinalizeParams(G, set1, set2,
+  return MaterialFinalizeParams(G, set1, set2, repType,
       MaterialResolveForDraw(G, set1, set2, repType, cs));
 }
 
 MaterialParams MaterialDrawParamsCached(PyMOLGlobals* G, const CSetting* set1,
     const CSetting* set2, int repType, bool emitsStickBalls)
 {
-  return MaterialFinalizeParams(G, set1, set2,
+  return MaterialFinalizeParams(G, set1, set2, repType,
       MaterialResolveForDrawCached(G, set1, set2, repType, emitsStickBalls));
 }
 
+/* The Custom material's per-layer overrides (#568): for each material-bearing
+   rep, the object-scoped settings that replace its material's own knobs --
+   reflect, tint, rough, then knob1..knob6 for p[0..5]. Unset means the
+   material's value. */
+namespace {
+struct CustomOverrideSet {
+  int reflect, tint, rough, knob[6];
+};
+const CustomOverrideSet* MaterialCustomOverridesForRep(int repType)
+{
+  static const CustomOverrideSet kCartoon = {cSetting_cartoon_material_reflect,
+      cSetting_cartoon_material_tint, cSetting_cartoon_material_rough,
+      {cSetting_cartoon_material_knob1, cSetting_cartoon_material_knob2,
+          cSetting_cartoon_material_knob3, cSetting_cartoon_material_knob4,
+          cSetting_cartoon_material_knob5, cSetting_cartoon_material_knob6}};
+  static const CustomOverrideSet kSurface = {cSetting_surface_material_reflect,
+      cSetting_surface_material_tint, cSetting_surface_material_rough,
+      {cSetting_surface_material_knob1, cSetting_surface_material_knob2,
+          cSetting_surface_material_knob3, cSetting_surface_material_knob4,
+          cSetting_surface_material_knob5, cSetting_surface_material_knob6}};
+  static const CustomOverrideSet kStick = {cSetting_stick_material_reflect,
+      cSetting_stick_material_tint, cSetting_stick_material_rough,
+      {cSetting_stick_material_knob1, cSetting_stick_material_knob2,
+          cSetting_stick_material_knob3, cSetting_stick_material_knob4,
+          cSetting_stick_material_knob5, cSetting_stick_material_knob6}};
+  static const CustomOverrideSet kSphere = {cSetting_sphere_material_reflect,
+      cSetting_sphere_material_tint, cSetting_sphere_material_rough,
+      {cSetting_sphere_material_knob1, cSetting_sphere_material_knob2,
+          cSetting_sphere_material_knob3, cSetting_sphere_material_knob4,
+          cSetting_sphere_material_knob5, cSetting_sphere_material_knob6}};
+  switch (MaterialSettingForRep(repType)) {
+  case cSetting_cartoon_material: return &kCartoon;
+  case cSetting_surface_material: return &kSurface;
+  case cSetting_stick_material: return &kStick;
+  case cSetting_sphere_material: return &kSphere;
+  }
+  return nullptr;
+}
+
+/* The object's (or state's) own value only: a GLOBAL override would turn one
+   layer's tuning into every object's, which is not what Custom means. */
+bool MaterialCustomValue(const CSetting* set1, const CSetting* set2, int index,
+    float* out)
+{
+  return SettingGetIfDefined<float>(set1, index, out) ||
+         SettingGetIfDefined<float>(set2, index, out);
+}
+} // namespace
+
 static MaterialParams MaterialFinalizeParams(
-    PyMOLGlobals* G, const CSetting* set1, const CSetting* set2,
+    PyMOLGlobals* G, const CSetting* set1, const CSetting* set2, int repType,
     MaterialParams params)
 {
   // reflect/tint/rough belong to the REFLECTIVE family (its reflection) and
@@ -473,12 +522,41 @@ static MaterialParams MaterialFinalizeParams(
   // knob those shaders read. Zeroing here keeps `default` and the procedural
   // materials byte-exact now that the legacy object-wide metal_rt_reflect*
   // triple they used to read -- 0 unless someone set it -- is gone (#565).
-  (void)G; (void)set1; (void)set2;
+  (void)G;
   if (params.family != cMaterialFamily_reflective &&
       params.family != cMaterialFamily_glass) {
     params.reflect = 0.0f;
     params.tint = 0.0f;
     params.rough = 0.0f;
+  }
+  // Custom (#568): the layer's own overrides, applied to the knobs its
+  // material's FAMILY has -- the shading model stays the material's, so an
+  // override never switches pipelines. `default` has no knobs, which also
+  // keeps the default path free of these lookups.
+  if (params.family == cMaterialFamily_default)
+    return params;
+  const CustomOverrideSet* ov = MaterialCustomOverridesForRep(repType);
+  if (!ov)
+    return params;
+  float v = 0.0f;
+  switch (params.family) {
+  case cMaterialFamily_reflective:
+    if (MaterialCustomValue(set1, set2, ov->reflect, &v)) params.reflect = v;
+    if (MaterialCustomValue(set1, set2, ov->tint, &v)) params.tint = v;
+    if (MaterialCustomValue(set1, set2, ov->rough, &v)) params.rough = v;
+    break;
+  case cMaterialFamily_glass:
+    // rough is the frost; p[0..2] are jelly's absorption, glow and wet
+    // highlight. p[5] is not a knob here: setRepMaterial writes the frost tap
+    // count into it (see kP_wet above), so knob6 is not offered.
+    if (MaterialCustomValue(set1, set2, ov->rough, &v)) params.rough = v;
+    for (int k = 0; k < 3; ++k)
+      if (MaterialCustomValue(set1, set2, ov->knob[k], &v)) params.p[k] = v;
+    break;
+  case cMaterialFamily_procedural:
+    for (int k = 0; k < 6; ++k)
+      if (MaterialCustomValue(set1, set2, ov->knob[k], &v)) params.p[k] = v;
+    break;
   }
   return params;
 }

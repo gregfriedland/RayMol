@@ -66,3 +66,18 @@ class TestMaterialDocs(testing.PyMOLTestCase):
         rows = first_cells(section(self.doc, 'Settings'))
         for name in names:
             self.assertIn(name, rows, name)
+
+
+class TestCustomKnobsAreDocumented(testing.PyMOLTestCase):
+    def testEveryKnobHasARow(self):
+        """Custom's overrides (#568) are named `<rep>_material_<knob>`, so they
+        are derived from the setting names too: every knob suffix in use must
+        have a row in the Custom section's table."""
+        with open(DOC, encoding='utf-8') as handle:
+            text = section(handle.read(), "Custom: tuning a layer's material")
+        documented = first_cells(text)
+        knobs = sorted({n.split('_material_', 1)[1]
+                        for n in setting.get_name_list() if '_material_' in n})
+        self.assertTrue(knobs)
+        for k in knobs:
+            self.assertIn(k, documented, k)
