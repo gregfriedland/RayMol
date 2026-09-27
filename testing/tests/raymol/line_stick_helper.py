@@ -67,9 +67,15 @@ class TestLineStickHelperThreshold(testing.PyMOLTestCase):
         self.assertLinesSuppressed()
 
     def testHalfTransparentIsNotYetTranslucent(self):
-        # the boundary: "more than half"
+        # the boundary: "more than half", per bond...
         cmd.set('stick_transparency', 0.5, 'm1')
         self.assertLinesSuppressed()
+        # ...and for the object, which is what the rep records. One bond at
+        # 0.9 keeps its line, so the rep is built and has a value to read.
+        cmd.set_bond('stick_transparency', 0.9, 'm1 and name CA',
+                     'm1 and name CB')
+        self.build()
+        self.assertEqual(built_line_stick_helper('m1'), 1)
 
     def testAMostlyTransparentStickKeepsItsLines(self):
         cmd.set('stick_transparency', 0.6, 'm1')
