@@ -903,6 +903,7 @@ private:
   uint64_t _rtTBuiltSig = 0;
   bool _rtTReady = false;
   bool _rtTGeomDirty = false;          // a transparent-record entry was dropped
+  bool _rtTBuiltEmpty = false;         // _rtTBuiltSig built to nothing (all clipped away)
   size_t _rtTTriCount = 0;
   id<MTLAccelerationStructure> _rtTransAS = nil;
   id<MTLBuffer> _rtTColBuffer = nil;   // float4/tri: rgb, alpha

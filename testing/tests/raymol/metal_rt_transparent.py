@@ -156,7 +156,7 @@ class TestTheStructuresStaySeparate(testing.PyMOLTestCase):
                               r'_rtGeomDirty = true;\s*'
                               r'if \(g->second\.inTransparent\)\s*_rtTGeomDirty = true;')
         # ...and the transparent build is driven by its own flag
-        self.assertIn('!_rtTGeomDirty && _rtTFrameSig == _rtTBuiltSig', src)
+        self.assertRegex(src, r'!_rtTGeomDirty &&\s*_rtTFrameSig == _rtTBuiltSig')
 
     def testNothingIsBuiltWithoutOpaqueCasters(self):
         src, _rt = rt_source()
@@ -170,3 +170,9 @@ class TestTheStructuresStaySeparate(testing.PyMOLTestCase):
     def testTheShadowWalkCountsDistinctRepsNotHits(self):
         _src, rt = rt_source()
         self.assertIn('for (int k = 0; k < 32 && nSeen < 8 && T > 0.02; ++k)', rt)
+
+    def testAnAllClippedRecordIsNotRegatheredEveryFrame(self):
+        src, _rt = rt_source()
+        self.assertRegex(src, r'if \(nTris == 0\) \{\s*_rtTBuiltSig = _rtTFrameSig;\s*'
+                              r'_rtTBuiltEmpty = true;')
+        self.assertIn('((_rtTReady && _rtTransAS) || _rtTBuiltEmpty) && !_rtTGeomDirty', src)

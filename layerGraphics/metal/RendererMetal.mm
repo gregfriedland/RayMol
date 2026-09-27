@@ -3183,6 +3183,7 @@ void RendererMetal::releaseRayTracingTransAS()
   [_rtTOccBuffer release]; _rtTOccBuffer = nil;
   _rtTTriCount = 0;
   _rtTBuiltSig = 0;
+  _rtTBuiltEmpty = false;
   _rtTReady = false;
 }
 
@@ -3231,7 +3232,11 @@ void RendererMetal::ensureRayTracingTransAS()
     if (_rtTransAS) releaseRayTracingTransAS();
     return;
   }
-  if (_rtTReady && _rtTransAS && !_rtTGeomDirty && _rtTFrameSig == _rtTBuiltSig)
+  // Built already -- to a structure, or to nothing when every transparent
+  // triangle was clipped away (latched too, or that frame record would be
+  // re-gathered every frame for nothing).
+  if (((_rtTReady && _rtTransAS) || _rtTBuiltEmpty) && !_rtTGeomDirty &&
+      _rtTFrameSig == _rtTBuiltSig)
     return;
   _rtTGeomDirty = false;
 
@@ -3334,7 +3339,11 @@ void RendererMetal::ensureRayTracingTransAS()
 
   releaseRayTracingTransAS();
   const size_t nTris = occ.size();
-  if (nTris == 0) return;
+  if (nTris == 0) {
+    _rtTBuiltSig = _rtTFrameSig;
+    _rtTBuiltEmpty = true;
+    return;
+  }
   id<MTLBuffer> tb = [_device newBufferWithBytes:tris.data()
                                           length:tris.size() * sizeof(float)
                                          options:MTLResourceStorageModeShared];
