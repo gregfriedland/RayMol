@@ -138,14 +138,12 @@ _scene_object_capture = {}
 _LEGACY_OBJECT_CAPTURE = ("metal_rt_reflect", "metal_rt_reflect_tint",
                           "metal_rt_reflect_rough")
 
-# NOTE (#508): a MOVIE built from scenes replays only HALF of this. The animator
-# emits camera + global-setting keyframes and per-object TTT (emit_object_motion
-# below). Since the four rep materials are in CAPTURE too, the GLOBAL half does
-# animate across a scene cut -- but nothing re-applies the per-object overrides,
-# so in a marble -> clay movie every object EXCEPT the ones the user deliberately
-# styled changes material, and those stay frozen at whatever the last authoring
-# recall left on them. Recall itself is unaffected; this is a gap in the movie
-# path, tracked separately.
+# Movies replay BOTH halves of this at each scene cut: raymol_scene_anim.
+# enter_scene applies the globals and then, through apply_object_settings, the
+# per-object overrides (#508). They step when the cut frame is DISPLAYED --
+# sequential playback, loops and exports from the start; scrubbing straight to
+# a frame inside a span, or exporting from partway through one, does not run
+# that span's cut.
 
 # {scene_name: {obj_name: {setting: value}}} — per-object overrides of
 # OBJECT_CAPTURE. Every object alive at store time is a key, with {} when it had
@@ -207,29 +205,42 @@ _LIVE = '\x00live'
 
 
 class _Preserved:
+    """The snapshot lives on the instance and is installed under _LIVE only
+    while it is being put back, so nested preserved() blocks each restore
+    their own state, and nothing that walks the scene dicts (session_save,
+    prune) can see a phantom entry while the block is running."""
     def __init__(self, _self):
         self._self = _self
 
     def __enter__(self):
-        _scene_settings[_LIVE] = _capture(self._self)
-        _scene_object_settings[_LIVE] = _capture_object_settings(self._self)
-        _scene_object_capture[_LIVE] = tuple(OBJECT_CAPTURE)
+        self._settings = _capture(self._self)
+        self._objects = _capture_object_settings(self._self)
+        self._focus = _capture_focus(self._self)
         return self
 
     def __exit__(self, *exc):
+        _scene_settings[_LIVE] = self._settings
+        _scene_object_settings[_LIVE] = self._objects
+        _scene_object_capture[_LIVE] = tuple(OBJECT_CAPTURE)
+        _scene_focus[_LIVE] = self._focus
         try:
             apply_settings(_LIVE, self._self)
             _apply_object_settings(_LIVE, self._self)
+            # enter_scene redefines the autofocus target at every scene cut
+            # the scrub passes, so it is part of what must come back.
+            _apply_focus(_LIVE, self._self)
         finally:
             for d in (_scene_settings, _scene_object_settings,
-                      _scene_object_capture):
+                      _scene_object_capture, _scene_focus):
                 d.pop(_LIVE, None)
+            for key in [k for k in _reported if k[0] == _LIVE]:
+                _reported.discard(key)
         return False
 
 
 def preserved(_self=cmd):
-    """Context manager: put every captured global and per-object override back
-    as it was when the block exits (#508).
+    """Context manager: put every captured global, per-object override and the
+    autofocus target back as they were when the block exits (#508). Nests.
 
     For code that has to DISPLAY movie frames only to read something off them
     -- appkit_movie._scene_keyframes scrubs every frame to find the scene cuts
@@ -728,6 +739,11 @@ def session_save(session, *, _self=cmd):
         k: list(v) for k, v in _scene_object_capture.items()}
     session["raymol_scene_ttt"] = {k: dict(v) for k, v in _scene_ttt.items()}
     session["raymol_scene_focus"] = {k: list(v) for k, v in _scene_focus.items()}
+    # preserved() only installs its private entry while restoring; a save can
+    # never see it, but a session must never carry it.
+    for key in ("raymol_scene_settings", "raymol_scene_object_settings",
+                "raymol_scene_object_capture", "raymol_scene_focus"):
+        session[key].pop(_LIVE, None)
     return 1
 
 

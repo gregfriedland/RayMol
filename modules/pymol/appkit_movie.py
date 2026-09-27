@@ -207,7 +207,6 @@ def place_scene(frame, name, linear=0):
             cmd.scene(name, 'recall')    # now the live view+reps ARE the scene
             cmd.mview('store', first=n, scene=name)
         try:
-            from pymol import raymol_scenes as _rs
             motion = _rs.emit_object_motion(name, n)
         except Exception:
             motion = []
@@ -287,7 +286,11 @@ def make_movie(kind, duration=12.0, angle=30.0, axis='y', loop=1,
             movie.add_state_sweep(factor=int(factor), pause=float(pause), loop=loop)
         elif k == 'scenes':
             names = scenes if scenes else None
-            movie.add_scenes(names=names, pause=float(pause), loop=loop)
+            # add_scenes stores each scene with `mview store ... scene=`, which
+            # recalls it: read, not apply (#508), like the other authoring paths.
+            from pymol import raymol_scenes as _rs
+            with _rs.suspended():
+                movie.add_scenes(names=names, pause=float(pause), loop=loop)
         cmd.rewind()
     except Exception as e:
         print('MOVIE_ERR:' + str(e))
