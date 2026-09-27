@@ -257,18 +257,6 @@ class TestJelly(testing.PyMOLTestCase):
         build('m1', 'sticks')
         self.assertEqual(resolved_peel('m1'), 1)
 
-    def testBallAndStickJellyDegradesLikeGlass(self):
-        """stick_ball spheres arrive as cRepCyl and take stick_material, and the
-        sphere impostor is outside the glass family's scope. The whole rep
-        degrades -- shading AND implied alpha together, or a `default`-shaded
-        stick would still build 15% transparent."""
-        cmd.set('stick_ball', 1, 'm1')
-        cmd.set('stick_material', 'jelly', 'm1')
-        build('m1', 'sticks')
-        self.assertAlmostEqual(built_transparency('m1', repres['sticks']), 0.0,
-                               places=4)
-        self.assertEqual(resolved_peel('m1'), 0)
-
     def testAutoPeelStillRefusesWhenAnotherRepIsTransparent(self):
         """Peeling is object-scoped, so jelly inherits the refusal: a jelly
         surface must not make an already-translucent cartoon vanish."""
@@ -358,17 +346,53 @@ class TestJelly(testing.PyMOLTestCase):
         with self.assertRaisesRegex(Exception, 'not built'):
             built_line_stick_helper('m1')
 
-    # -- the representations jelly cannot draw on -----------------------------
+    # -- spheres and ball-and-stick (#526) ------------------------------------
 
-    def testJellyOnSpheresDrawsAsDefault(self):
-        """Asserted on the EFFECTIVE id -- what reaches the shader -- not on the
-        setting, which still holds what the user typed."""
+    def testJellyDrawsOnSpheres(self):
+        """Jelly is dense enough (implied alpha 0.85) to read as gummy balls,
+        so unlike clear and frosted glass it is NOT degraded on sphere
+        impostors. Asserted on the EFFECTIVE id -- what reaches the shader."""
         by_name = {n: i for i, n in setting.get_material_names(0)}
         jelly = by_name['jelly']
-        self.assertEqual(_cmd.get_effective_material(jelly, repres['spheres']), 0)
-        for rep in ('surface', 'cartoon', 'sticks'):
+        for rep in ('surface', 'cartoon', 'sticks', 'spheres'):
             self.assertEqual(
                 _cmd.get_effective_material(jelly, repres[rep]), jelly, rep)
+        for clear in ('glass', 'frosted_glass'):
+            self.assertEqual(_cmd.get_effective_material(
+                by_name[clear], repres['spheres']), 0, clear)
+
+    def testAJellySphereRepBuildsWithJellysImpliedAlpha(self):
+        """Shading as jelly while building opaque would be a jelly-coloured
+        default. Read off the BUILT rep, not re-derived from the settings."""
+        cmd.hide('everything', 'm1')
+        cmd.set('sphere_material', 'jelly', 'm1')
+        build('m1', 'spheres')
+        self.assertAlmostEqual(built_transparency('m1', repres['spheres']),
+                               JELLY_TRANSPARENCY, places=5)
+        family_, mode = draw_params('m1', repres['spheres'])[:2]
+        self.assertEqual((family_, mode), (GLASS_FAMILY, JELLY_MODE))
+        # the user's slider still wins
+        cmd.set('sphere_transparency', 0.4, 'm1')
+        build('m1', 'spheres')
+        self.assertAlmostEqual(built_transparency('m1', repres['spheres']),
+                               0.4, places=5)
+
+    def testJellyBallAndStickStaysJelly(self):
+        """Glass on a stick_ball rep degrades the WHOLE rep to default (its
+        balls would be near-invisible discs). Jelly's balls are fine, so a
+        jelly ball-and-stick keeps its material and its implied alpha."""
+        cmd.hide('everything', 'm1')
+        cmd.set('stick_material', 'jelly', 'm1')
+        cmd.set('stick_ball', 1, 'm1')
+        build('m1', 'sticks')
+        family_, mode = draw_params('m1', repres['sticks'])[:2]
+        self.assertEqual((family_, mode), (GLASS_FAMILY, JELLY_MODE))
+        self.assertAlmostEqual(built_transparency('m1', repres['sticks']),
+                               JELLY_TRANSPARENCY, places=5)
+        # ...while clear glass on the same ball-and-stick still degrades
+        cmd.set('stick_material', 'glass', 'm1')
+        build('m1', 'sticks')
+        self.assertEqual(draw_params('m1', repres['sticks'])[0], 0)
 
     # -- the non-negotiables --------------------------------------------------
 

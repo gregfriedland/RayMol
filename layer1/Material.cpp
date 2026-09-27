@@ -245,20 +245,17 @@ MaterialParams MaterialResolve(int id, int repType)
   if (!row || !row->implemented) {
     return MaterialParams{};
   }
-  /* No glass-family material draws on sphere impostors. Not for want of a
-     path: buildImpostorPipelines() builds the sphere pipelines for every
-     implemented family, and mat_impostor_composite's kMatGlass branch is what
-     the cylinder impostor already uses. It is a deliberate scope line -- #487
-     onward specify glass on cartoon, surface and sticks, and #496 specifies
-     the same three for jelly -- kept in one place so a rep cannot shade as a
-     material while building with its implied alpha.
-
-     The original reason given here, that glass spheres "would float as
-     near-invisible discs", is true of glass at alpha 0.15 and NOT of jelly at
-     0.85, which would render as perfectly reasonable gummy balls. Enabling it
-     is a behaviour change outside this ticket; see the "Found while building"
-     list on #503. */
-  if (row->family == cMaterialFamily_glass && repType == cRepSphere) {
+  /* Clear and frosted glass do not draw on sphere impostors: at an implied
+     alpha of 0.15 / 0.2 a sphere reads as a near-invisible disc, and a
+     ball-and-stick of them as scattered smudges. Jelly DOES (#526): at 0.85 it
+     is a dense body, gummy balls are the representation a gummy most
+     obviously belongs on, and the path already exists --
+     buildImpostorPipelines() builds the sphere pipelines for every implemented
+     family and mat_impostor_composite's kMatGlass branch dispatches jelly.
+     Kept in one place so a rep cannot shade as a material while building with
+     its implied alpha (MaterialEffectiveTransparency resolves through here). */
+  if (row->family == cMaterialFamily_glass && repType == cRepSphere &&
+      row->id != cMaterial_jelly) {
     return MaterialParams{};
   }
   return row->params;
@@ -422,7 +419,7 @@ static MaterialParams MaterialResolveForDrawCached(PyMOLGlobals* G,
   // implied alpha has to obey it too: a ball-and-stick that shades as `default`
   // while still building 85% transparent is not "rendering default".
   if (params.family == cMaterialFamily_glass && repType == cRepCyl &&
-      emitsStickBalls) {
+      params.mode != cMaterial_jelly && emitsStickBalls) {
     return MaterialParams{};
   }
   return params;
@@ -438,6 +435,7 @@ MaterialParams MaterialResolveForDraw(PyMOLGlobals* G, const CSetting* set1,
      briefly did -- put an O(atoms) pass back on the `default` path, which is
      the exact cost the cached variant exists to remove. */
   if (params.family == cMaterialFamily_glass && repType == cRepCyl &&
+      params.mode != cMaterial_jelly &&
       MaterialRepEmitsStickBalls(G, cs, set1, set2)) {
     return MaterialParams{};
   }
