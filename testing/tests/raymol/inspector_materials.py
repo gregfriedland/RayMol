@@ -221,3 +221,126 @@ class TestSceneMaterialRows(testing.PyMOLTestCase):
         by_name = {n: i for i, n in setting.get_material_names(0)}
         self.assertEqual(int(scene['material_default']), by_name['marble'])
         self.assertEqual(int(scene['material_env']), 1)
+
+
+class TestCustomMaterial(testing.PyMOLTestCase):
+    """The Custom material's Inspector half (#569), Python side: the knobs the
+    MATKNOBS lines carry, the per-rep state the poll ships, and what commands
+    of the form the Swift strings send (MaterialInspectorTests pins those
+    strings; the line format is the join) do to the session."""
+    KNOBS = ('reflect', 'tint', 'rough', 'knob1', 'knob2', 'knob3',
+             'knob4', 'knob5', 'knob6')
+
+    def setUp(self):
+        super().setUp()
+        cmd.reinitialize()
+        cmd.fragment('ala', 'm1')
+        cmd.hide('everything', 'm1')
+        cmd.show('sticks', 'm1')
+
+    def rep(self, name='sticks'):
+        return [r for r in reps_payload('m1') if r['rep'] == name][0]
+
+    def testEachMaterialsKnobsComeFromTheCore(self):
+        from pymol import _cmd
+        for mid, name in ai.material_names():
+            self.assertEqual([k[0] for k in ai.material_knobs(mid)],
+                             [k[0] for k in _cmd.get_material_knobs(mid)], name)
+        by_name = {n: i for i, n in ai.material_names()}
+        self.assertEqual(ai.material_knobs(by_name['default']), [])
+        self.assertEqual([k[0] for k in ai.material_knobs(by_name['marble'])],
+                         ['knob2', 'knob5', 'knob6'])
+
+    def testEveryPolledLineFitsInOneFeedbackLine(self):
+        """PyMOL splits feedback at ~1024 chars (OrthoLineLength), and a split
+        line fails to parse on the Swift side -- which left every material
+        menu disabled when the knobs rode on the MATERIALS line."""
+        import io, contextlib, json
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ai.poll_materials()
+        lines = buf.getvalue().splitlines()
+        self.assertTrue(lines[0].startswith('MATERIALS:'))
+        # names only: the knobs must not ride here, at any compactness -- the
+        # table is ~70 chars from the cap even with compact separators
+        for row in json.loads(lines[0][len('MATERIALS:'):]):
+            self.assertEqual(len(row), 2, row)
+        knob_lines = [l for l in lines if l.startswith('MATKNOBS:')]
+        self.assertGreaterEqual(len(knob_lines), 9)
+        for l in lines:
+            self.assertLess(len(l), 1000, l[:60])
+        mid, payload = knob_lines[0][len('MATKNOBS:'):].split(':', 1)
+        self.assertEqual(json.loads(payload), ai.material_knobs(int(mid)))
+
+    def testTheRepShipsWhatTheDrawUsesAndWhatIsOverridden(self):
+        cmd.set('stick_material', 'metallic', 'm1')
+        m = self.rep()['material']
+        self.assertAlmostEqual(m['knobs']['reflect'], 0.6, places=4)
+        self.assertEqual(m['custom'], [])
+        cmd.set('stick_material_rough', 0.05, 'm1')
+        m = self.rep()['material']
+        self.assertAlmostEqual(m['knobs']['rough'], 0.05, places=4)
+        self.assertEqual(m['custom'], ['rough'])
+
+    def testAGlobalValueIsNotShownAsAnOverride(self):
+        cmd.set('stick_material', 'metallic', 'm1')
+        cmd.set('stick_material_rough', 0.9)          # global, not the object's
+        self.assertEqual(self.rep()['material']['custom'], [])
+
+    def testPickingANamedMaterialClearsTheOverrides(self):
+        """What CustomMaterial.pick sends: set the material, and unset the
+        overrides the payload reports in `set`. Re-picking a material that HAS
+        the overridden knob is what shows the unset ran -- a material without
+        it would hide a leftover anyway."""
+        cmd.set('stick_material', 'metallic', 'm1')
+        cmd.set('stick_material_rough', 0.05, 'm1')
+        self.assertEqual(self.rep()['material']['set'], ['rough'])
+        cmd.do('set stick_material, 2, m1\nunset stick_material_rough, m1')
+        self.assertEqual(cmd.get('stick_material', 'm1'), 'plastic')
+        m = self.rep()['material']
+        self.assertEqual(m['custom'], [])
+        self.assertEqual(m['set'], [])
+        self.assertAlmostEqual(m['knobs']['rough'], 0.15, places=4)   # plastic's own
+
+    def testAKnobCommandWritesTheLayersOverride(self):
+        """What CustomMaterial.setKnob sends."""
+        cmd.set('stick_material', 'marble', 'm1')
+        cmd.do('set stick_material_knob5, 0.2500, m1')
+        m = self.rep()['material']
+        self.assertEqual(m['custom'], ['knob5'])
+        self.assertAlmostEqual(m['knobs']['knob5'], 0.25, places=4)
+
+    def testADegradedLayerDrawsDefaultAndOffersNoKnobs(self):
+        """Glass on a ball-and-stick degrades to `default`: the layer draws
+        material 0, so the Inspector must not offer Custom there."""
+        cmd.set('stick_material', 'glass', 'm1')
+        cmd.set('stick_ball', 1, 'm1')
+        cmd.set('stick_material_rough', 0.5, 'm1')
+        m = self.rep()['material']
+        self.assertEqual(m['drawn'], 0)
+        self.assertEqual(m['custom'], [])
+        cmd.set('stick_ball', 0, 'm1')
+        by_name = {n: i for i, n in setting.get_material_names(1)}
+        self.assertEqual(self.rep()['material']['drawn'], by_name['glass'])
+
+    def testALeftoverOverrideIsNotCustomButIsStillCleared(self):
+        """An override the drawn material has no knob for is ignored by the
+        core, so it must not make the row read Custom -- but it is still in
+        `set`, what a pick or Reset unsets, or it would come back the next
+        time a material with that knob is picked."""
+        cmd.set('stick_material', 'metallic', 'm1')
+        cmd.set('stick_material_rough', 0.05, 'm1')
+        cmd.set('stick_material', 'marble', 'm1')     # marble has no rough
+        m = self.rep()['material']
+        self.assertEqual(m['custom'], [])
+        self.assertEqual(m['set'], ['rough'])
+
+    def testEachLayerReportsItsOwnOverrides(self):
+        cmd.show('spheres', 'm1')
+        cmd.set('sphere_material', 'metallic', 'm1')
+        cmd.set('stick_material', 'metallic', 'm1')
+        cmd.set('sphere_material_rough', 0.07, 'm1')
+        spheres = self.rep('spheres')['material']
+        self.assertEqual(spheres['custom'], ['rough'])
+        self.assertAlmostEqual(spheres['knobs']['rough'], 0.07, places=4)
+        self.assertEqual(self.rep('sticks')['material']['custom'], [])

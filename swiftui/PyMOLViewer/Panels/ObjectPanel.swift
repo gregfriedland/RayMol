@@ -74,6 +74,31 @@ struct RepState: Equatable {
     // Present when this rep has per-atom transparency overriding the object-level
     // slider; carries the transparency setting name and the effective min–max range.
     var atomTransp: AtomTransp? = nil
+    // The Custom material state of a material-bearing rep (#569): the knob
+    // values the draw uses and which of them the object overrides.
+    var material: MaterialCustomState? = nil
+}
+
+/// One knob a material has (#568): the override setting's suffix, what it does,
+/// and a slider range. From `_cmd.get_material_knobs` via one `MATKNOBS:` line per material.
+struct MaterialKnobInfo: Equatable {
+    let suffix: String
+    let label: String
+    let min: Double
+    let max: Double
+}
+
+/// A rep's Custom material state, from the rep payload's `material` entry.
+struct MaterialCustomState: Equatable {
+    /// The material the layer DRAWS with -- 0 when it has degraded to
+    /// `default` (glass on spheres or ball-and-stick), which has no knobs.
+    var drawn: Int = 0
+    var knobs: [String: Double] = [:]   // suffix -> the value the draw uses
+    var custom: Set<String> = []        // overridden knobs the drawn material has
+    /// Every override the object carries for this layer, including ones the
+    /// drawn material ignores: what a pick, Inherit or Reset must unset.
+    var set: [String] = []
+    var isCustom: Bool { !custom.isEmpty }
 }
 
 /// Effective per-atom transparency range for a rep whose object-level slider is
@@ -312,6 +337,77 @@ enum TranslucentLayers {
         return peel == 0
             ? "Every layer is drawn, inner walls and joins included."
             : "One skin: the inner walls and joins are not drawn."
+    }
+}
+
+/// The Custom material (#569): what the material row says and sends.
+///
+/// A layer's material is its base material plus the object's overrides of the
+/// base's own knobs (`<stem>_material_<knob>`, #568). "Custom" is not a
+/// material id: it is the state "this layer has overrides", shown as
+/// "Custom (base)". Picking a named material clears the overrides, so a
+/// layer never keeps tuning written for a different material.
+enum CustomMaterial {
+    /// Every knob suffix, in the core's slot order.
+    static let knobs = ["reflect", "tint", "rough", "knob1", "knob2", "knob3",
+                        "knob4", "knob5", "knob6"]
+
+    /// `cartoon_material` -> `cartoon`, `stick_material` -> `stick`.
+    static func stem(_ materialSetting: String) -> String {
+        materialSetting.hasSuffix("_material")
+            ? String(materialSetting.dropLast("_material".count)) : materialSetting
+    }
+
+    /// What the row's menu reads.
+    static func label(base: String, isCustom: Bool) -> String {
+        isCustom ? "Custom (\(base))" : base
+    }
+
+    /// The knobs a layer may offer as Custom: those of the material it DRAWS
+    /// with, and only when that is the material its setting names. A layer
+    /// that has degraded to `default` (glass on spheres or ball-and-stick)
+    /// draws 0 and offers none.
+    static func offeredKnobs(base: Int, drawn: Int?,
+                             table: [Int: [MaterialKnobInfo]]) -> [MaterialKnobInfo] {
+        guard let drawn, drawn == base else { return [] }
+        return table[drawn] ?? []
+    }
+
+    /// What a pick, Inherit or Reset must unset: the overrides the last poll
+    /// reported, plus any knob written since (the poll lags a drag), each once.
+    static func overrides(set: [String], touched: Set<String>) -> [String] {
+        set + knobs.filter { touched.contains($0) && !set.contains($0) }
+    }
+
+    /// Unset the given overrides of this layer -- the ones the object carries
+    /// (MaterialCustomState.set), so a layer with none sends nothing extra.
+    static func clear(_ materialSetting: String, _ suffixes: [String],
+                      on obj: String) -> String {
+        suffixes.map { "unset \(stem(materialSetting))_material_\($0), \(obj)" }
+            .joined(separator: "\n")
+    }
+
+    /// Pick a named material: set it, and drop the overrides written for the
+    /// previous one.
+    static func pick(_ materialSetting: String, id: Int, clearing suffixes: [String],
+                     on obj: String) -> String {
+        (["set \(materialSetting), \(id), \(obj)"]
+            + (suffixes.isEmpty ? [] : [clear(materialSetting, suffixes, on: obj)]))
+            .joined(separator: "\n")
+    }
+
+    /// Inherit: unset the material and its overrides.
+    static func inherit(_ materialSetting: String, clearing suffixes: [String],
+                        on obj: String) -> String {
+        (["unset \(materialSetting), \(obj)"]
+            + (suffixes.isEmpty ? [] : [clear(materialSetting, suffixes, on: obj)]))
+            .joined(separator: "\n")
+    }
+
+    /// One knob's override.
+    static func setKnob(_ materialSetting: String, _ suffix: String, _ value: Double,
+                        on obj: String) -> String {
+        "set \(stem(materialSetting))_material_\(suffix), \(String(format: "%.4f", value)), \(obj)"
     }
 }
 
@@ -3913,6 +4009,162 @@ private struct ObjectMaterialRows: View {
     }
 }
 
+/// A layer's material row, with the Custom material (#569).
+///
+/// The menu offers the materials, then **Custom…** when the current material
+/// has knobs. Custom keeps the current material as the base and shows its
+/// knobs as sliders at the values the draw uses; moving one writes that
+/// layer's override (#568), and the menu then reads "Custom (base)". Picking a
+/// named material clears the overrides; Inherit clears both.
+private struct MaterialSection: View {
+    let objName: String
+    let prop: RepProperty
+    let value: Double
+    let custom: MaterialCustomState?
+    @EnvironmentObject var engine: PyMOLEngine
+    /// Custom chosen but nothing moved yet: the sliders show, nothing is
+    /// written. Overrides in the payload keep the section open by themselves.
+    @State private var customOpen = false
+    /// Knobs this view has written since the last pick, Inherit or Reset.
+    /// `set` in the payload lags a drag by up to a poll, so a pick in that
+    /// window must still clear what was just tuned; an extra unset of a knob
+    /// the payload has since caught up on is harmless.
+    @State private var touched: Set<String> = []
+
+    private var baseID: Int { Int(value.rounded()) }
+    private var baseName: String {
+        engine.materialNames.first(where: { $0.id == baseID })?.name
+            ?? (baseID == 0 ? "default" : "#\(baseID)")
+    }
+    /// The knobs of the material the layer DRAWS with. Not the setting's: a
+    /// degraded layer draws `default` and has none, so Custom is not offered.
+    private var knobs: [MaterialKnobInfo] {
+        CustomMaterial.offeredKnobs(base: baseID, drawn: custom?.drawn,
+                                    table: engine.materialKnobs)
+    }
+    private var overrides: [String] {
+        CustomMaterial.overrides(set: custom?.set ?? [], touched: touched)
+    }
+    private var isCustom: Bool { custom?.isCustom ?? false }
+    private var showsKnobs: Bool { !knobs.isEmpty && (isCustom || customOpen) }
+
+    var body: some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 6) {
+                Text(prop.label)
+                    .font(.system(size: 10))
+                    .foregroundColor(PanelTheme.textColor)
+                    .frame(width: 78, alignment: .leading)
+                menu
+                Spacer(minLength: 0)
+            }
+            if showsKnobs {
+                ForEach(knobs, id: \.suffix) { k in
+                    HStack(spacing: 6) {
+                        Text(k.label)
+                            .font(.system(size: 10))
+                            .foregroundColor(PanelTheme.textColor)
+                            .frame(width: 78, alignment: .leading)
+                        LabeledSlider(prop: sliderProp(k),
+                                      value: custom?.knobs[k.suffix] ?? k.min,
+                                      onLive: { setKnob(k.suffix, $0) },
+                                      onCommit: { setKnob(k.suffix, $0) })
+                    }
+                }
+                HStack(spacing: 6) {
+                    Text(isCustom ? "Tuned from \(baseName)" : "Move a slider to tune \(baseName)")
+                        .font(.system(size: 9))
+                        .foregroundColor(PanelTheme.disabledColor)
+                    Spacer(minLength: 4)
+                    if isCustom {
+                        Button(action: reset) {
+                            Text("Reset")
+                                .font(.system(size: 9))
+                                .padding(.horizontal, 8).padding(.vertical, 1)
+                                .overlay(RoundedRectangle(cornerRadius: 4)
+                                    .stroke(PanelTheme.disabledColor.opacity(0.55), lineWidth: 0.5))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Back to \(baseName)'s own values.")
+                    }
+                }
+                .padding(.leading, 84)
+            }
+        }
+    }
+
+    private var menu: some View {
+        Menu {
+            ForEach(engine.materialNames, id: \.id) { m in
+                let sel = m.id == baseID && !(isCustom || customOpen)
+                Button(action: { pick(m.id) }) {
+                    Text(sel ? "• \(m.name)" : m.name)
+                }
+            }
+            if !knobs.isEmpty {
+                Divider()
+                Button(action: { customOpen = true }) {
+                    Text((isCustom || customOpen) ? "• Custom (\(baseName))" : "Custom…")
+                }
+            }
+            Divider()
+            Button("Inherit", action: inherit)
+        } label: {
+            HStack(spacing: 3) {
+                // "Custom" once something is tuned, not merely opened.
+                Text(CustomMaterial.label(base: baseName, isCustom: isCustom))
+                    .font(.system(size: 10))
+                Text("⌄").font(.system(size: 9))
+            }
+            .foregroundColor(PanelTheme.buttonText)
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .background(PanelTheme.buttonBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(engine.materialNames.isEmpty)
+        .opacity(engine.materialNames.isEmpty ? 0.4 : 1.0)
+    }
+
+    private func sliderProp(_ k: MaterialKnobInfo) -> RepProperty {
+        let span = k.max - k.min
+        return RepProperty(setting: "\(CustomMaterial.stem(prop.setting))_material_\(k.suffix)",
+                           label: k.label, kind: .slider, min: k.min, max: k.max,
+                           step: span / 100, decimals: span >= 10 ? 1 : 2)
+    }
+
+    private func pick(_ id: Int) {
+        customOpen = false
+        defer { touched = [] }
+        engine.runCommand(CustomMaterial.pick(prop.setting, id: id, clearing: overrides,
+                                              on: objName), naming: objName)
+        engine.refreshExpandedDetail()
+    }
+
+    private func inherit() {
+        customOpen = false
+        defer { touched = [] }
+        engine.runCommand(CustomMaterial.inherit(prop.setting, clearing: overrides,
+                                                 on: objName), naming: objName)
+        engine.refreshExpandedDetail()
+    }
+
+    private func reset() {
+        customOpen = false
+        defer { touched = [] }
+        guard !overrides.isEmpty else { return }
+        engine.runCommand(CustomMaterial.clear(prop.setting, overrides, on: objName), naming: objName)
+        engine.refreshExpandedDetail()
+    }
+
+    private func setKnob(_ suffix: String, _ v: Double) {
+        touched.insert(suffix)
+        engine.runCommand(CustomMaterial.setKnob(prop.setting, suffix, v, on: objName), naming: objName)
+    }
+}
+
 /// A small segmented control over an INT setting whose options carry words
 /// rather than digits.
 ///
@@ -3961,7 +4213,14 @@ private struct RepPropertyGrid: View {
                 }
             }
             ForEach(spec.properties) { p in
-                gridRow(p.label) { control(for: p) }
+                if p.kind == .menu && p.optionSource == .materials {
+                    // The material row owns its Custom sliders (#569).
+                    MaterialSection(objName: objName, prop: p,
+                                    value: state.values[p.setting] ?? 0,
+                                    custom: state.material)
+                } else {
+                    gridRow(p.label) { control(for: p) }
+                }
                 // Per-atom transparency detail sits directly under the matching
                 // transparency slider so it's clear the slider is only a baseline.
                 if let at = state.atomTransp, at.setting == p.setting {

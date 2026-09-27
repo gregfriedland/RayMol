@@ -127,6 +127,83 @@ final class MaterialInspectorTests: XCTestCase {
         XCTAssertTrue(PyMOLEngine.parseObjMeta(["peel_row": 1]).hasPeelRow)
     }
 
+    // MARK: - the Custom material (#569)
+
+    func testCustomReadsAsCustomOfItsBase() {
+        XCTAssertEqual(CustomMaterial.label(base: "metallic", isCustom: true), "Custom (metallic)")
+        XCTAssertEqual(CustomMaterial.label(base: "metallic", isCustom: false), "metallic")
+    }
+
+    /// The literals are the join with inspector_materials.py, which runs them.
+    func testPickingANamedMaterialClearsTheLayersOverrides() {
+        let lines = CustomMaterial.pick("stick_material", id: 7, clearing: ["rough", "knob5"],
+                                        on: "m1").components(separatedBy: "\n")
+        XCTAssertEqual(lines, ["set stick_material, 7, m1",
+                               "unset stick_material_rough, m1",
+                               "unset stick_material_knob5, m1"])
+        // nothing to clear: one line, not ten
+        XCTAssertEqual(CustomMaterial.pick("stick_material", id: 7, clearing: [], on: "m1"),
+                       "set stick_material, 7, m1")
+    }
+
+    func testInheritClearsTheMaterialAndItsOverrides() {
+        XCTAssertEqual(CustomMaterial.inherit("surface_material", clearing: ["tint"], on: "m1"),
+                       "unset surface_material, m1\nunset surface_material_tint, m1")
+        XCTAssertEqual(CustomMaterial.inherit("surface_material", clearing: [], on: "m1"),
+                       "unset surface_material, m1")
+    }
+
+    func testAKnobWritesTheLayersOverride() {
+        XCTAssertEqual(CustomMaterial.setKnob("sphere_material", "knob5", 0.25, on: "m1"),
+                       "set sphere_material_knob5, 0.2500, m1")
+        XCTAssertEqual(CustomMaterial.stem("cartoon_material"), "cartoon")
+    }
+
+    /// The race fix: a knob dragged since the last poll is cleared too.
+    func testAPickClearsWhatWasTunedSinceTheLastPoll() {
+        XCTAssertEqual(CustomMaterial.overrides(set: [], touched: ["rough"]), ["rough"])
+        XCTAssertEqual(CustomMaterial.overrides(set: ["rough"], touched: ["rough", "tint"]),
+                       ["rough", "tint"])
+        XCTAssertEqual(CustomMaterial.overrides(set: ["knob5"], touched: []), ["knob5"])
+    }
+
+    /// The gate that keeps Custom off a layer that has degraded to `default`
+    /// (glass on spheres or ball-and-stick): knobs come from the DRAWN
+    /// material, and only when it is the one the setting names.
+    func testCustomIsOfferedOnlyForTheMaterialTheLayerDraws() {
+        let rough = MaterialKnobInfo(suffix: "rough", label: "Roughness", min: 0, max: 1)
+        let table: [Int: [MaterialKnobInfo]] = [4: [rough], 3: [rough]]
+        XCTAssertEqual(CustomMaterial.offeredKnobs(base: 4, drawn: 4, table: table), [rough])
+        XCTAssertEqual(CustomMaterial.offeredKnobs(base: 4, drawn: 0, table: table), [])  // degraded
+        XCTAssertEqual(CustomMaterial.offeredKnobs(base: 4, drawn: nil, table: table), []) // no payload
+        XCTAssertEqual(CustomMaterial.offeredKnobs(base: 0, drawn: 0, table: table), [])
+    }
+
+    /// One short line per material: the whole table on one line is over
+    /// PyMOL's ~1024-char feedback cap and would be split.
+    func testEachMaterialsKnobsArriveOnTheirOwnLine() {
+        let parsed = PyMOLEngine.parseMaterialKnobs(
+            "MATKNOBS:7:[[\"knob2\",\"Vein scale\",0.02,1],[\"knob6\",\"Vein sharpness\",1,20]]")
+        XCTAssertEqual(parsed?.0, 7)
+        XCTAssertEqual(parsed?.1.map { $0.suffix }, ["knob2", "knob6"])
+        XCTAssertEqual(parsed?.1.last, MaterialKnobInfo(suffix: "knob6", label: "Vein sharpness", min: 1, max: 20))
+        XCTAssertNil(PyMOLEngine.parseMaterialKnobs("MATKNOBS:x:[]"))
+        XCTAssertNil(PyMOLEngine.parseMaterialKnobs("MATERIALS:[[0,\"default\"]]"))
+    }
+
+    func testTheRepPayloadCarriesTheCustomState() {
+        let st = PyMOLEngine.parseMaterialCustom(
+            ["material": ["drawn": 3, "knobs": ["reflect": 0.6, "rough": 0.05], "custom": ["rough"],
+                          "set": ["rough", "knob5"]]])
+        XCTAssertEqual(st?.drawn, 3)
+        XCTAssertEqual(st?.set, ["rough", "knob5"])
+        XCTAssertEqual(st?.knobs["rough"], 0.05)
+        XCTAssertEqual(st?.custom, ["rough"])
+        XCTAssertTrue(st?.isCustom ?? false)
+        XCTAssertNil(PyMOLEngine.parseMaterialCustom(["vals": [:]]))
+        XCTAssertFalse(MaterialCustomState().isCustom)
+    }
+
     // MARK: - the two scene-wide rows
 
     /// The Scene panel's global Reflections / tint / roughness sliders drove

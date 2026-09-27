@@ -218,6 +218,9 @@ final class PyMOLEngine: ObservableObject {
     /// looks this build cannot draw. Only the IMPLEMENTED rows arrive here --
     /// the rest are real ids that still work by name from the command line.
     @Published var materialNames: [(id: Int, name: String)] = []
+    /// Each material's Custom knobs (#569), by material id, from the
+    /// `MATKNOBS:<id>:` lines that follow MATERIALS.
+    @Published var materialKnobs: [Int: [MaterialKnobInfo]] = [:]
     /// How many times the material table has been asked for; see
     /// requestMaterialsIfNeeded().
     private var materialRequests = 0
@@ -3712,6 +3715,8 @@ final class PyMOLEngine: ObservableObject {
                     // swallow
                 } else if line.hasPrefix("MATERIALS:") {
                     parseMaterialsFeedback(line)
+                } else if line.hasPrefix("MATKNOBS:") {
+                    parseMaterialKnobsFeedback(line)
                 } else if line.hasPrefix("SETTINGS:ready") {
                     loadSettingsCatalogFile()
                 } else if line.hasPrefix("SETTINGS:err") {
@@ -3953,6 +3958,48 @@ final class PyMOLEngine: ObservableObject {
         DispatchQueue.main.async { self.materialNames = out }
     }
 
+    private func parseMaterialKnobsFeedback(_ line: String) {
+        guard let (id, knobs) = PyMOLEngine.parseMaterialKnobs(line) else { return }
+        DispatchQueue.main.async { self.materialKnobs[id] = knobs }
+    }
+
+    /// `MATKNOBS:<id>:[[suffix, label, min, max], ...]` -> (id, knobs). One
+    /// line per material: the whole table in one line is over PyMOL's ~1024-
+    /// char feedback cap, and a split line would not parse.
+    static func parseMaterialKnobs(_ line: String) -> (Int, [MaterialKnobInfo])? {
+        guard line.hasPrefix("MATKNOBS:") else { return nil }
+        let rest = line.dropFirst("MATKNOBS:".count)
+        guard let colon = rest.firstIndex(of: ":"), let id = Int(rest[..<colon]) else { return nil }
+        let json = String(rest[rest.index(after: colon)...])
+        guard let data = json.data(using: .utf8),
+              let ks = try? JSONSerialization.jsonObject(with: data) as? [[Any]]
+        else { return nil }
+        let knobs: [MaterialKnobInfo] = ks.compactMap { k in
+            guard k.count >= 4, let s = k[0] as? String, let l = k[1] as? String,
+                  let lo = (k[2] as? NSNumber)?.doubleValue,
+                  let hi = (k[3] as? NSNumber)?.doubleValue, lo < hi else { return nil }
+            return MaterialKnobInfo(suffix: s, label: l, min: lo, max: hi)
+        }
+        return (id, knobs)
+    }
+
+    /// A rep payload's `material` entry -> MaterialCustomState, or nil.
+    static func parseMaterialCustom(_ r: [String: Any]) -> MaterialCustomState? {
+        guard let m = r["material"] as? [String: Any] else { return nil }
+        var st = MaterialCustomState()
+        st.drawn = (m["drawn"] as? NSNumber)?.intValue ?? 0
+        if let ks = m["knobs"] as? [String: Any] {
+            for (k, v) in ks { st.knobs[k] = (v as? NSNumber)?.doubleValue ?? 0 }
+        }
+        if let cs = m["custom"] as? [Any] {
+            st.custom = Set(cs.compactMap { $0 as? String })
+        }
+        if let ss = m["set"] as? [Any] {
+            st.set = ss.compactMap { $0 as? String }
+        }
+        return st
+    }
+
     // the feedback line is just the "OBJDETAIL:ready" trigger) → objectDetails +
     // sceneState. File-based to avoid the ~1KB feedback-line cap splitting the
     // payload and leaking continuation lines into the terminal log.
@@ -3989,7 +4036,8 @@ final class PyMOLEngine: ObservableObject {
                         values: values,
                         color: r["color"] as? String ?? "inherit",
                         settingColors: settingColors,
-                        atomTransp: atomTransp)
+                        atomTransp: atomTransp,
+                        material: PyMOLEngine.parseMaterialCustom(r))
                 }
             }
         }
