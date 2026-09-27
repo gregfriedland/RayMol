@@ -2499,14 +2499,13 @@ void SceneRenderMetal(PyMOLGlobals* G)
     }
     // Transparent OIT wraps every cell: all cells accumulate into the
     // full-frame OIT targets, resolved once in endFrame -- so only the frame's
-    // FIRST transparent encoder may clear them, which resetTransparentOIT
-    // arms here and beginTransparentOIT enforces.
+    // FIRST transparent encoder may clear them, which beginFrame arms and
+    // beginTransparentOIT enforces.
     //
     // Peel runs per cell, not once for the frame: the peel depth is a
     // full-frame texture and a second cell's pre-pass would overwrite the
     // first's. SceneSetMetalGridCell's scissor keeps each cell's draws inside
     // its own rectangle, so a cell's peel cannot reach across the border.
-    G->Renderer->resetTransparentOIT();
     for (int slot = I->grid.first_slot; slot <= I->grid.last_slot; ++slot) {
       SceneSetMetalGridCell(G, &I->grid, sceneVP, slot);
       SceneRenderTransparentMetal(G, &context, normal, &I->grid, peeled);
@@ -2524,7 +2523,6 @@ void SceneRenderMetal(PyMOLGlobals* G)
       SceneRenderAll(G, &context, normal, nullptr, pass, false, 0.0f,
           &I->grid, 0, SceneRenderWhich::All, SceneRenderOrder::GadgetsLast);
     }
-    G->Renderer->resetTransparentOIT();
     SceneRenderTransparentMetal(G, &context, normal, &I->grid, peeled);
   }
 
