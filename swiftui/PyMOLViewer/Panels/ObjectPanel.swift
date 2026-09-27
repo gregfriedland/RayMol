@@ -111,22 +111,8 @@ struct ObjStateMeta: Equatable {
     /// the object's request; the frame can still decline it (see
     /// CmdGetObjectPeel).
     var peelResolved: Bool = false
-    /// Object-level `metal_rt_reflect` / `_tint` / `_rough`.
-    var reflect: [Double] = [0, 0, 0]
-    /// True when every shown rep's material ignores the legacy triple, so the
-    /// group can be disabled and say why. Much narrower than "has a material":
-    /// only the GLASS family is deaf to it, a REFLECTIVE material still
-    /// honours an explicit value (#497), and a PROCEDURAL one takes the triple
-    /// on the ray-traced path. Computed core-side from what each rep DRAWS.
-    var legacyReflectionDead: Bool = false
-    /// Whether the MATERIAL rows (the legacy reflection group) apply here.
-    /// Molecules only: a measurement, CGO or map has no material and no reps,
-    /// so the group would render live and inert above "No representations
-    /// shown". Groups are excluded too — `set` reaches the members but `get`
-    /// reports the group's own value, so a control writes and then reverts.
-    var hasMaterialRows: Bool = false
-    /// Whether the PEEL row applies. A wider set than the above, and
-    /// deliberately so: SceneCollectPeelObjects walks every non-gadget object,
+    /// Whether the PEEL row applies. Every molecule and more:
+    /// SceneCollectPeelObjects walks every non-gadget object,
     /// so a translucent isosurface is peelable and its front/back double blend
     /// is exactly what peel is for. Only groups are excluded.
     var hasPeelRow: Bool = false
@@ -137,7 +123,7 @@ struct ObjStateMeta: Equatable {
     /// predicate, not the `if let` in ObjectCard's body that consults it —
     /// there is no snapshot harness here, so the view's use of it is covered
     /// by neither side. Said plainly rather than implied.
-    var showsObjectMaterialRows: Bool { hasPeelRow || hasMaterialRows }
+    var showsObjectMaterialRows: Bool { hasPeelRow }
 
     /// Title for a 1-based state, or nil when none/blank.
     func title(forState state: Int) -> String? {
@@ -317,22 +303,6 @@ enum MaterialCommands {
         "set transparency_peel, \(value), \(obj)"
     }
 
-    /// One of the legacy `metal_rt_reflect*` sliders. Object-scoped: there is
-    /// one value per object, not one per representation.
-    static func setReflect(_ setting: String, _ value: Double, on obj: String) -> String {
-        "set \(setting), \(String(format: "%.4f", value)), \(obj)"
-    }
-
-    /// Drop this object's reflection overrides, so a material that carries its
-    /// own reflect/tint/roughness goes back to using them (#497).
-    ///
-    /// All three together: they are one look, and clearing one of three leaves
-    /// a state no material describes.
-    static func clearReflect(on obj: String) -> String {
-        ["metal_rt_reflect", "metal_rt_reflect_tint", "metal_rt_reflect_rough"]
-            .map { "unset \($0), \(obj)" }
-            .joined(separator: "\n")
-    }
 }
 
 // Camera-control command strings shared by the inspector row and the camera dock,
@@ -471,15 +441,6 @@ enum SceneCatalog {
                    help: "Ambient-occlusion darkening amount."),
         SceneParam(setting: "metal_rt_shadow_intensity", label: "RT shadow strength", kind: .slider, min: 0, max: 1, step: 0.02, decimals: 2, group: "Metal optimization", dependsOn: "metal_raytrace",
                    help: "Cast-shadow darkening amount (still needs Shadows on)."),
-        // Traced self-reflections. The global value is the default for every
-        // object; each rep's Inspector panel exposes the same three settings
-        // per object (metal_rt_reflect / _tint / _rough are object-scoped).
-        SceneParam(setting: "metal_rt_reflect", label: "Reflections", kind: .slider, min: 0, max: 1, step: 0.05, decimals: 2, group: "Metal optimization", dependsOn: "metal_raytrace",
-                   help: "Ray-traced reflections of the molecule in itself. 0 = off, ~0.25 = glossy plastic, 1 = mirror. Global default; override per object in each rep's panel."),
-        SceneParam(setting: "metal_rt_reflect_tint", label: "Reflection tint", kind: .slider, min: 0, max: 1, step: 0.05, decimals: 2, group: "Metal optimization", dependsOn: "metal_raytrace",
-                   help: "How much the surface's own colour tints its reflection: 0 = chrome-like, 1 = coloured/anodised metal."),
-        SceneParam(setting: "metal_rt_reflect_rough", label: "Reflection roughness", kind: .slider, min: 0, max: 1, step: 0.05, decimals: 2, group: "Metal optimization", dependsOn: "metal_raytrace",
-                   help: "Blur of the reflections: 0 = mirror, 1 = brushed. Exports average several rays; the live view traces one."),
         SceneParam(setting: "metal_rt_reflect_env", label: "Studio environment", kind: .toggle, group: "Metal optimization", dependsOn: "metal_raytrace",
                    help: "Reflection rays that miss the molecule see a soft studio backdrop instead of the flat background colour."),
         SceneParam(setting: "metal_rt_reflect_samples", label: "Reflection samples (export)", kind: .slider, min: 1, max: 32, step: 1, decimals: 0, group: "Metal optimization", dependsOn: "metal_raytrace",
@@ -3875,34 +3836,16 @@ private struct RepChips: View {
 // MARK: - Object-wide material rows (#498)
 
 /// The material settings that are OBJECT-scoped, so they cannot honestly live
-/// in a representation panel: `transparency_peel` and the legacy
-/// `metal_rt_reflect*` triple.
-///
-/// Until this, the triple was three rows in EACH of the four material-bearing
-/// rep panels — twelve controls over three settings, every one showing the same
-/// value, and moving any one of them moved the other eleven. #490 labelled them
-/// "(object)" as a stopgap and left the real fix here.
+/// in a representation panel: `transparency_peel`. (The legacy object-wide
+/// `metal_rt_reflect*` group that shared this header was removed in #565.)
 private struct ObjectMaterialRows: View {
     let objName: String
     let meta: ObjStateMeta
     @EnvironmentObject var engine: PyMOLEngine
-    /// Collapsed by default: it is a legacy group, and on an object whose reps
-    /// all carry a material it does nothing at all.
-    @State private var legacyOpen = false
-
-    private static let reflectProps = [
-        RepProperty(setting: "metal_rt_reflect", label: "Reflection",
-                    kind: .slider, min: 0, max: 1, step: 0.05, decimals: 2),
-        RepProperty(setting: "metal_rt_reflect_tint", label: "Tint",
-                    kind: .slider, min: 0, max: 1, step: 0.05, decimals: 2),
-        RepProperty(setting: "metal_rt_reflect_rough", label: "Roughness",
-                    kind: .slider, min: 0, max: 1, step: 0.05, decimals: 2),
-    ]
 
     var body: some View {
         VStack(spacing: 3) {
             if meta.hasPeelRow { peelRow }
-            if meta.hasMaterialRows { legacyGroup }
         }
     }
 
@@ -3932,104 +3875,6 @@ private struct ObjectMaterialRows: View {
                 }
             }
         }
-    }
-
-    // MARK: legacy reflection
-
-    @ViewBuilder
-    private var legacyGroup: some View {
-        Button(action: { legacyOpen.toggle() }) {
-            HStack(spacing: 4) {
-                Image(systemName: legacyOpen ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 8))
-                Text("Reflection (legacy)")
-                    .font(.system(size: 10))
-                if meta.legacyReflectionDead {
-                    Text("— not in use")
-                        .font(.system(size: 9))
-                        .foregroundColor(PanelTheme.disabledColor)
-                }
-                Spacer(minLength: 0)
-            }
-            .foregroundColor(meta.legacyReflectionDead
-                             ? PanelTheme.disabledColor : PanelTheme.textColor)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(meta.legacyReflectionDead
-              ? "Every shown representation has a glass-family material, the one family that ignores these."
-              : "Object-wide reflection, from before materials. Ray-traced only.")
-
-        if legacyOpen {
-            ForEach(Self.reflectProps) { p in
-                gridRow(p.label) {
-                    LabeledSlider(prop: p, value: value(for: p.setting),
-                                  onLive: { set(p.setting, $0) },
-                                  onCommit: { set(p.setting, $0) })
-                }
-                .opacity(meta.legacyReflectionDead ? 0.45 : 1)
-                .disabled(meta.legacyReflectionDead)
-            }
-            if meta.legacyReflectionDead {
-                // Disabled and SAYING WHY. A greyed-out group with no reason is
-                // indistinguishable from a broken one -- and the reason here is
-                // not obvious: the sliders are fine, it is the materials on the
-                // shown reps that do not read them.
-                Text("Every shown representation has a glass-family material, and glass "
-                     + "is the one family that ignores these. Any other material — "
-                     + "including `default` — makes them live again.")
-                    .font(.system(size: 9))
-                    .foregroundColor(PanelTheme.disabledColor)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                // The way BACK to undefined, which nothing else in the panel
-                // offers. These sliders show the object's value, and an object
-                // with none shows the global's 0 -- while a REFLECTIVE material
-                // is drawing its own table row (metallic: 0.6 / 0.35 / 0.35).
-                // So the group reads three zeros that are not what is on
-                // screen, and the first touch of a slider makes the zero real
-                // and detaches the material from its row for good. The material
-                // dropdown one panel down has had `onInherit` for this since
-                // #490; the sliders never did.
-                HStack(spacing: 6) {
-                    Text("Unset = the material's own values")
-                        .font(.system(size: 9))
-                        .foregroundColor(PanelTheme.disabledColor)
-                    Spacer(minLength: 4)
-                    Button(action: clearReflection) {
-                        Text("Clear")
-                            .font(.system(size: 9))
-                            .padding(.horizontal, 8).padding(.vertical, 1)
-                            .overlay(RoundedRectangle(cornerRadius: 4)
-                                .stroke(PanelTheme.disabledColor.opacity(0.55), lineWidth: 0.5))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Remove this object's reflection overrides, so a material "
-                          + "that carries its own (plastic, metallic) "
-                          + "goes back to using them.")
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-
-    private func value(for setting: String) -> Double {
-        switch setting {
-        case "metal_rt_reflect":       return meta.reflect.count > 0 ? meta.reflect[0] : 0
-        case "metal_rt_reflect_tint":  return meta.reflect.count > 1 ? meta.reflect[1] : 0
-        case "metal_rt_reflect_rough": return meta.reflect.count > 2 ? meta.reflect[2] : 0
-        default: return 0
-        }
-    }
-
-    private func set(_ setting: String, _ v: Double) {
-        engine.runCommand(MaterialCommands.setReflect(setting, v, on: objName), naming: objName)
-    }
-
-    private func clearReflection() {
-        engine.runCommand(MaterialCommands.clearReflect(on: objName), naming: objName)
-        engine.refreshExpandedDetail()
     }
 
     @ViewBuilder

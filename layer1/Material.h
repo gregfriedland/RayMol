@@ -176,8 +176,9 @@ MaterialParams MaterialResolveForDraw(PyMOLGlobals* G, const CSetting* set1,
     const CSetting* set2, int repType, const CoordSet* cs = nullptr);
 
 /**
- * The FINAL parameters a draw uses: MaterialResolveForDraw plus the decision of
- * which families read the legacy object-scoped `metal_rt_reflect*` triple.
+ * The FINAL parameters a draw uses: MaterialResolveForDraw, with reflect / tint /
+ * rough zeroed for every family that does not own them (all but reflective and
+ * glass).
  *
  * The draw site is a thin caller of this, so the rules stay in one place and
  * can be asserted from Python without a Metal context.

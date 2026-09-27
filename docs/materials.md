@@ -228,23 +228,6 @@ knobs it has:
     - `.idtf` exports only triangles;
     - `.wrl` and `.obj` carry none.
 
-## Legacy: `metal_rt_reflect*`
-
-`metal_rt_reflect`, `metal_rt_reflect_tint` and `metal_rt_reflect_rough`
-(object-scoped) predate materials. They set traced self-reflection directly
-and still work, but **prefer a material** (`plastic` or `metallic`).
-
-How materials treat them:
-
-- `default` and the procedural materials take the three values as they are.
-- `plastic` and `metallic` use their own reflection unless the object has an
-  explicit value, which then wins.
-- The glass family ignores them.
-
-The Inspector shows them in a collapsed **Reflection (legacy)** group, marked
-"not in use" when every shown representation is glass. **Clear** unsets all
-three.
-
 ## Scenes and sessions
 
 Materials, `material_default`, `material_env` and `transparency_peel` are

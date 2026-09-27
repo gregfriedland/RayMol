@@ -176,8 +176,8 @@ const MaterialRow kMaterialTable[] = {
        body rather than a flat matte one.
 
        Only p[0..2] reach the GPU for this family. `reflect`, `tint` and `rough`
-       in every row are overwritten from the metal_rt_reflect* settings in
-       CGOGL.cpp before upload, so tuning them here has no effect. */
+       are zeroed for it in MaterialFinalizeParams, so tuning them here has no
+       effect. */
     {cMaterial_clay, "clay", cMaterialFamily_procedural, true, 0.0f,
         {cMaterialFamily_procedural, cMaterial_clay, 0.0f, 0.0f, 1.0f,
             {0.10f, 9.0f, 0.45f, 0.0f, 0.0f, 0.0f}, 0}},
@@ -444,76 +444,41 @@ MaterialParams MaterialResolveForDraw(PyMOLGlobals* G, const CSetting* set1,
   return params;
 }
 
-static MaterialParams MaterialApplyLegacyTriple(
+static MaterialParams MaterialFinalizeParams(
     PyMOLGlobals* G, const CSetting* set1, const CSetting* set2,
     MaterialParams params);
 
 MaterialParams MaterialDrawParams(PyMOLGlobals* G, const CSetting* set1,
     const CSetting* set2, int repType, const CoordSet* cs)
 {
-  return MaterialApplyLegacyTriple(G, set1, set2,
+  return MaterialFinalizeParams(G, set1, set2,
       MaterialResolveForDraw(G, set1, set2, repType, cs));
 }
 
 MaterialParams MaterialDrawParamsCached(PyMOLGlobals* G, const CSetting* set1,
     const CSetting* set2, int repType, bool emitsStickBalls)
 {
-  return MaterialApplyLegacyTriple(G, set1, set2,
+  return MaterialFinalizeParams(G, set1, set2,
       MaterialResolveForDrawCached(G, set1, set2, repType, emitsStickBalls));
 }
 
-static MaterialParams MaterialApplyLegacyTriple(
+static MaterialParams MaterialFinalizeParams(
     PyMOLGlobals* G, const CSetting* set1, const CSetting* set2,
     MaterialParams params)
 {
-  // reflect/tint/rough: `default` reads the legacy object-scoped
-  // metal_rt_reflect* triple, and a REFLECTIVE material carries its own (#494).
-  //
-  // Overwriting unconditionally -- as this did while no reflective material was
-  // implemented -- made the reflect/tint/rough columns of the table dead data,
-  // so `metallic` would have rendered with whatever the legacy sliders happened
-  // to hold: 0 for an untouched object, i.e. no reflection at all.
-  //
-  // GLASS is exempt for the same reason, and it was not: `rough` is its frost
-  // axis (the cubemap mip is sqrt(rough) * 7, and it sets the tap spread), so
-  // taking `metal_rt_reflect_rough` -- default 0 -- replaced frosted_glass's
-  // 0.6 with a near-mirror sample. `frosted_glass` rendered as clear `glass`,
-  // and the only surviving difference between the two materials was their
-  // implied alpha. It also let a legacy object slider reshape a material that
-  // is meant to be a pure function of its id.
-  //
-  // The procedural materials (matte, marble, clay, rubber) do not read these at
-  // all, so leaving them on the legacy path keeps `default` and every
-  // already-shipped material byte-exact.
+  // reflect/tint/rough belong to the REFLECTIVE family (its reflection) and
+  // the GLASS family (`rough` is its frost axis). Every other family draws
+  // with all three at 0: that is what `default` has always drawn with, and
+  // the procedural rows' `rough` values (matte's 1.0, clay's...) are not a
+  // knob those shaders read. Zeroing here keeps `default` and the procedural
+  // materials byte-exact now that the legacy object-wide metal_rt_reflect*
+  // triple they used to read -- 0 unless someone set it -- is gone (#565).
+  (void)G; (void)set1; (void)set2;
   if (params.family != cMaterialFamily_reflective &&
       params.family != cMaterialFamily_glass) {
-    params.reflect = SettingGet_f(G, set1, set2, cSetting_metal_rt_reflect);
-    params.tint = SettingGet_f(G, set1, set2, cSetting_metal_rt_reflect_tint);
-    params.rough = SettingGet_f(G, set1, set2, cSetting_metal_rt_reflect_rough);
-  } else if (params.family == cMaterialFamily_reflective) {
-    // A reflective material starts from its TABLE row, but an EXPLICIT
-    // per-object metal_rt_reflect* value still wins (#497).
-    //
-    // "Explicit" is the whole point: SettingGetIfDefined, not SettingGet. An
-    // object that has never been touched has no value here, so it keeps the
-    // table's -- which is what stopped `metallic` rendering with the sliders'
-    // default 0 and no reflection at all. But a user (or a bundle) who does set
-    // one gets it, which is how `chrome` can be metallic with a tighter tint
-    // and a sharper roughness without needing a table row of its own.
-    //
-    // GLASS is deliberately NOT given this: `rough` is its frost axis, not a
-    // reflection knob, and letting a legacy slider reshape it is the bug fixed
-    // earlier in this ticket.
-    float v = 0.0f;
-    if (SettingGetIfDefined<float>(set1, cSetting_metal_rt_reflect, &v) ||
-        SettingGetIfDefined<float>(set2, cSetting_metal_rt_reflect, &v))
-      params.reflect = v;
-    if (SettingGetIfDefined<float>(set1, cSetting_metal_rt_reflect_tint, &v) ||
-        SettingGetIfDefined<float>(set2, cSetting_metal_rt_reflect_tint, &v))
-      params.tint = v;
-    if (SettingGetIfDefined<float>(set1, cSetting_metal_rt_reflect_rough, &v) ||
-        SettingGetIfDefined<float>(set2, cSetting_metal_rt_reflect_rough, &v))
-      params.rough = v;
+    params.reflect = 0.0f;
+    params.tint = 0.0f;
+    params.rough = 0.0f;
   }
   return params;
 }
