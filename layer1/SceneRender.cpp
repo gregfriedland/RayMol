@@ -2264,7 +2264,15 @@ void SceneRenderMetal(PyMOLGlobals* G)
     int fogEnabled =
         (SettingGetGlobal_b(G, cSetting_depth_cue) && fog_density != 0.0f) ? 1
                                                                            : 0;
-    const float* bg = ColorGet(G, SettingGetGlobal_color(G, cSetting_bg_rgb));
+    // COPIED, not held as a pointer (#540). For a 24-bit RGB colour -- which
+    // is what `set bg_rgb, [r, g, b]` or a hex value stores -- ColorGet returns
+    // its one shared scratch buffer, and the metal_outline_color lookup below
+    // (default "0x000000", also 24-bit RGB) overwrote it with black. Everything
+    // after that read black: the post chain's background and the environment
+    // the reflective and glass materials reflect under material_env 0, which
+    // made plastic and metallic identical with ray tracing off.
+    float bg[3];
+    copy3f(ColorGet(G, SettingGetGlobal_color(G, cSetting_bg_rgb)), bg);
     // Drive the Metal scene-clear from bg_rgb (the GL path uses glClearColor;
     // the Metal renderer never read the setting, so the background stayed black).
     // Applied to the next beginFrame's clear — imperceptible at 60 fps. The clear

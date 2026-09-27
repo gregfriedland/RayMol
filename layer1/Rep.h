@@ -237,6 +237,10 @@ struct Rep {
   //! runs per draw op, per pass, per frame. Scanning there made it O(atoms)
   //! every time, worst case on exactly the configuration the rule targets.
   bool emitsStickBalls() const { return m_emits_stick_balls; }
+  /* True once invalidate() has been called and the rep awaits a rebuild: its
+     cached build answers (emitsStickBalls, hasTransparency) are for inputs
+     that have since changed (#530). */
+  bool isInvalidated() const { return MaxInvalid != cRepInvNone; }
   //! Records the answer at build time; see above.
   void setEmitsStickBalls(bool v) { m_emits_stick_balls = v; }
 
