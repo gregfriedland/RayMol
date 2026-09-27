@@ -98,16 +98,19 @@ reach them.
 | `metallic` | reflective | all | A stronger, rougher environment reflection, tinted by the base colour. The body and the light highlight are `default`'s, so the difference is all in what it reflects (under `ray`, see below, the body is darker and the highlight tinted). |
 | `glass` | glass | cartoon, surface, sticks | Clear body (implied alpha 0.15) under a Fresnel rim, with key-light and headlight glints. |
 | `frosted_glass` | glass | cartoon, surface, sticks | Glass with a blurred environment and soft, broad glints (implied alpha 0.2). |
-| `jelly` | glass | cartoon, surface, sticks | A dense gummy body (implied alpha 0.85) with an inner glow and a wet highlight. |
+| `jelly` | glass | all | A dense gummy body (implied alpha 0.85) with an inner glow and a wet highlight. |
 | `marble` | procedural | all | Veined stone with a waxy light wrap. |
 | `clay` | procedural | all | Unglazed ceramic: fine grain, darkened at grazing angles. |
 | `rubber` | procedural | all | A mottled, low-sheen skin. |
 
-**Glass family on spheres and ball-and-stick.** Glass, frosted glass and jelly
-degrade to `default` on the sphere representation, and on a stick
-representation that draws `stick_ball` spheres. The degradation applies to
-the whole rep, so a ball-and-stick is never half glass. Both the shading and
-the implied alpha degrade, so the rep draws exactly as `default`.
+**Glass on spheres and ball-and-stick.** Clear and frosted glass degrade to
+`default` on the sphere representation, and on a stick representation that
+draws `stick_ball` spheres: at their implied alpha a sphere reads as a
+near-invisible disc. The degradation applies to the whole rep, so a
+ball-and-stick is never half glass, and both the shading and the implied alpha
+degrade, so the rep draws exactly as `default`. **Jelly is the exception:** it
+is dense enough to read as gummy balls, so it draws on spheres and on
+ball-and-stick, with its implied alpha.
 
 **Procedural patterns are locked to the object** in the viewport. They don't
 slide when you rotate, pan or zoom.
@@ -116,7 +119,8 @@ slide when you rotate, pan or zoom.
 
 The glass family carries an **implied alpha**: glass 0.15, frosted glass 0.2,
 jelly 0.85. It is used when a representation's own transparency slider
-(`transparency`, `cartoon_transparency`, `stick_transparency`) is at 0. **Your
+(`transparency`, `cartoon_transparency`, `stick_transparency`,
+`sphere_transparency`) is at 0. **Your
 slider always wins.** Set `transparency, 0.5` on a glass surface and it is
 50% transparent glass. The implied alpha is a build input and is never
 written as a setting, so a session opened in a build that doesn't know `glass`
@@ -286,6 +290,6 @@ It exits non-zero, and lists the cause at the top of the page, when:
 Expected cases are declared in `manifest.json` with their reasons, and the
 page labels them instead of failing:
 
-- the glass family on spheres, which must still match `default`;
+- clear and frosted glass on spheres, which must still match `default`;
 - plastic and metallic on a dark background without ray tracing;
 - the glass family's ray-tracing invariance (#532).

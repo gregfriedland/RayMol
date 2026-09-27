@@ -103,10 +103,9 @@
   "degrades_to_default": {
     "spheres": [
       "glass",
-      "frosted_glass",
-      "jelly"
+      "frosted_glass"
     ],
-    "comment": "The glass family is excluded from sphere impostors by a deliberate scope line (Material.cpp, MaterialResolve) and draws as default there; the gallery shows it and does not flag it."
+    "comment": "Clear and frosted glass are excluded from sphere impostors by a deliberate scope line (Material.cpp, MaterialResolve) and draw as default there; jelly draws (#526). The gallery shows them and does not flag them."
   },
   "rt_invariant": {
     "materials": [
