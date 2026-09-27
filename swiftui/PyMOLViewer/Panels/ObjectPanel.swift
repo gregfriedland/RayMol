@@ -1404,12 +1404,14 @@ func isLegalObjectName(_ name: String) -> Bool {
 /// `données` or `aln:1`), scene names (spaces allowed), and a group name the
 /// user is typing. Refuses exactly what can end or split a command: control
 /// characters and every line break `cmd.do` splits on (str.splitlines), `;`
-/// (PyMOL's command separator) and `,` (its argument separator).
+/// (PyMOL's command separator), `,` (its argument separator), and `\` -- a
+/// line ending in a backslash is a continuation, so PyMOL would merge the
+/// NEXT command into this one and lose both.
 func isCommandSafeToken(_ token: String) -> Bool {
     !token.isEmpty && token.unicodeScalars.allSatisfy { u in
         switch u.value {
         case 0x00...0x1F, 0x7F, 0x85, 0x2028, 0x2029: return false
-        case 0x3B, 0x2C: return false            // ; ,
+        case 0x3B, 0x2C, 0x5C: return false      // ; , backslash
         default: return true
         }
     }
@@ -1456,7 +1458,8 @@ extension PyMOLEngine {
         runCommand("python\nprint(' Inspector: skipped an action -- a name contains "
             + "characters a PyMOL command cannot carry (possible when "
             + "validate_object_names is off). cmd.get_names() lists the objects; "
-            + "rename the odd one with cmd.set_name.')\npython end")
+            + "rename the odd one with cmd.set_name (an alignment: msa_rename).')"
+            + "\npython end")
     }
 }
 

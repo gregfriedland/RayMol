@@ -71,6 +71,10 @@ class TestInspectorCommandNames(testing.PyMOLTestCase):
                 n += 1
                 continue
             names = [v for v in NAME_VARS if '\\(%s)' % v in arg]
+            # ...and ANY interpolated `*name` / `*Name` variable, so a new
+            # builder with a new variable name is caught too
+            names += [v for v in re.findall(r'\\\(([A-Za-z_.]*(?:name|Name))\)', arg)
+                      if v not in names]
             if names:
                 n += 1
                 if not guarded:

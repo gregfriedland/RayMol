@@ -1750,7 +1750,7 @@ final class PyMOLEngine: ObservableObject {
         let cur = min(max(objectMeta[name]?.state ?? 1, 1), total)
         var n = cur + delta
         if n < 1 { n = total } else if n > total { n = 1 }
-        runCommand("set state, \(n), \(name)")
+        runCommand("set state, \(n), \(name)", naming: name)
     }
 
     // Live scrub: clamp, set immediately for snappy UI, throttle the core call.

@@ -235,7 +235,7 @@ final class ObjectPanelCopyExtractTests: XCTestCase {
         }
         // ...but nothing that can end or split a command gets through.
         for bad in ["a\nb", "a\rb", "a\u{2028}b", "a\u{2029}b", "a\u{85}b",
-                    "a\u{0B}b", "a;b", "a,b", ""] {
+                    "a\u{0B}b", "a;b", "a,b", "aln\\", ""] {
             XCTAssertFalse(isCommandSafeToken(bad), "'\(bad)' must be refused")
         }
     }
