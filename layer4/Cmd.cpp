@@ -2611,7 +2611,11 @@ static PyObject* CmdGetMaterialRayParams(PyObject* self, PyObject* args)
    without the material ever writing `stick_transparency` -- so a test written
    against the setting stays green with that rule reverted, and the geometry the
    helper suppresses is not otherwise visible from Python. It had no test
-   anywhere in the tree until this. */
+   anywhere in the tree until this.
+
+   It is the OBJECT-level decision (#527): a bond with its own
+   stick_transparency is decided from that value, so a 1 here can still keep
+   the lines under see-through bonds. */
 static PyObject* CmdGetBuiltLineStickHelper(PyObject* self, PyObject* args)
 {
   PyMOLGlobals* G = nullptr;
