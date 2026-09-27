@@ -5946,12 +5946,44 @@ static float mat_turb(float3 p) {  // turbulence: sum of |noise - 0.5|
   return s;
 }
 
+// How many noise cells one pixel covers at lookup coordinate `q`: the longer
+// of the two screen-axis derivatives (the standard GPU LOD footprint). Nearly
+// rotation-invariant -- exact for a surface facing the camera, within 1.41x on
+// a grazing one -- where length(fwidth(q)) summed |dx| and |dy| per component
+// and changed by up to 2x as an object turned in the image plane.
+static float mat_cells_per_pixel(float3 q) {
+  return max(length(dfdx(q)), length(dfdy(q)));
+}
+
+// How much of a noise octave survives: 1 while a cell spans ~1.4 pixels or
+// more (0.7 cells per pixel), fading to 0 by 1.4 cells per pixel (a cell of
+// ~0.7 px). Value noise carries most of its energy at wavelengths of about two
+// cells, so this sits near the practical Nyquist limit; it was tuned against
+// measured shimmer under a sub-pixel pan and against keeping clay's fine grain
+// at normal zoom (it is what separates clay from matte).
+// Past it a cell is sub-pixel and the value a pixel lands on
+// is effectively random -- it shimmers as the camera moves. Fading the octave
+// to its mean (0, since the octaves are centred) is the band-limit. It is set
+// per pixel, so a larger export keeps finer grain than the live view; the two
+// agree wherever an octave survives in both.
+static float mat_octave_fade(float cells) {
+  return 1.0 - smoothstep(0.7, 1.4, cells);
+}
+
 // Two octaves of model-space grain, centred on 1.0. Every grainy material uses
-// the same shape so they differ only by amplitude and frequency.
+// the same shape so they differ only by amplitude and frequency. Each octave
+// is faded out as it drops below the pixel size (mat_octave_fade): zoomed in,
+// nothing changes; zoomed out, the grain settles to the flat albedo instead of
+// shimmering. Only ever called from fragment functions (the derivatives need
+// them). The second octave's lookup is the first's scaled by `harmonic` (plus
+// a constant), so its footprint is too: one derivative serves both.
 static float mat_grain(float3 pModel, float amount, float freq, float harmonic, float offset) {
   if (amount <= 0.0) return 1.0;
-  return 1.0 + amount * (mat_noise(pModel * freq) * 2.0 - 1.0)
-             + 0.5 * amount * (mat_noise(pModel * freq * harmonic + offset) * 2.0 - 1.0);
+  float3 q1 = pModel * freq;
+  float cells1 = mat_cells_per_pixel(q1);
+  return 1.0 + amount * mat_octave_fade(cells1) * (mat_noise(q1) * 2.0 - 1.0)
+             + 0.5 * amount * mat_octave_fade(cells1 * harmonic)
+                   * (mat_noise(q1 * harmonic + offset) * 2.0 - 1.0);
 }
 
 // --- marble ----------------------------------------------------------------
