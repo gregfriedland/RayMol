@@ -229,7 +229,6 @@ public:
   void beginPeelPrepass() override;
   void endPeelPrepass() override;
   bool peelSupported() const override;
-  void resetTransparentOIT() override;
   void endTransparentOIT() override;
   void setEnvironment(int mode, float bgR, float bgG, float bgB) override;
   void drawBezierTubes(const void* controlPoints, size_t dataSize, float radius,
@@ -354,6 +353,11 @@ private:
   id<MTLFunction> _vboVertexUnlitFlatFunc;
   // Impostor ray-casting (analytic spheres/cylinders). nil-init (MRC).
   id<MTLRenderPipelineState> _sphereImpostorPipeline[cMaterialFamily_count] = {};
+  // Whether buildImpostorPipelines has run for the current sample count. Its
+  // own flag, not "the default family's pipeline exists": a failing default
+  // specialisation must not stop the other families, nor make every frame
+  // recompile the library to retry it.
+  bool _sphereImpostorsBuilt = false;
   // Cylinder impostor pipelines are cached PER VERTEX LAYOUT — (stride, a_cap
   // offset) — not in a single slot. a_cap's offset is part of the vertex
   // descriptor, so a stick VBO (per-vertex a_cap) and a CGO VBO (one constant

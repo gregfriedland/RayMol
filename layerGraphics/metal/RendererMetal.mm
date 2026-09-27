@@ -401,9 +401,10 @@ void RendererMetal::setSampleCount(NSUInteger n)
     [_sphereImpostorPipeline[f] release]; _sphereImpostorPipeline[f] = nil;
     [_sphereOitPipeline[f] release];      _sphereOitPipeline[f] = nil;
   }
+  _sphereImpostorsBuilt = false;
   releaseCylinderPipelines();
-  // buildImpostorPipelines' guard is the opaque default-family pipeline nil'd
-  // above, so it re-runs and re-assigns these two over live +1 references.
+  // buildImpostorPipelines' guard is reset above, so it re-runs and
+  // re-assigns these two over live +1 references.
   // Leaked one pipeline state per MSAA toggle; the shadow one pre-dates #488,
   // the peel one would have doubled it.
   [_sphereShadowPipeline release];     _sphereShadowPipeline = nil;
@@ -4179,14 +4180,6 @@ bool RendererMetal::peelSupported() const
   // back to an unpeeled LessEqual test rather than disappearing.
   return _peelPassDesc && _oitPeelPassDesc && _sceneDepth && _rtW && _rtH &&
       _vboPeelPipelineUByte && _vboPeelPipelineFloat;
-}
-
-void RendererMetal::resetTransparentOIT()
-{
-  // Called once per frame, before the first transparent pass. The peel path
-  // opens several transparent encoders per frame and only the first may CLEAR
-  // the accumulation and reveal targets; every later one loads what is there.
-  _oitCleared = false;
 }
 
 id<MTLDepthStencilState> RendererMetal::peelWriteState()
@@ -8080,16 +8073,18 @@ fragment SphereShadowOut sphere_impostor_fragment_shadow(
 
 void RendererMetal::buildImpostorPipelines()
 {
-  if (_sphereImpostorPipeline[cMaterialFamily_default]) return;
+  if (_sphereImpostorsBuilt) return;
   NSError* err = nil;
   id<MTLLibrary> lib = [_device newLibraryWithSource:[[kMaterialSrc stringByAppendingString:kMaterialImpostorSrc]
                                                    stringByAppendingString:kSphereImpostorSrc]
                                              options:nil error:&err];
   if (!lib) { NSLog(@"RendererMetal: sphere impostor compile failed: %@", err); return; }
   id<MTLFunction> vfn = [lib newFunctionWithName:@"sphere_impostor_vertex"];
-  id<MTLFunction> ffn =
-      materialFragmentFunction(lib, @"sphere_impostor_fragment", cMaterialFamily_default);
-  if (!vfn || !ffn) { NSLog(@"RendererMetal: sphere impostor funcs missing"); return; }
+  if (!vfn) { NSLog(@"RendererMetal: sphere impostor vertex function missing"); return; }
+  // From here the build counts as done even if some family fails: each family
+  // is specialised and built on its own, the draw site falls back per family,
+  // and retrying a failed specialisation every frame would only recompile.
+  _sphereImpostorsBuilt = true;
 
   MTLVertexDescriptor* vd = [MTLVertexDescriptor vertexDescriptor];
   vd.attributes[0].format = MTLVertexFormatFloat4;           // a_vertex_radius
@@ -8102,7 +8097,7 @@ void RendererMetal::buildImpostorPipelines()
   vd.layouts[0].stepFunction = MTLVertexStepFunctionPerVertex;
 
   MTLRenderPipelineDescriptor* psd = [[MTLRenderPipelineDescriptor alloc] init];
-  psd.vertexFunction = vfn; psd.fragmentFunction = ffn; psd.vertexDescriptor = vd;
+  psd.vertexFunction = vfn; psd.vertexDescriptor = vd;
   psd.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
   psd.colorAttachments[0].blendingEnabled = YES;
   psd.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
@@ -8113,10 +8108,12 @@ void RendererMetal::buildImpostorPipelines()
   psd.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
   psd.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
   for (int f = 0; f < cMaterialFamily_count; ++f) {
-    id<MTLFunction> fn = (f == cMaterialFamily_default)
-        ? [ffn retain]
-        : materialFragmentFunction(lib, @"sphere_impostor_fragment", f);
-    if (!fn) continue;
+    id<MTLFunction> fn = materialFragmentFunction(lib, @"sphere_impostor_fragment", f);
+    if (!fn) {
+      // materialFragmentFunction has already logged a real failure; an
+      // unimplemented family is skipped silently, as in the other builders.
+      continue;
+    }
     psd.fragmentFunction = fn;
     _sphereImpostorPipeline[f] =
         [_device newRenderPipelineStateWithDescriptor:psd error:&err];
@@ -8127,11 +8124,9 @@ void RendererMetal::buildImpostorPipelines()
 
   // Transparent sphere OIT variant: same vertex shader + geometry, MRT
   // accum/reveal output, ray-cast depth retained for occlusion.
-  id<MTLFunction> offn = materialFragmentFunction(
-      lib, @"sphere_impostor_fragment_oit", cMaterialFamily_default);
-  if (offn) {
+  {
     MTLRenderPipelineDescriptor* op = [[MTLRenderPipelineDescriptor alloc] init];
-    op.vertexFunction = vfn; op.fragmentFunction = offn; op.vertexDescriptor = vd;
+    op.vertexFunction = vfn; op.vertexDescriptor = vd;
     op.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA16Float;
     op.colorAttachments[0].blendingEnabled = YES;
     op.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorOne;
@@ -8147,9 +8142,8 @@ void RendererMetal::buildImpostorPipelines()
     op.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
     op.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
     for (int f = 0; f < cMaterialFamily_count; ++f) {
-      id<MTLFunction> fn = (f == cMaterialFamily_default)
-          ? [offn retain]
-          : materialFragmentFunction(lib, @"sphere_impostor_fragment_oit", f);
+      id<MTLFunction> fn =
+          materialFragmentFunction(lib, @"sphere_impostor_fragment_oit", f);
       if (!fn) continue;
       op.fragmentFunction = fn;
       _sphereOitPipeline[f] = [_device newRenderPipelineStateWithDescriptor:op error:&err];

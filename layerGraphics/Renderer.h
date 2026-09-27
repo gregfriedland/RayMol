@@ -481,9 +481,6 @@ public:
   virtual void beginPeelPrepass() {}
   virtual void endPeelPrepass() {}
   virtual bool peelSupported() const { return false; }
-  // Reset the "the OIT targets still need clearing" flag. SceneRenderMetal
-  // calls this once per frame before the first transparent pass.
-  virtual void resetTransparentOIT() {}
 
   // Real shadow map. SceneRenderMetal sets the light's eye-space view-projection
   // via setLightViewProjEye, then replays the opaque geometry between
