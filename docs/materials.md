@@ -141,14 +141,25 @@ set surface_material_rough, 0.05, myprotein      # a sharper metallic, this laye
 unset surface_material_rough, myprotein          # back to metallic's own
 ```
 
-Two knobs only show under a condition: **Grain frequency** changes nothing
-while **Grain** is 0 (matte's own grain is 0), and jelly's **Skin reflection
-blur** blurs only the environment its wet skin reflects, so it is invisible
-while `material_env` is the flat background colour. (Glass's **Roughness**
-also widens and softens its glints, so it shows either way.)
+Some knobs only show under a condition:
+
+- **Grain frequency** changes nothing while **Grain** is 0 (matte's own grain
+  is 0).
+- A blur of what the material reflects needs something to reflect: jelly's
+  **Skin reflection blur**, and plastic's and metallic's **Roughness**, are
+  invisible while `material_env` is the flat background colour -- unless Metal
+  ray tracing traces the reflection, which the reflective Roughness also blurs.
+  (Glass's **Roughness** also widens and softens its glints, so it shows either
+  way.)
+
+An override belongs to the LAYER, not to the material: it stays when the
+layer's material changes and then tunes the new material's knob in the same
+slot. The Inspector clears a layer's overrides when you pick a material; from
+the command line, `unset` them when switching.
 
 `default` has no knobs. A global value is not an override: only the object's
-(or state's) own value counts. Scenes capture them with the material. The CPU
+(or state's) own value counts. Scenes capture the object-level values with the
+material. The CPU
 `ray` command maps materials by name and does not see these.
 
 ## Transparency and peel

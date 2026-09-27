@@ -69,6 +69,11 @@ class TestMaterialDocs(testing.PyMOLTestCase):
 
 
 class TestCustomKnobsAreDocumented(testing.PyMOLTestCase):
+    def setUp(self):
+        super().setUp()
+        if not os.path.isfile(DOC):
+            self.skipTest('docs/materials.md not present; not a repo checkout')
+
     def testTheOverrideFamilyHasASettingsRow(self):
         """The 36 `<rep>_material_<knob>` settings are documented as one
         pattern row of the Settings table; material_settings() above does not
