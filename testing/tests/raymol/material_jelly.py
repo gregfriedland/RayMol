@@ -266,53 +266,32 @@ class TestJelly(testing.PyMOLTestCase):
         build('m1', 'surface')
         self.assertEqual(resolved_peel('m1'), 0)
 
-    def testJellySticksKeepTheirLines(self):
-        """`line_stick_helper` suppresses the lines under a stick, and #495
-        turned it off for any stick a MATERIAL makes translucent -- a
-        see-through stick with its lines suppressed shows nothing.
-
-        Jelly enters the same branch, and the rule is binary: 0.15 transparency
-        trips it exactly as glass's 0.85 does. So `show lines` beside jelly
-        sticks draws a wireframe down the middle of every 85%-opaque bond
-        (measured at 5.3% of the frame; with `default` the same comparison is
-        byte-identical, i.e. fully suppressed). That is the pre-existing rule
-        applied to a new value rather than anything this ticket introduced, so
-        it is pinned rather than changed -- see #527.
-
-        Asserted on what the BUILD decided, not on the setting. The first
-        version of this test checked `built_transparency` and an untouched
-        `stick_transparency`, which are the rule's INPUT: revert #495's branch
-        in RepWireBond and both assertions still hold, so it pinned nothing.
-        Nothing else in the tree covered that branch either.
-        """
+    def testJellySticksSuppressTheirLinesLikeDefault(self):
+        """`line_stick_helper` suppresses the lines under a stick, and turns
+        itself off for a TRANSLUCENT stick (#495), where suppressed lines would
+        leave nothing to see. Jelly is 85% opaque: the threshold used to be
+        "any transparency at all", so its 0.15 kept a wireframe down the middle
+        of every gummy bond. Translucent now means more than half transparent
+        (#527), so jelly's lines go exactly as default's do -- every line is
+        under a stick, RepWireBondNew emits nothing and discards the rep.
+        The threshold itself is covered in line_stick_helper.py."""
         cmd.show('lines', 'm1')
         cmd.show('sticks', 'm1')
         cmd.set('stick_material', 'jelly', 'm1')
         cmd.rebuild('m1')
         cmd.refresh()
-        # the helper the user asked for is ON ...
-        self.assertEqual(cmd.get_setting_boolean('line_stick_helper', 'm1'), 1)
-        # ... and no transparency was written anywhere, so nothing but the
-        # MATERIAL can be what makes the sticks translucent.
-        self.assertEqual(
-            cmd.get_setting_float('stick_transparency', 'm1'), 0.0)
-        # Reported as a failure, not an error: with the rule reverted the
-        # helper stays on, every line is suppressed and RepWireBondNew
-        # discards the rep, so the accessor raises. That is the right
-        # observation but an unreadable way to report it.
-        try:
-            helper = built_line_stick_helper('m1')
-        except Exception as exc:
-            self.fail('the lines rep was discarded, i.e. line_stick_helper '
-                      'suppressed every line under a jelly stick: %s' % exc)
-        # ...and THIS is the rule: the build turned the helper off anyway.
-        self.assertEqual(helper, 0)
+        # the sticks really are jelly-translucent, so this is the threshold
+        # deciding and not an opaque stick
+        self.assertAlmostEqual(built_transparency('m1', repres['sticks']),
+                               JELLY_TRANSPARENCY, places=5)
+        with self.assertRaisesRegex(Exception, 'not built'):
+            built_line_stick_helper('m1')
 
     def testDefaultSticksSuppressTheirLinesEntirely(self):
         """The mirror, and it is stronger than the flag: with the helper left
         ON, every line under a stick is dropped, RepWireBondNew emits no
-        geometry and discards the rep outright -- so the accessor raises where
-        jelly's returns 0.
+        geometry and discards the rep outright -- so the accessor raises. (It
+        used to return 0 for jelly here; since #527 jelly behaves the same.)
 
         The second half is what makes "raises" mean something. Hide the sticks
         on the same object, with `lines` shown throughout, and the rep comes
@@ -334,7 +313,8 @@ class TestJelly(testing.PyMOLTestCase):
 
     def testAnUnbuiltLinesRepIsAnErrorNotZero(self):
         """0 means "the helper was turned off", so it must not also mean
-        "no lines rep exists" -- that would make both tests above vacuous.
+        "no lines rep exists" -- that would make the "raises" in the tests
+        above indistinguishable from the helper being turned off.
 
         Note this exercises the missing-rep branch, not the -1 sentinel. The
         sentinel is unreachable for cRepLine: RepWireBondNew is the only
