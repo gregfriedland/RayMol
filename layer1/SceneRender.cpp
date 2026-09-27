@@ -2269,9 +2269,11 @@ void SceneRenderMetal(PyMOLGlobals* G)
     // -- ColorGet returns its one shared scratch buffer, and the
     // metal_outline_color lookup below (default "0x000000", also 24-bit RGB)
     // overwrote it with black. Held as a pointer, everything read after that
-    // -- the post chain's background and fog colour, and the environment the
-    // reflective and glass materials reflect -- saw black: in-app fog faded
-    // distant geometry toward black on every themed background.
+    // -- the post chain's background and fog colour, the RT composite's miss
+    // colour for traced reflections under metal_rt_reflect_env 0, and the
+    // environment the reflective and glass materials reflect -- saw black:
+    // in-app fog faded distant geometry toward black on every themed
+    // background, and traced reflections that missed the molecule were black.
     float bg[3];
     copy3f(ColorGet(G, SettingGetGlobal_color(G, cSetting_bg_rgb)), bg);
     // Drive the Metal scene-clear from bg_rgb (the GL path uses glClearColor;
