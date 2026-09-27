@@ -134,6 +134,9 @@ joins inside them; with it, the object reads as one skin.
   because peel is per object and would erase that rep's back layers.
 - `1` and `0` force peel on or off.
 - Groups: `set transparency_peel, 1, mygroup` reaches the members.
+- In the Inspector this is **Translucent layers** in the object's section, above
+  its layers: **Nearest only** is `1`, **All** is `0`, **Auto** is `-1`, and a line
+  under it says what Auto currently means.
 - Up to **three** peeled objects are drawn per frame; any further ones draw
   unpeeled, so a fourth jelly object looks denser. The classic OpenGL path
   peels nothing.

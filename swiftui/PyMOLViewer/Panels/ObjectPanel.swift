@@ -287,6 +287,34 @@ struct SceneParam: Identifiable {
     var help: String = ""
 }
 
+/// The words of the object-level "Translucent layers" control (#567), kept
+/// out of the view so a test can pin them: `transparency_peel` 1 = nearest
+/// only, 0 = all, -1 = auto.
+enum TranslucentLayers {
+    static let options: [(value: Int, label: String)] =
+        [(-1, "Auto"), (1, "Nearest only"), (0, "All")]
+
+    static let help =
+        "How a see-through object is drawn. Nearest only draws it as one skin, "
+        + "without its inner walls and joins; All shows every layer. Auto picks "
+        + "Nearest only for glass, frosted glass and jelly, unless another "
+        + "see-through layer of the object would disappear behind the skin. "
+        + "Metal renderer only, for up to three objects at a time."
+
+    /// Keyed the way the core reads the setting: any negative value is Auto,
+    /// 0 is All, and any other value is an explicit Nearest only.
+    static func caption(peel: Int, resolved: Bool) -> String {
+        if peel < 0 {
+            return resolved
+                ? "Auto: nearest only (a glass-family material asks for one skin)."
+                : "Auto: all layers."
+        }
+        return peel == 0
+            ? "Every layer is drawn, inner walls and joins included."
+            : "One skin: the inner walls and joins are not drawn."
+    }
+}
+
 // Material command strings, in one place so a test can assert what a control
 // SENDS without a window (#498).
 //
@@ -3547,15 +3575,10 @@ private struct ObjectCard: View {
                     // Object/layer-level coloring (by element/chain/ss/spectrum/
                     // named) is the structure row's "C" button — not duplicated
                     // here. The per-rep grid below controls per-rep color overrides.
-                    // Always show the chips bar (it holds the "+" add menu) so a
-                    // layer can be added even after the last one is deleted.
-                    RepChips(objName: entry.name, listed: listedReps,
-                             active: activeSet, current: currentRep,
-                             onSelect: { selectedRep = $0 })
-                    // Object-scoped material rows (#498), above the per-rep
-                    // grid because that is what they are: one peel decision and
-                    // one legacy reflection triple for the whole object, not
-                    // four copies of each.
+                    // Object-scoped rows (#498, #567) sit with the other
+                    // OBJECT-level controls, above the layer chips: they apply
+                    // to the whole object, and below the chips they read as
+                    // part of whichever layer is selected.
                     //
                     // The OPTIONAL is load-bearing. objectMeta is filled only by
                     // the poll for the currently expanded object, so re-opening
@@ -3569,6 +3592,11 @@ private struct ObjectCard: View {
                         ObjectMaterialRows(objName: entry.name, meta: meta)
                         Divider().background(PanelTheme.disabledColor.opacity(0.3))
                     }
+                    // Always show the chips bar (it holds the "+" add menu) so a
+                    // layer can be added even after the last one is deleted.
+                    RepChips(objName: entry.name, listed: listedReps,
+                             active: activeSet, current: currentRep,
+                             onSelect: { selectedRep = $0 })
                     if let rep = currentRep {
                         // Always present (even when hidden): show/hide the layer
                         // + delete it. Hiding keeps the layer listed so it can be
@@ -3854,37 +3882,34 @@ private struct ObjectMaterialRows: View {
     /// meaning for auto and would silently write one the first time it was
     /// touched — turning an object that was following its material into one
     /// pinned against it.
+    ///
+    /// Shown as what it DOES (#567): "Nearest only" draws a see-through object
+    /// as one skin (peel on, 1); "All" draws every layer (peel off, 0). The
+    /// caption says so in words, and what Auto currently resolves to.
     private var peelRow: some View {
-        gridRow("Peel transp.") {
+        // Label on its own line and the choices under it: "Nearest only" is
+        // the longest cell in the panel, and side by side with the label the
+        // row truncated in a narrow inspector.
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Translucent layers")
+                .font(.system(size: 10))
+                .foregroundColor(PanelTheme.textColor)
             HStack(spacing: 6) {
                 TriStateSetting(value: meta.peel,
-                                options: [(-1, "Auto"), (0, "Off"), (1, "On")]) {
+                                options: TranslucentLayers.options) {
                     engine.runCommand(MaterialCommands.setPeel($0, on: objName), naming: objName)
                     engine.refreshExpandedDetail()
                 }
-                // What auto currently MEANS. The whole point of -1 is that the
-                // answer comes from the materials the object's reps resolve to,
-                // so the setting alone says nothing -- which is exactly the
-                // thing a user cannot find out from anywhere else.
-                if meta.peel < 0 {
-                    Text(meta.peelResolved ? "on (glass-family)" : "off")
-                        .font(.system(size: 9))
-                        .foregroundColor(PanelTheme.disabledColor)
-                }
+                .fixedSize()
+                Spacer(minLength: 0)
             }
+            Text(TranslucentLayers.caption(peel: meta.peel, resolved: meta.peelResolved))
+                .font(.system(size: 9))
+                .foregroundColor(PanelTheme.disabledColor)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-
-    @ViewBuilder
-    private func gridRow<Content: View>(_ label: String, @ViewBuilder _ content: () -> Content) -> some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(.system(size: 10))
-                .foregroundColor(PanelTheme.textColor)
-                .frame(width: 78, alignment: .leading)
-            content()
-            Spacer(minLength: 0)
-        }
+        .help(TranslucentLayers.help)
     }
 }
 
