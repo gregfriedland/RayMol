@@ -220,6 +220,14 @@ final class ObjectPanelCopyExtractTests: XCTestCase {
     func testACommaInTheNameIsRejected() {
         XCTAssertFalse(isLegalObjectName("foo, bar"))
         XCTAssertFalse(isLegalObjectName("foo,bar"))
+        // #531: everything that could split an Inspector command is outside
+        // the alphabet, so engine.runCommand(_:naming:) refuses it -- line
+        // breaks of every kind cmd.do splits on, the command separator, and
+        // non-ASCII.
+        for bad in ["a\nb", "a\rb", "a\u{2028}b", "a\u{85}b", "a;b", "a b",
+                    "a'b", "a\"b", "a(b)", "é"] {
+            XCTAssertFalse(isLegalObjectName(bad), "'\(bad)' must be refused")
+        }
     }
 
     /// `create` against an existing name does nothing at all — no object, no
