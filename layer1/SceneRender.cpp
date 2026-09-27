@@ -2388,6 +2388,8 @@ void SceneRenderMetal(PyMOLGlobals* G)
     G->Renderer->setReflectionParams(
         SettingGetGlobal_b(G, cSetting_metal_rt_reflect_env) ? 1 : 0,
         SettingGetGlobal_i(G, cSetting_metal_rt_reflect_samples));
+    G->Renderer->setRTTransparent(
+        SettingGetGlobal_b(G, cSetting_metal_rt_transparent));
     G->Renderer->setDofQuality(
         SettingGetGlobal_i(G, cSetting_metal_dof_quality));
     // Lighting model — the Metal lit shaders read these instead of hard-coded

@@ -237,6 +237,9 @@ public:
   // Global traced-reflection knobs: environment on miss (studio vs background)
   // and rays/pixel for glossy materials in offscreen exports. Default: no-op.
   virtual void setReflectionParams(int env, int samples) {}
+  // metal_rt_transparent (#532): trace transparent geometry too -- it casts
+  // attenuated shadows and AO and shows in reflections. Off by default.
+  virtual void setRTTransparent(bool enabled) {}
 
   // Record the frame's BASE (camera-only) modelview, before any per-object
   // Move-mode TTT is folded in. Real-time ray tracing uses it to express each

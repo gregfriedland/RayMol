@@ -191,7 +191,8 @@ def main():
     # Ray-tracing invariance, stated rather than silent: a material whose
     # rt0 and rt1 images are identical is either expected (the manifest's
     # rt_invariant list -- transparent geometry is not in the ray-traced
-    # scene, #532) or a sign ray tracing never reached it.
+    # scene while metal_rt_transparent is off, #532) or a sign ray tracing
+    # never reached it.
     rt_same, rt_expected = [], manifest.get('rt_invariant', {}).get('materials', [])
     if np is not None and set(manifest['raytrace']) == {'rt0', 'rt1'}:
         for rep in manifest['reps']:

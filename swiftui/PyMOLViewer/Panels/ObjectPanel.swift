@@ -533,6 +533,8 @@ enum SceneCatalog {
                    help: "Hardware ray tracing for higher-quality ambient occlusion and shadows. Requires a supported GPU; it powers the options below."),
         SceneParam(setting: "metal_rt_shadows", label: "RT hard shadows", kind: .toggle, group: "Metal optimization", dependsOn: "metal_raytrace",
                    help: "Trace crisp hard shadow rays instead of the shadow-map approximation. Needs ray tracing on."),
+        SceneParam(setting: "metal_rt_transparent", label: "RT through transparency", kind: .toggle, group: "Metal optimization", dependsOn: "metal_raytrace",
+                   help: "Let glass, jelly and other transparent geometry cast lighter shadows and ambient occlusion, and show up in reflections. Costs noticeably more ray-tracing time. Needs ray tracing on; not in grid mode."),
         SceneParam(setting: "metal_temporal_ao", label: "Temporal AO", kind: .toggle, group: "Metal optimization", dependsOn: "metal_raytrace",
                    help: "Accumulate ray-traced AO across frames while the view is still, for cleaner, smoother occlusion. Needs ray tracing on."),
         SceneParam(setting: "metal_rt_samples", label: "RT quality (rays)", kind: .slider, min: 4, max: 128, step: 4, decimals: 0, group: "Metal optimization", dependsOn: "metal_raytrace",
