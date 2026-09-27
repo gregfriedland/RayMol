@@ -555,17 +555,24 @@ Rep *RepWireBondNew(CoordSet * cs, int state)
   // setting (#495). Translucent means MORE than half transparent (#527): the
   // threshold was R_SMALL4, i.e. any transparency at all, so an 85%-opaque stick
   // (jelly, or `stick_transparency 0.15`) kept a wireframe down its middle.
+  //
+  // stick_transparency is also a BOND setting, and RepCylBond draws each bond
+  // at its own value with the object's effective one as the fallback -- so the
+  // suppression below is decided per bond the same way. The object-level
+  // decision here is what a bond without its own value gets, what the
+  // alternately-shown branch uses, and what the rep records.
   const float kLinesUnderTranslucentSticks = 0.5F;
-  if (line_stick_helper &&
-      MaterialEffectiveTransparency(G, cs->Setting.get(), obj->Setting.get(),
-          cRepCyl,
-          SettingGet_f(G, cs->Setting.get(), obj->Setting.get(),
-              cSetting_stick_transparency),
-          cs) > kLinesUnderTranslucentSticks)
+  bool const line_stick_setting = line_stick_helper;
+  float const obj_stick_transp = MaterialEffectiveTransparency(G,
+      cs->Setting.get(), obj->Setting.get(), cRepCyl,
+      SettingGet_f(G, cs->Setting.get(), obj->Setting.get(),
+          cSetting_stick_transparency),
+      cs);
+  if (line_stick_helper && obj_stick_transp > kLinesUnderTranslucentSticks)
     line_stick_helper = false;
   // Recorded on the rep below, once it exists: the SETTING says what the user
-  // asked for, this says what the build decided, and only the second one moves
-  // when a material is what made the sticks translucent.
+  // asked for, this says what the build decided for the object, and only the
+  // second one moves when a material is what made the sticks translucent.
   int const built_line_stick_helper = line_stick_helper ? 1 : 0;
   half_bonds = SettingGet_i(G, cs->Setting.get(), obj->Setting.get(), cSetting_half_bonds);
   hide_long = SettingGet_b(G, cs->Setting.get(), obj->Setting.get(), cSetting_hide_long_bonds);
@@ -717,7 +724,10 @@ Rep *RepWireBondNew(CoordSet * cs, int state)
             c1 = (c2 = bd_line_color);
           }
 
-          if (line_stick_helper && (ati1->visRep & ati2->visRep & cRepCylBit)) {
+          if (line_stick_setting &&
+              (ati1->visRep & ati2->visRep & cRepCylBit) &&
+              BondSettingGetWD(G, b, cSetting_stick_transparency,
+                  obj_stick_transp) <= kLinesUnderTranslucentSticks) {
             s1 = s2 = 0;
           } else if ((ati1->flags & ati2->flags & cAtomFlag_polymer)) {
             // side chain helpers

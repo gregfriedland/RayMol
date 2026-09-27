@@ -302,8 +302,8 @@ class TestJelly(testing.PyMOLTestCase):
     def testDefaultSticksSuppressTheirLinesEntirely(self):
         """The mirror, and it is stronger than the flag: with the helper left
         ON, every line under a stick is dropped, RepWireBondNew emits no
-        geometry and discards the rep outright -- so the accessor raises where
-        jelly's returns 0.
+        geometry and discards the rep outright -- so the accessor raises. (It
+        used to return 0 for jelly here; since #527 jelly behaves the same.)
 
         The second half is what makes "raises" mean something. Hide the sticks
         on the same object, with `lines` shown throughout, and the rep comes
@@ -325,7 +325,8 @@ class TestJelly(testing.PyMOLTestCase):
 
     def testAnUnbuiltLinesRepIsAnErrorNotZero(self):
         """0 means "the helper was turned off", so it must not also mean
-        "no lines rep exists" -- that would make both tests above vacuous.
+        "no lines rep exists" -- that would make the "raises" in the tests
+        above indistinguishable from the helper being turned off.
 
         Note this exercises the missing-rep branch, not the -1 sentinel. The
         sentinel is unreachable for cRepLine: RepWireBondNew is the only

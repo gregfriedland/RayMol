@@ -14,6 +14,8 @@ Asserted on what the lines BUILD decided (`get_built_line_stick_helper`), not
 on the setting. When the helper stays on and every line is under a stick,
 RepWireBondNew emits no geometry and discards the rep, so the accessor raises
 "not built"; when the helper is turned off, the rep is built and records 0.
+A per-bond `stick_transparency` decides its own bond, as it decides how that
+bond's stick is drawn; the recorded value is the object-level decision.
 
 Runs on a RayMol --testing build:
     pymol -ckqy testing/testing.py --run testing/tests/raymol/line_stick_helper.py
@@ -32,6 +34,9 @@ class TestLineStickHelperThreshold(testing.PyMOLTestCase):
         cmd.fragment('ala', 'm1')
         cmd.show('lines', 'm1')
         cmd.show('sticks', 'm1')
+        # a precondition, not a test: every difference below is the build's
+        # decision, not the user's
+        self.assertEqual(cmd.get_setting_boolean('line_stick_helper', 'm1'), 1)
 
     def build(self):
         cmd.rebuild('m1')
@@ -52,10 +57,6 @@ class TestLineStickHelperThreshold(testing.PyMOLTestCase):
             self.fail('the lines rep was discarded, i.e. every line under a '
                       'translucent stick was suppressed: %s' % exc)
         self.assertEqual(helper, 0)
-
-    def testTheHelperIsOnThroughout(self):
-        # ...so every difference below is the build's decision, not the user's
-        self.assertEqual(cmd.get_setting_boolean('line_stick_helper', 'm1'), 1)
 
     def testOpaqueSticksSuppressTheirLines(self):
         self.assertLinesSuppressed()
@@ -102,3 +103,19 @@ class TestLineStickHelperThreshold(testing.PyMOLTestCase):
         cmd.refresh()
         with self.assertRaisesRegex(Exception, 'not built'):
             built_line_stick_helper('m1')
+
+    def testAPerBondValueDecidesItsOwnBond(self):
+        # stick_transparency is a bond setting too, and the sticks are drawn
+        # at the bond's value: see-through bonds on an object whose own value
+        # is below the threshold keep their lines...
+        cmd.set('stick_transparency', 0.3, 'm1')
+        cmd.set_bond('stick_transparency', 0.9, 'm1')
+        self.build()
+        try:
+            built_line_stick_helper('m1')
+        except Exception as exc:
+            self.fail('lines suppressed under 90%%-transparent bonds: %s' % exc)
+        # ...and mostly opaque bonds on a see-through object lose theirs
+        cmd.set('stick_transparency', 0.9, 'm1')
+        cmd.set_bond('stick_transparency', 0.1, 'm1')
+        self.assertLinesSuppressed()
