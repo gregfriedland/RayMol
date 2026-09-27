@@ -333,82 +333,6 @@ enum MaterialCommands {
             .map { "unset \($0), \(obj)" }
             .joined(separator: "\n")
     }
-
-    /// Run a `pymol.materials` bundle on an object.
-    ///
-    /// Calls the documented function rather than reimplementing its list of
-    /// settings here: a bundle writes GLOBAL lighting as well as the object's
-    /// material, and a copy of that list in the UI would drift from
-    /// modules/pymol/materials.py silently.
-    static func runBundle(_ attr: String, on obj: String) -> String {
-        // The object name lands inside a PYTHON string literal, which is
-        // itself inside a multi-line command that `cmd.do` splits with
-        // `str.splitlines()`. So there are two levels to get right, and they
-        // fail differently:
-        //
-        //   * a quote or a backslash breaks the literal — a SyntaxError, the
-        //     chip does nothing;
-        //   * a LINE BREAK breaks the command, which is worse. cmd.do runs
-        //     each fragment as its own command, so a name containing
-        //     "<break>python end<break>..." closes the block early, discards
-        //     the malformed buffer, and executes what follows as PyMOL
-        //     commands. "Line break" is whatever splitlines says it is: \n and
-        //     \r, but also \v, \f, \x1c-\x1e, \x85, U+2028 and U+2029.
-        //
-        // So the literal is built from printable ASCII only. Everything else
-        // — every control character and every non-ASCII scalar — is written
-        // as a \u / \U escape, which splitlines cannot see and Python's
-        // literal parser turns back into the original character. Enumerating
-        // the separators instead would be a list to keep in step with
-        // CPython; "printable ASCII or escaped" has no list.
-        //
-        // Reachability, stated accurately because an earlier version of this
-        // comment overstated it: `validate_object_names` defaults to 1 and
-        // ObjectMakeValidName rewrites everything outside [A-Za-z0-9+-.^_] to
-        // an underscore, so a name like this needs that setting turned off and
-        // the Python `object=` argument (or a session restored from one). A
-        // hardening gap rather than a live hole — but it is a gap in a defence
-        // this function exists to provide.
-        var safe = ""
-        for u in obj.unicodeScalars {
-            switch u.value {
-            case 0x5C: safe += "\\\\"
-            case 0x27: safe += "\\'"
-            case 0x20...0x7E: safe.unicodeScalars.append(u)
-            case 0...0xFFFF: safe += String(format: "\\u%04x", u.value)
-            default: safe += String(format: "\\U%08x", u.value)
-            }
-        }
-        return "python\nfrom pymol import materials; materials.\(attr)('\(safe)', _self=cmd)\npython end"
-    }
-
-    /// What the chip actually does, said out loud.
-    ///
-    /// #498 calls this button "Suggested lighting", and the first version was
-    /// labelled and tooltipped that way. It is not what running a bundle does:
-    /// `_apply_material` writes the material to ALL FOUR of the object's
-    /// representation settings, shown or not, deliberately and by its own
-    /// docstring. Clicking a chip beside the Sticks dropdown would have
-    /// silently rewritten `surface_material` — so on an object with a
-    /// deliberate mixed look, a glass shell would vanish and nothing on the
-    /// control would have mentioned the surface.
-    ///
-    /// The alternative was to split the bundles into a material half and a
-    /// lighting half and call only the second. That forks a contract the
-    /// A-menu shares, and for the four metals "lighting only" is empty anyway
-    /// — they write a colour and a reflect triple, no light rig. Saying what
-    /// the button does is the smaller and more honest change.
-    static func bundleHelp(_ label: String?) -> String {
-        let what = label.map { "Apply the \($0) look" } ?? "Apply a look"
-        // Precise about the metals: `_metal` writes NO lighting setting at all
-        // — no specular, no shininess, no shadows — it writes a colour and the
-        // reflect/tint/roughness triple, i.e. the group directly below this
-        // chip. Saying "plus the lighting" for them promised something they do
-        // not do and stayed silent about what they overwrite.
-        return what + ": this material on EVERY representation of the object, "
-             + "plus the scene lighting it was tuned for. A named metal instead "
-             + "sets the colour and this object's reflection sliders."
-    }
 }
 
 // Camera-control command strings shared by the inspector row and the camera dock,
@@ -1090,16 +1014,6 @@ private let baseActionMenuItems: [ActionMenuItem] = [
         .separator,
         .action(label: "protein interface",            key: "preset_interface"),
         .separator,
-        // Material LOOKS (#491) -- a different contract from the presets above.
-        // A preset rebuilds the representation set from scratch; these keep
-        // whatever is on screen and change only the material and the light rig.
-        .action(label: "marble (statuary)",            key: "material_marble"),
-        .action(label: "clay (unglazed)",              key: "material_clay"),
-        .action(label: "copper",                       key: "material_copper"),
-        .action(label: "gold",                         key: "material_gold"),
-        .action(label: "steel",                        key: "material_steel"),
-        .action(label: "chrome",                       key: "material_chrome"),
-        .separator,
         .action(label: "default",                      key: "preset_default"),
     ]),
     .submenu(label: "Find", children: [
@@ -1505,13 +1419,6 @@ private func runActionCommand(_ key: String, name: String, engine: PyMOLEngine) 
     case "preset_pub_solv":         cmd = "python\nfrom pymol import preset; preset.pub_solv('\(n)', _self=cmd)\npython end"
     case "preset_interface":        cmd = "python\nfrom pymol import preset; preset.interface('\(n)', _self=cmd)\npython end"
     case "preset_default":          cmd = "python\nfrom pymol import preset; preset.default('\(n)', _self=cmd)\npython end"
-    // Material looks (#491)
-    case "material_marble":         cmd = "python\nfrom pymol import materials; materials.marble('\(n)', _self=cmd)\npython end"
-    case "material_clay":           cmd = "python\nfrom pymol import materials; materials.clay('\(n)', _self=cmd)\npython end"
-    case "material_copper":         cmd = "python\nfrom pymol import materials; materials.copper('\(n)', _self=cmd)\npython end"
-    case "material_gold":           cmd = "python\nfrom pymol import materials; materials.gold('\(n)', _self=cmd)\npython end"
-    case "material_steel":          cmd = "python\nfrom pymol import materials; materials.steel('\(n)', _self=cmd)\npython end"
-    case "material_chrome":         cmd = "python\nfrom pymol import materials; materials.chrome('\(n)', _self=cmd)\npython end"
     // Find
     case "find_polar_within":  cmd = "dist \(n)_polar_conts, \(n), \(n), quiet=1, mode=2, label=0, reset=1; enable \(n)_polar_conts"
     case "find_polar_other":   cmd = "dist \(n)_polar_conts, (\(n)), (byobj (\(n))) and (not (\(n))), quiet=1, mode=2, label=0, reset=1; enable \(n)_polar_conts"
@@ -4271,71 +4178,10 @@ private struct RepPropertyGrid: View {
         case .menu:
             // Options come from the core (engine.materialNames), so a build
             // whose table differs cannot be offered a look it can't draw.
-            HStack(spacing: 6) {
-                MenuSetting(options: options(for: p), value: v,
-                            onSelect: { set(p.setting, $0) },
-                            onInherit: { unset(p.setting) })
-                if p.optionSource == .materials {
-                    suggestedLighting(forMaterialValue: v)
-                }
-            }
+            MenuSetting(options: options(for: p), value: v,
+                        onSelect: { set(p.setting, $0) },
+                        onInherit: { unset(p.setting) })
         }
-    }
-
-    /// "Suggested lighting" beside a material dropdown, when the chosen
-    /// material has a `pymol.materials` bundle.
-    ///
-    /// A material is only half a look: `marble` under the default rig still
-    /// carries a tight specular that reads as polished plastic rather than
-    /// stone. The bundle sets the lighting that flatters it, and until now the
-    /// only way to reach one was the A-menu, several clicks away from the
-    /// dropdown that raises the question.
-    ///
-    /// Several bundles can share a material -- the four metals are all
-    /// `metallic` -- so this is a menu when more than one matches and a single
-    /// button when exactly one does. Nothing is shown when none does, rather
-    /// than a disabled control: most materials have no bundle, and a row of
-    /// dead buttons would be worse than no button.
-    @ViewBuilder
-    private func suggestedLighting(forMaterialValue v: Double) -> some View {
-        let id = Int(v.rounded())
-        let name = engine.materialNames.first(where: { $0.id == id })?.name ?? ""
-        let matching = engine.materialBundles.filter { $0.material == name }
-        if matching.count == 1, let b = matching[0] as (attr: String, label: String, material: String)? {
-            Button(action: { runBundle(b.attr) }) { suggestedLabel }
-                .buttonStyle(.plain)
-                .help(MaterialCommands.bundleHelp(b.label))
-        } else if matching.count > 1 {
-            Menu {
-                ForEach(matching, id: \.attr) { b in
-                    Button(b.label) { runBundle(b.attr) }
-                }
-            } label: { suggestedLabel }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help(MaterialCommands.bundleHelp(nil))
-        }
-    }
-
-    private var suggestedLabel: some View {
-        HStack(spacing: 2) {
-            Image(systemName: "wand.and.stars").font(.system(size: 9))
-            Text("Look").font(.system(size: 9))
-        }
-        .padding(.horizontal, 5).frame(height: 16)
-        .background(PanelTheme.buttonBackground)
-        .foregroundColor(PanelTheme.buttonText)
-        .clipShape(RoundedRectangle(cornerRadius: 3))
-    }
-
-    /// The bundles write GLOBAL lighting settings as well as the object's
-    /// material, which is the point of them -- so this runs the documented
-    /// function rather than reimplementing its list of settings here, where a
-    /// copy would drift from `modules/pymol/materials.py` silently.
-    private func runBundle(_ attr: String) {
-        engine.runCommand(MaterialCommands.runBundle(attr, on: objName), naming: objName)
-        engine.refreshExpandedDetail()
     }
 
     /// Options for a `.menu` row, from the core rather than compiled in.

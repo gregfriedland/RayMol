@@ -78,37 +78,6 @@ def poll_materials():
         print('MATERIALS:[]')
 
 
-def material_bundles():
-    """The `pymol.materials` look bundles, as [[attr, label, material], ...].
-
-    A material on its own is half a look; the bundle sets the lighting that
-    flatters it. The Inspector offers one beside the material dropdown when the
-    chosen material has a bundle, so the join key -- the MATERIAL the bundle
-    applies -- comes from `materials.BUNDLES` rather than from a copy in the UI.
-
-    Several bundles can name the same material: the four metals are all
-    `metallic` and differ in colour and in the legacy reflect triple. The UI
-    offers a menu when more than one matches, which is why this returns the
-    whole list rather than a material -> bundle map."""
-    try:
-        from pymol import materials
-        return [[str(attr), str(label), str(mat)]
-                for (label, attr, mat) in materials.BUNDLES]
-    except Exception:
-        return []
-
-
-def poll_bundles():
-    """Print `BUNDLES:<json>` once, for the Inspector's suggested-lighting
-    control. Emitted at startup beside the material table: neither can change
-    within a session."""
-    import json
-    try:
-        print('BUNDLES:' + json.dumps(material_bundles()))
-    except Exception:
-        print('BUNDLES:[]')
-
-
 def _material_id(rep_name, obj):
     """Resolved material id for `rep_name` on `obj`, or 0 (default) if this
     build has no materials or the lookup fails."""

@@ -1,18 +1,16 @@
 """The Inspector's object-wide material rows (#498), Python side.
 
-Four controls moved or arrived in #498, and three of them need a fact the Swift
-side cannot compute:
+Controls that moved or arrived in #498 and need a fact the Swift side cannot
+compute:
 
   * the peel tri-state shows what AUTO currently resolves to, which is a
     question only the core can answer (#488);
   * the legacy `metal_rt_reflect*` group is disabled when it cannot change
     anything the object draws, which depends on the material FAMILY of every
-    shown representation;
-  * "Suggested lighting" appears beside a material dropdown when a
-    `pymol.materials` bundle applies that material, and the join key lives in
-    `materials.BUNDLES`.
+    shown representation.
 
-All three are computed in `appkit_inspector` and shipped in the object payload.
+(The "Suggested lighting" / Look bundles were removed in #566.) Both are
+computed in `appkit_inspector` and shipped in the object payload.
 These pin them there, where they can be tested without a GPU or a window.
 
 Runs on a RayMol --testing build:
@@ -23,7 +21,7 @@ import os
 import re
 
 from pymol import appkit_inspector as ai
-from pymol import cmd, materials, setting, testing
+from pymol import cmd, setting, testing
 
 
 def meta(obj, objs=None):
@@ -34,45 +32,6 @@ def meta(obj, objs=None):
 
 def reps_payload(obj, objs=None):
     return ai._build(objs or [obj])['detail'][obj]
-
-
-class TestInspectorBundles(testing.PyMOLTestCase):
-    def testTheBundleListCarriesTheMaterialEachApplies(self):
-        """The Inspector joins on the third field to decide whether to offer
-        the button beside a material dropdown. A list of (attr, label) alone --
-        which is what BUNDLES was before #498 -- cannot answer that."""
-        rows = ai.material_bundles()
-        self.assertEqual(len(rows), len(materials.BUNDLES))
-        for attr, label, mat in rows:
-            self.assertTrue(hasattr(materials, attr), attr)
-            self.assertTrue(label)
-            self.assertIn(mat, [n for _i, n in setting.get_material_names(1)], attr)
-
-    def testTheFourMetalsAllNameMetallic(self):
-        """Which is why the control is a MENU when more than one bundle matches
-        and a button when one does. A material -> bundle map would silently keep
-        whichever metal came last."""
-        by_material = {}
-        for attr, _label, mat in ai.material_bundles():
-            by_material.setdefault(mat, []).append(attr)
-        self.assertEqual(sorted(by_material.get('metallic', [])),
-                         ['chrome', 'copper', 'gold', 'steel'])
-        self.assertEqual(by_material.get('marble'), ['marble'])
-
-    def testPollBundlesEmitsParseableJson(self):
-        """The Swift side parses this line; a payload it cannot read leaves the
-        control absent with nothing said."""
-        import io, contextlib
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            ai.poll_bundles()
-        line = buf.getvalue().strip()
-        self.assertTrue(line.startswith('BUNDLES:'), line[:40])
-        rows = json.loads(line[len('BUNDLES:'):])
-        self.assertTrue(rows)
-        for row in rows:
-            self.assertEqual(len(row), 3)
-            self.assertTrue(all(isinstance(x, str) for x in row))
 
 
 class TestInspectorPeelRow(testing.PyMOLTestCase):
@@ -466,18 +425,6 @@ class TestWhatTheControlsSend(testing.PyMOLTestCase):
         # object header.
         self.assertAlmostEqual(cmd.get_setting_float('metal_rt_reflect'), 0.0,
                                places=4)
-
-    def testTheBundleCommandRunsTheBundle(self):
-        cmd.do("python\nfrom pymol import materials; "
-               "materials.marble('m1', _self=cmd)\npython end")
-        self.assertEqual(cmd.get('surface_material', 'm1'), 'marble')
-        self.assertEqual(cmd.get('cartoon_material', 'm1'), 'marble')
-        # ...and the lighting half, which is what separates a bundle from the
-        # dropdown beside it.
-        self.assertAlmostEqual(cmd.get_setting_float('specular'), 0.12, places=4)
-        self.assertAlmostEqual(cmd.get_setting_float('metal_sss_wrap'), 0.6,
-                               places=4)
-
 
 class TestSceneMaterialRows(testing.PyMOLTestCase):
     def testTheSceneParamsArePolled(self):

@@ -78,56 +78,6 @@ final class MaterialInspectorTests: XCTestCase {
         XCTAssertTrue(meta.legacyReflectionDead)
     }
 
-    // MARK: - suggested lighting: the join key comes from the core
-
-    private func bundles(_ json: String) -> [(attr: String, label: String, material: String)]? {
-        PyMOLEngine.parseBundles("BUNDLES:" + json)
-    }
-
-    func testBundlesAreParsedWithTheirMaterial() {
-        let out = bundles("""
-            [["marble","Marble (statuary)","marble"],["gold","Gold","metallic"]]
-            """)
-        XCTAssertEqual(out?.count, 2)
-        XCTAssertEqual(out?[0].attr, "marble")
-        XCTAssertEqual(out?[0].label, "Marble (statuary)")
-        XCTAssertEqual(out?[0].material, "marble")
-        XCTAssertEqual(out?[1].material, "metallic")
-    }
-
-    /// Several bundles share a material — the four metals are all `metallic` —
-    /// which is why the control is a menu rather than a button when more than
-    /// one matches, and why the parse must not collapse them into a map.
-    func testSeveralBundlesMayShareTheSameMaterial() {
-        let out = bundles("""
-            [["copper","Copper","metallic"],["gold","Gold","metallic"],
-             ["steel","Steel","metallic"],["chrome","Chrome","metallic"]]
-            """)
-        XCTAssertEqual(out?.count, 4)
-        XCTAssertEqual(Set(out?.map { $0.material } ?? []), ["metallic"])
-    }
-
-    /// A malformed payload must leave the previous list alone rather than
-    /// emptying it: the control simply not appearing is a much quieter failure
-    /// than the app deciding there are no bundles.
-    func testAMalformedPayloadIsRejectedRatherThanEmptying() {
-        XCTAssertNil(bundles("not json"))
-        XCTAssertNil(bundles("[]"))
-        XCTAssertNil(PyMOLEngine.parseBundles("MATERIALS:[[0,\"default\"]]"))
-    }
-
-    /// A row missing its material, or carrying an empty attr, is DROPPED. The
-    /// attr is what gets executed — a button that runs `materials.()` would be
-    /// worse than no button.
-    func testIncompleteBundleRowsAreSkipped() {
-        let out = bundles("""
-            [["marble","Marble","marble"],["clay","Clay"],["","Nameless","x"],
-             ["ok","Ok",""]]
-            """)
-        XCTAssertEqual(out?.count, 1)
-        XCTAssertEqual(out?[0].attr, "marble")
-    }
-
     // MARK: - what the controls SEND
 
     // The Inspector cannot be driven headlessly, so these pin the command each
@@ -152,36 +102,6 @@ final class MaterialInspectorTests: XCTestCase {
                        "set metal_rt_reflect, 0.5000, m1")
         XCTAssertEqual(MaterialCommands.setReflect("metal_rt_reflect_rough", 0.05, on: "obj2"),
                        "set metal_rt_reflect_rough, 0.0500, obj2")
-    }
-
-    /// The bundle is CALLED, not reimplemented: it writes global lighting as
-    /// well as the object's material, and a copy of that list here would drift
-    /// from modules/pymol/materials.py with nothing to catch it.
-    func testTheLookButtonCallsTheBundle() {
-        XCTAssertEqual(MaterialCommands.runBundle("marble", on: "m1"),
-                       "python\nfrom pymol import materials; "
-                       + "materials.marble('m1', _self=cmd)\npython end")
-    }
-
-    /// The chip's help has to say that the bundle rewrites the material on
-    /// EVERY representation, because it does -- `_apply_material` loops all
-    /// four settings by design. #498 calls this "Suggested lighting" and the
-    /// first version was labelled that way, which would have let a click
-    /// beside the Sticks dropdown silently replace a deliberate
-    /// `surface_material, glass` with marble and never mention the surface.
-    func testTheLookButtonSaysItRewritesEveryRepresentation() {
-        let help = MaterialCommands.bundleHelp("Marble (statuary)")
-        XCTAssertTrue(help.contains("Marble (statuary)"), help)
-        XCTAssertTrue(help.contains("EVERY representation"), help)
-        XCTAssertTrue(help.contains("lighting"), help)
-        // The named metals write NO lighting setting -- no specular, no
-        // shininess, no shadows. They write a colour and the reflect triple,
-        // i.e. the group directly below the chip. An earlier version promised
-        // lighting for them and said nothing about the reflection.
-        XCTAssertTrue(help.contains("reflection"), help)
-        XCTAssertTrue(help.contains("colour"), help)
-        // ...and the many-bundles variant, which has no single label to name.
-        XCTAssertTrue(MaterialCommands.bundleHelp(nil).contains("EVERY representation"))
     }
 
     /// The gates that keep the rows off the objects they do not apply to.
@@ -222,49 +142,6 @@ final class MaterialInspectorTests: XCTestCase {
         XCTAssertEqual(cmdText, "unset metal_rt_reflect, m1\n"
                               + "unset metal_rt_reflect_tint, m1\n"
                               + "unset metal_rt_reflect_rough, m1")
-    }
-
-    /// An object name reaches a PYTHON string literal that is itself inside a
-    /// command `cmd.do` splits with `str.splitlines()` — two levels, failing
-    /// differently.
-    ///
-    /// Every case of the escape is exercised — backslash, quote, all ten
-    /// splitlines separators and an astral scalar — so breaking any one of
-    /// them fails this. The first version tested only the quote, and a
-    /// mutation removing the backslash escape survived it.
-    ///
-    /// Reachability: `validate_object_names` defaults to 1 and rewrites these
-    /// characters to underscores, so this needs that setting off plus the
-    /// Python `object=` argument. A hardening gap, not a live hole.
-    func testTheLookButtonEscapesTheObjectName() {
-        XCTAssertEqual(MaterialCommands.runBundle("marble", on: "foo'bar"),
-                       "python\nfrom pymol import materials; "
-                       + "materials.marble('foo\\'bar', _self=cmd)\npython end")
-        // Backslash first, or escaping the quote would double-escape it.
-        XCTAssertTrue(MaterialCommands.runBundle("clay", on: "a\\b")
-                        .contains("materials.clay('a\\\\b'"))
-        // A line break is the one that can INJECT: cmd.do splits with
-        // str.splitlines() and would run the tail as its own commands. "Line
-        // break" is splitlines' list, not just \n -- every one of these must
-        // come out as an escape.
-        let separators: [Unicode.Scalar] = ["\n", "\r", "\u{0B}", "\u{0C}",
-            "\u{1C}", "\u{1D}", "\u{1E}", "\u{85}", "\u{2028}", "\u{2029}"]
-        for sep in separators {
-            let name = "a\(Character(sep))python end\(Character(sep))b"
-            let cmd = MaterialCommands.runBundle("clay", on: name)
-            // Exactly the two newlines the block structure needs, and nothing
-            // else that is not printable ASCII.
-            let stray = cmd.unicodeScalars.filter {
-                $0 != "\n" && !(0x20...0x7E).contains($0.value)
-            }
-            XCTAssertTrue(stray.isEmpty, "U+\(String(sep.value, radix: 16)) survived: \(cmd)")
-            XCTAssertEqual(cmd.unicodeScalars.filter { $0 == "\n" }.count, 2, cmd)
-            let hex = String(format: "%04x", sep.value)
-            XCTAssertTrue(cmd.contains("materials.clay('a\\u\(hex)python end\\u\(hex)b'"), cmd)
-        }
-        // Beyond the BMP the escape is the eight-digit form Python reads.
-        XCTAssertTrue(MaterialCommands.runBundle("clay", on: "a\u{1F600}")
-                        .contains("materials.clay('a\\U0001f600'"))
     }
 
     // MARK: - the two scene-wide rows
