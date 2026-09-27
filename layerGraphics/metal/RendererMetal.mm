@@ -5946,12 +5946,29 @@ static float mat_turb(float3 p) {  // turbulence: sum of |noise - 0.5|
   return s;
 }
 
+// How much of a noise octave survives at this pixel: 1 while its cells span
+// more than ~1.3 pixels, fading to 0 by ~0.7 of a pixel. `q` is the octave's
+// lookup coordinate, so fwidth(q) is how many noise cells one pixel covers.
+// Past Nyquist a cell is sub-pixel, and the value a pixel lands on is
+// effectively random -- it shimmers as the camera moves and does not match a
+// high-res export of the same view. Fading the octave to its mean (0, since
+// the octaves are centred) is the band-limit.
+static float mat_octave_fade(float3 q) {
+  float cells = length(fwidth(q));
+  return 1.0 - smoothstep(1.0, 2.0, cells);
+}
+
 // Two octaves of model-space grain, centred on 1.0. Every grainy material uses
-// the same shape so they differ only by amplitude and frequency.
+// the same shape so they differ only by amplitude and frequency. Each octave
+// is faded out as it drops below the pixel size (mat_octave_fade): zoomed in,
+// nothing changes; zoomed out, the grain settles to the flat albedo instead of
+// shimmering. Only ever called from fragment functions (fwidth needs them).
 static float mat_grain(float3 pModel, float amount, float freq, float harmonic, float offset) {
   if (amount <= 0.0) return 1.0;
-  return 1.0 + amount * (mat_noise(pModel * freq) * 2.0 - 1.0)
-             + 0.5 * amount * (mat_noise(pModel * freq * harmonic + offset) * 2.0 - 1.0);
+  float3 q1 = pModel * freq;
+  float3 q2 = pModel * freq * harmonic + offset;
+  return 1.0 + amount * mat_octave_fade(q1) * (mat_noise(q1) * 2.0 - 1.0)
+             + 0.5 * amount * mat_octave_fade(q2) * (mat_noise(q2) * 2.0 - 1.0);
 }
 
 // --- marble ----------------------------------------------------------------
