@@ -29,9 +29,10 @@ class TestMetalRTReflectSettings(testing.PyMOLTestCase):
         # the neighbours on both sides keep their indices
         self.assertEqual(setting._get_index('metal_rt_scale'), 832)
         self.assertEqual(setting._get_index('metal_rt_reflect_env'), 836)
+        # ...and the three slots are blank, not handed to a new setting
         index_to_name = {v: k for k, v in setting.index_dict.items()}
         for i in (833, 834, 835):
-            self.assertNotIn(index_to_name.get(i, ''), RETIRED)
+            self.assertFalse(index_to_name.get(i), i)
 
     def testTheGlobalKnobsRemain(self):
         for n in GLOBAL:

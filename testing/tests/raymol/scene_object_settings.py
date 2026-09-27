@@ -12,8 +12,8 @@ Runs on a RayMol --testing build:
 from pymol import cmd, testing
 from pymol import raymol_scenes as rs
 
-REFLECT = 'cartoon_material'   # any object-scoped setting OBJECT_CAPTURE lists
-TINT = 'surface_material'
+SETTING = 'cartoon_material'   # any object-scoped setting OBJECT_CAPTURE lists
+OTHER = 'surface_material'
 
 
 class TestSceneObjectSettings(testing.PyMOLTestCase):
@@ -25,16 +25,16 @@ class TestSceneObjectSettings(testing.PyMOLTestCase):
         cmd.fragment('gly', 'm2')
         # A distinctive global fallback: every "unset" assertion below reads it
         # back through the object, which is how an absent override shows up.
-        cmd.set(REFLECT, 2)
+        cmd.set(SETTING, 2)
 
-    def _objval(self, obj, name=REFLECT):
+    def _objval(self, obj, name=SETTING):
         return cmd.get_setting_int(name, obj)
 
     def testCapturesPerObjectAndRecallsEachScene(self):
-        cmd.set(REFLECT, 3, 'm1')
+        cmd.set(SETTING, 3, 'm1')
         cmd.scene('A', 'store')
-        cmd.unset(REFLECT, 'm1')
-        cmd.set(REFLECT, 7, 'm2')
+        cmd.unset(SETTING, 'm1')
+        cmd.set(SETTING, 7, 'm2')
         cmd.scene('B', 'store')
 
         cmd.scene('A', 'recall', animate=0)
@@ -47,7 +47,7 @@ class TestSceneObjectSettings(testing.PyMOLTestCase):
 
     def testRecallUnsetsAnOverrideAddedAfterTheStore(self):
         cmd.scene('A', 'store')                     # neither object has one
-        cmd.set(REFLECT, 9, 'm1')
+        cmd.set(SETTING, 9, 'm1')
         self.assertEqual(self._objval('m1'), 9)
         cmd.scene('A', 'recall', animate=0)
         self.assertEqual(self._objval('m1'), 2)
@@ -63,34 +63,34 @@ class TestSceneObjectSettings(testing.PyMOLTestCase):
         self.assertEqual(captured['m2'], {})
 
     def testCapturesEverySettingInTheList(self):
-        cmd.set(TINT, 4, 'm2')
+        cmd.set(OTHER, 4, 'm2')
         cmd.scene('A', 'store')
         self.assertAlmostEqual(
-            rs.scene_object_settings_map('A')['m2'][TINT], 4)
+            rs.scene_object_settings_map('A')['m2'][OTHER], 4)
 
     def testAnObjectGoneAtRecallDoesNotStopTheRest(self):
         """The deleted object must be skipped, not abort the loop: m2's value
         still has to be applied after m1 has gone."""
-        cmd.set(REFLECT, 3, 'm1')
-        cmd.set(REFLECT, 8, 'm2')
+        cmd.set(SETTING, 3, 'm1')
+        cmd.set(SETTING, 8, 'm2')
         cmd.scene('A', 'store')
         cmd.delete('m1')
-        cmd.unset(REFLECT, 'm2')
+        cmd.unset(SETTING, 'm2')
         cmd.scene('A', 'recall', animate=0)         # must not raise
         self.assertEqual(cmd.get_names('objects'), ['m2'])
         self.assertEqual(self._objval('m2'), 8)
 
     def testRenameKeepsPerObjectCapture(self):
-        cmd.set(REFLECT, 3, 'm1')
+        cmd.set(SETTING, 3, 'm1')
         cmd.scene('A', 'store')
         cmd.scene('A', 'rename', new_key='C')
         self.assertEqual(rs.scene_object_settings_map('A'), {})
-        cmd.unset(REFLECT, 'm1')
+        cmd.unset(SETTING, 'm1')
         cmd.scene('C', 'recall', animate=0)
         self.assertEqual(self._objval('m1'), 3)
 
     def testDeleteScenePrunesTheCapture(self):
-        cmd.set(REFLECT, 3, 'm1')
+        cmd.set(SETTING, 3, 'm1')
         cmd.scene('A', 'store')
         cmd.scene('B', 'store')
         cmd.scene('A', 'delete')
@@ -102,18 +102,18 @@ class TestSceneObjectSettings(testing.PyMOLTestCase):
         expand a group name to its MEMBERS. Capturing a group would record its
         own (empty) table and then unset the setting on every member on recall,
         wiping the very overrides this module restores."""
-        cmd.set(REFLECT, 3, 'm1')
+        cmd.set(SETTING, 3, 'm1')
         cmd.group('grp', 'm1 m2')
         cmd.scene('A', 'store')
         self.assertNotIn('grp', rs.scene_object_settings_map('A'))
         self.assertEqual(sorted(rs.scene_object_settings_map('A')), ['m1', 'm2'])
-        cmd.unset(REFLECT, 'm1')
+        cmd.unset(SETTING, 'm1')
         cmd.scene('A', 'recall', animate=0)
         self.assertEqual(self._objval('m1'), 3)
 
     def testALegacyMapNamingAGroupIsIgnored(self):
         """A .pse written before the guard existed can still carry a group."""
-        cmd.set(REFLECT, 3, 'm1')
+        cmd.set(SETTING, 3, 'm1')
         cmd.group('grp', 'm1 m2')
         cmd.scene('A', 'store')
         rs._scene_object_settings['A']['grp'] = {}       # as the old build stored it
@@ -133,11 +133,11 @@ class TestSceneObjectSettings(testing.PyMOLTestCase):
         self.assertAlmostEqual(cmd.get_object_ttt('m1')[12], 7.0, places=5)
 
     def testPSERoundTrip(self):
-        cmd.set(REFLECT, 3, 'm1')
-        cmd.set(TINT, 5, 'm1')
+        cmd.set(SETTING, 3, 'm1')
+        cmd.set(OTHER, 5, 'm1')
         cmd.scene('A', 'store')
-        cmd.set(REFLECT, 7, 'm2')
-        cmd.unset(REFLECT, 'm1')
+        cmd.set(SETTING, 7, 'm2')
+        cmd.unset(SETTING, 'm1')
         cmd.scene('B', 'store')
         with testing.mktemp('.pse') as fn:
             cmd.save(fn)
@@ -145,10 +145,10 @@ class TestSceneObjectSettings(testing.PyMOLTestCase):
             rs.clear_all()
             cmd.load(fn)
         self.assertAlmostEqual(
-            rs.scene_object_settings_map('A')['m1'][REFLECT], 3)
+            rs.scene_object_settings_map('A')['m1'][SETTING], 3)
         cmd.scene('A', 'recall', animate=0)
         self.assertEqual(self._objval('m1'), 3)
-        self.assertEqual(self._objval('m1', TINT), 5)
+        self.assertEqual(self._objval('m1', OTHER), 5)
         self.assertEqual(self._objval('m2'), 2)
         cmd.scene('B', 'recall', animate=0)
         self.assertEqual(self._objval('m1'), 2)
@@ -168,9 +168,9 @@ class TestLegacyPayload(testing.PyMOLTestCase):
         super().tearDown()
 
     def testFlatPayloadRestoresWithoutError(self):
-        session = {'raymol_scene_settings': {'A': {REFLECT: 6, 'metal_dof': 1}}}
+        session = {'raymol_scene_settings': {'A': {SETTING: 6, 'metal_dof': 1}}}
         self.assertEqual(rs.session_restore(session), 1)
-        self.assertEqual(rs.scene_settings_map('A'), {REFLECT: 6, 'metal_dof': 1})
+        self.assertEqual(rs.scene_settings_map('A'), {SETTING: 6, 'metal_dof': 1})
         self.assertEqual(rs.scene_object_settings_map('A'), {})
 
     def testLegacySceneRecallLeavesObjectOverridesAlone(self):
@@ -179,12 +179,12 @@ class TestLegacyPayload(testing.PyMOLTestCase):
         cmd.reinitialize()
         rs.clear_all()
         cmd.fragment('ala', 'm1')
-        cmd.set(REFLECT, 2)
+        cmd.set(SETTING, 2)
         cmd.scene('A', 'store')
         rs._scene_object_settings.pop('A', None)        # as a legacy .pse restores
-        cmd.set(REFLECT, 9, 'm1')
+        cmd.set(SETTING, 9, 'm1')
         cmd.scene('A', 'recall', animate=0)
-        self.assertEqual(cmd.get_setting_int(REFLECT, 'm1'), 9)
+        self.assertEqual(cmd.get_setting_int(SETTING, 'm1'), 9)
 
     def testMalformedPayloadIsDroppedNotRaised(self):
         for payload in ([], 'nonsense', {'A': 7}, {'A': {'m1': 3}}):
@@ -193,10 +193,10 @@ class TestLegacyPayload(testing.PyMOLTestCase):
             self.assertEqual(rs.scene_object_settings_map('A'), {})
 
     def testSaveRestoreRoundTripsTheMap(self):
-        rs._scene_object_settings['A'] = {'m1': {REFLECT: 3}, 'm2': {}}
+        rs._scene_object_settings['A'] = {'m1': {SETTING: 3}, 'm2': {}}
         session = {}
         rs.session_save(session)
         rs.clear_all()
         rs.session_restore(session)
         self.assertEqual(rs.scene_object_settings_map('A'),
-                         {'m1': {REFLECT: 3}, 'm2': {}})
+                         {'m1': {SETTING: 3}, 'm2': {}})

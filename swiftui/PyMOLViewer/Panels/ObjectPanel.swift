@@ -99,11 +99,9 @@ struct ObjStateMeta: Equatable {
     // unless at least one state carries a title. Indexed by state-1 (issue #203).
     var titles: [String] = []
 
-    // MARK: object-wide material rows (#498)
-    // These four settings are OBJECT-scoped, so they belong on the object
-    // header rather than in a rep panel. Carried per rep -- as they were until
-    // #498 -- the same value appeared in four places and moving one moved them
-    // all, which reads as four broken sliders rather than one shared one.
+    // MARK: object-wide material row (#498)
+    // `transparency_peel` is OBJECT-scoped, so it belongs on the object header
+    // rather than in a rep panel.
 
     /// `transparency_peel` as stored: -1 auto, 0 off, 1 on.
     var peel: Int = -1
@@ -112,9 +110,9 @@ struct ObjStateMeta: Equatable {
     /// CmdGetObjectPeel).
     var peelResolved: Bool = false
     /// Whether the PEEL row applies. Every molecule and more:
-    /// SceneCollectPeelObjects walks every non-gadget object,
-    /// so a translucent isosurface is peelable and its front/back double blend
-    /// is exactly what peel is for. Only groups are excluded.
+    /// SceneCollectPeelObjects walks every non-gadget object, so a translucent
+    /// isosurface is peelable and its front/back double blend is exactly what
+    /// peel is for. Groups and ramps (a gadget) are excluded.
     var hasPeelRow: Bool = false
 
     /// Does the object header show any of these rows at all?

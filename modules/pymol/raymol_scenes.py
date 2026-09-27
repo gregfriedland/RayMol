@@ -32,9 +32,10 @@ CAPTURE = [
     "metal_rt_reflect_env", "metal_rt_reflect_samples", "metal_rt_transparent",
     "material_default", "material_env",
     # The per-rep materials are OBJECT-level settings, so they have a global
-    # fallback as well as per-object overrides. Both halves have to be captured: the global is what an object with
-    # no override of its own renders with, and what a NEW object created after
-    # the recall picks up. OBJECT_CAPTURE below covers the other half.
+    # fallback as well as per-object overrides. Both halves have to be
+    # captured: the global is what an object with no override of its own
+    # renders with, and what a NEW object created after the recall picks up.
+    # OBJECT_CAPTURE below covers the other half.
     "cartoon_material", "surface_material", "stick_material", "sphere_material",
     "transparency_peel",
     "metal_msaa", "metal_tonemap", "metal_exposure", "metal_sss_wrap",

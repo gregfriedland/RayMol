@@ -152,8 +152,9 @@ class TestGlass(testing.PyMOLTestCase):
     def testEveryOtherFamilyDrawsWithNoReflectionAtAll(self):
         """`default` and the procedural family draw with reflect / tint /
         rough at 0 -- what `default` has always drawn with, which keeps it
-        byte-identical. matte's table row carries rough 1.0 (a value its
-        shader never reads); it must still reach the draw as 0."""
+        byte-identical. Every procedural row carries a non-zero rough (matte
+        and clay 1.0, rubber 0.95, marble 0.9) that its shader never reads; it
+        must still reach the draw as 0."""
         for material in ('default', 'matte', 'marble', 'clay', 'rubber'):
             cmd.set('surface_material', material, 'm1')
             params = _cmd.get_material_draw_params(
