@@ -230,8 +230,10 @@ bool MaterialRepEmitsStickBalls(PyMOLGlobals* G, const CoordSet* cs,
  * not to the `ray_transparency_specular` highlight carried through a
  * transparent layer, which stays white; and the scene EXPORTS read neither the
  * texture nor these knobs -- a metallic object exports with the default
- * finish. Of the implied transparency, .dae, .gltf and .idtf carry it on every
- * primitive, .pov on triangles only, and .wrl and .obj not at all.
+ * finish. Of the implied transparency, .dae and .gltf carry it on every
+ * primitive; .pov carries it on triangles only; .idtf exports ONLY triangles
+ * (spheres and sticks are left out of the file), and carries it on those;
+ * .wrl and .obj carry none.
  *
  * `default` is {0, 1, 1, 0}: no texture and today's lighting, byte for byte.
  * So are glass and jelly -- the glass family reaches `ray` through the
