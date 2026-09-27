@@ -5947,18 +5947,20 @@ static float mat_turb(float3 p) {  // turbulence: sum of |noise - 0.5|
 }
 
 // How many noise cells one pixel covers at lookup coordinate `q`: the longer
-// of the two screen-axis derivatives. Rotation-invariant -- length(fwidth(q))
-// would sum |dx| and |dy| per component and grow up to 2x as an object turns in
-// the image plane, so the amount of grain would change with orientation.
+// of the two screen-axis derivatives (the standard GPU LOD footprint). Nearly
+// rotation-invariant -- exact for a surface facing the camera, within 1.41x on
+// a grazing one -- where length(fwidth(q)) summed |dx| and |dy| per component
+// and changed by up to 2x as an object turned in the image plane.
 static float mat_cells_per_pixel(float3 q) {
   return max(length(dfdx(q)), length(dfdy(q)));
 }
 
 // How much of a noise octave survives: 1 while a cell spans ~1.4 pixels or
 // more (0.7 cells per pixel), fading to 0 by 1.4 cells per pixel (a cell of
-// ~0.7 px). Nyquist would start at 0.5; the band starts a little later so
-// clay keeps its fine grain at normal zoom (it is what separates clay from
-// matte), and was tuned against measured shimmer under a sub-pixel pan.
+// ~0.7 px). Value noise carries most of its energy at wavelengths of about two
+// cells, so this sits near the practical Nyquist limit; it was tuned against
+// measured shimmer under a sub-pixel pan and against keeping clay's fine grain
+// at normal zoom (it is what separates clay from matte).
 // Past it a cell is sub-pixel and the value a pixel lands on
 // is effectively random -- it shimmers as the camera moves. Fading the octave
 // to its mean (0, since the octaves are centred) is the band-limit. It is set
