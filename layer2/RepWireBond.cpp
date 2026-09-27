@@ -559,8 +559,8 @@ Rep *RepWireBondNew(CoordSet * cs, int state)
   // stick_transparency is also a BOND setting, and RepCylBond draws each bond
   // at its own value with the object's effective one as the fallback -- so the
   // suppression below is decided per bond the same way. The object-level
-  // decision here is what a bond without its own value gets, what the
-  // alternately-shown branch uses, and what the rep records.
+  // decision here is what a bond without its own value gets, and what the
+  // rep records.
   const float kLinesUnderTranslucentSticks = 0.5F;
   bool const line_stick_setting = line_stick_helper;
   float const obj_stick_transp = MaterialEffectiveTransparency(G,
@@ -651,7 +651,11 @@ Rep *RepWireBondNew(CoordSet * cs, int state)
 
         if(s1 ^ s2){
           if(!half_bonds) {
-            if(line_stick_helper &&
+            // The raw setting, not the translucency decision: RepCylBond
+            // draws no stick for a bond shown this way, so its transparency
+            // cannot matter -- deciding on it left such a bond blank on a
+            // translucent object (neither line nor stick).
+            if(line_stick_setting &&
                (((!s1) && (cRepCylBit & ati1->visRep) && !(cRepCylBit & ati2->visRep)) ||
                 ((!s2) && (cRepCylBit & ati2->visRep) && !(cRepCylBit & ati1->visRep))))
               s1 = s2 = 1;      /* turn on line when both stick and line are alternately shown */

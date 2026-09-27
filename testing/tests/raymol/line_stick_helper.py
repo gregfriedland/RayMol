@@ -112,10 +112,46 @@ class TestLineStickHelperThreshold(testing.PyMOLTestCase):
         cmd.set_bond('stick_transparency', 0.9, 'm1')
         self.build()
         try:
-            built_line_stick_helper('m1')
+            helper = built_line_stick_helper('m1')
         except Exception as exc:
             self.fail('lines suppressed under 90%%-transparent bonds: %s' % exc)
+        # the recorded value is the OBJECT's decision: 0.3 is not translucent
+        self.assertEqual(helper, 1)
         # ...and mostly opaque bonds on a see-through object lose theirs
         cmd.set('stick_transparency', 0.9, 'm1')
         cmd.set_bond('stick_transparency', 0.1, 'm1')
+        self.assertLinesSuppressed()
+
+    def testALineMeetingAStickKeepsItOnATranslucentObject(self):
+        """One atom shows only lines, its neighbour only sticks: the helper
+        draws the connecting line, and no stick is drawn for that bond, so its
+        transparency cannot matter. It used to follow the translucency
+        decision, leaving such a bond blank (no line, no stick) at 0.9.
+
+        Isolated so "the lines rep was built" means exactly "that line was
+        drawn". The lines build bails out unless some bond shows lines on both
+        atoms, so a second molecule in the object shows lines AND sticks on
+        every atom, with every bond at stick_transparency 0 -- suppressed per
+        bond, contributing no lines. In `ala`, CA shows only lines and every
+        other atom only sticks: CA's bonds are the only lines that can exist."""
+        cmd.fragment('gly', 'g')
+        cmd.create('m1', 'm1 or g')
+        cmd.delete('g')
+        cmd.alter('m1 and resn GLY', 'segi="G"')
+        cmd.set('stick_transparency', 0.9, 'm1')
+        cmd.hide('everything', 'm1')
+        cmd.show('lines', 'm1 and segi G')
+        cmd.show('sticks', 'm1 and segi G')
+        cmd.set_bond('stick_transparency', 0.0, 'm1 and segi G')
+        cmd.show('lines', 'm1 and resn ALA and name CA')
+        cmd.show('sticks', 'm1 and resn ALA and not name CA')
+        self.build()
+        try:
+            helper = built_line_stick_helper('m1')
+        except Exception as exc:
+            self.fail('the line from CA to its stick-only neighbours was not '
+                      'drawn on a 90%%-transparent object: %s' % exc)
+        self.assertEqual(helper, 0)   # the object IS translucent
+        # ...and the control: hide CA's lines and nothing is left to draw
+        cmd.hide('lines', 'm1 and resn ALA')
         self.assertLinesSuppressed()
