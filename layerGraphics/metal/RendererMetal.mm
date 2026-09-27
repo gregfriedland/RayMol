@@ -875,9 +875,10 @@ void RendererMetal::beginFrame()
   // exists — building (with its own cmd buffer + wait) must not happen while a
   // render command buffer is in flight (that stalls/blackouts the frame).
   // Model-space geometry is stable, so one-frame latency is invisible.
-  // metal_rt_transparent (#532) first: the opaque rebuild clears
-  // _rtGeomDirty, which the transparent structure has to see too. Called
-  // unconditionally so turning RT (or the setting) off releases it.
+  // metal_rt_transparent (#532) first, while the opaque record still holds the
+  // previous frame (the transparent build skips a frame with no opaque
+  // casters). Called unconditionally so turning RT (or the setting) off
+  // releases it.
   ensureRayTracingTransAS();
   if (_rtEnabled) ensureRayTracingAS();
   // Arm the OIT clear for this frame (#488). The peel path opens several
@@ -3221,12 +3222,16 @@ static const std::vector<float>& rtUnitIcosphereTris()
 // off (or empty) releases it, so the default path carries nothing.
 void RendererMetal::ensureRayTracingTransAS()
 {
-  if (!_rtEnabled || !_rtSupported || !_rtTransparent || _rtTFrameKeys.empty()) {
+  // No opaque casters means no RT pass to use it (it needs the opaque
+  // structure), so a transparent-only scene builds nothing.
+  if (!_rtEnabled || !_rtSupported || !_rtTransparent || _rtTFrameKeys.empty() ||
+      _rtFrameKeys.empty()) {
     if (_rtTransAS) releaseRayTracingTransAS();
     return;
   }
-  if (_rtTReady && _rtTransAS && !_rtGeomDirty && _rtTFrameSig == _rtTBuiltSig)
+  if (_rtTReady && _rtTransAS && !_rtTGeomDirty && _rtTFrameSig == _rtTBuiltSig)
     return;
+  _rtTGeomDirty = false;
 
   auto xformPt = [](const Mat4& M, float x, float y, float z, float o[3]) {
     o[0] = M[0] * x + M[4] * y + M[8] * z + M[12];
@@ -8226,6 +8231,7 @@ void RendererMetal::invalidateVBOCache(uint64_t key)
   _rtGeomCache.clear();
   _rtGeomAlias.clear();
   _rtGeomDirty = true;
+  _rtTGeomDirty = true;
 }
 
 void RendererMetal::rtDropGeometry(const void* cpuData)
@@ -8243,8 +8249,14 @@ void RendererMetal::rtDropGeometry(const void* cpuData)
     return;
   // Only geometry that made it into the frame record can invalidate the built
   // acceleration structure (see rtNoteGeometry).
-  if (!g->second.spheres.empty() || !g->second.tris.empty())
-    _rtGeomDirty = true;
+  if (!g->second.spheres.empty() || !g->second.tris.empty()) {
+    // An entry only ever noted by the transparent record (#532) leaves the
+    // opaque structure alone; every other entry dirties it exactly as before.
+    if (g->second.inOpaque || !g->second.inTransparent)
+      _rtGeomDirty = true;
+    if (g->second.inTransparent)
+      _rtTGeomDirty = true;
+  }
   _rtGeomCache.erase(g);
   // Drop any remaining aliases of the entry just erased (the alias map has one
   // entry per indexed VBO, so this scan is cheap and runs only on a rep rebuild).

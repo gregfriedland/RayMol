@@ -98,3 +98,42 @@ class TestTheDefaultIsCompiledOut(testing.PyMOLTestCase):
                               r'_rtTransAS &&\s*_rtAOPipelineT && _rtResolvePipelineT;')
         self.assertIn('setRenderPipelineState:doRTTrans ? _rtAOPipelineT : _rtAOPipeline]', src)
         self.assertIn('setRenderPipelineState:doRTTrans ? _rtResolvePipelineT : _rtResolvePipeline]', src)
+
+    def testEveryUseOfTheTransparentStructureIsBehindTheConstant(self):
+        """The declarations are gated (above), and so must every read be: the
+        default pipeline compiles kRTTrans out only where a kRTTrans branch
+        encloses the read. An ungated read still compiles -- and makes the
+        default pipeline read buffers no default frame binds."""
+        _src, rt = rt_source()
+        # rt_trans_T itself reads them unconditionally; it is covered by its
+        # call sites, which are uses of `tas` checked below
+        start = rt.index('static float rt_trans_T')
+        end = rt.index('\n}\n', start) + 3
+        checked = 0
+        for m in re.finditer(r'\b(tas|tcols|tocc|tnrms)\b', rt):
+            if start <= m.start() < end:
+                continue
+            if rt[m.end():m.end() + 12].lstrip().startswith('[[buffer('):
+                continue   # the argument declaration
+            # headers of the blocks enclosing this use, innermost first
+            depth, headers, i = 0, [], m.start()
+            while i > 0:
+                i -= 1
+                c = rt[i]
+                if c == '}':
+                    depth += 1
+                elif c == '{':
+                    if depth:
+                        depth -= 1
+                    else:
+                        j = max(rt.rfind(';', 0, i), rt.rfind('}', 0, i),
+                                rt.rfind('{', 0, i))
+                        headers.append(rt[j + 1:i])
+            # an `if (kRTTrans ...)` block -- not merely a header that mentions
+            # it: the function's own header does, in its gated arguments
+            self.assertTrue(any(re.search(r'\bif \(kRTTrans\b', h) for h in headers),
+                            '%s at offset %d is not inside a kRTTrans branch'
+                            % (m.group(0), m.start()))
+            checked += 1
+        # AO (tas, tcols), shadow (tas, tcols, tocc), reflection (tas, tnrms, tcols)
+        self.assertGreaterEqual(checked, 8)

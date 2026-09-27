@@ -751,11 +751,16 @@ private:
     std::vector<float> triCols;
     std::vector<float> triNrms;  // 9 floats per triangle: per-vertex normals
     std::vector<float> sphereCols;
-    // metal_rt_transparent (#532): per-triangle / per-sphere ALPHA, the mean of
-    // the vertex alphas the draw carries. Only a transparent occurrence reads
-    // it; an opaque one ignores it.
+    // metal_rt_transparent (#532): per-triangle / per-sphere ALPHA -- the mean
+    // of the three vertex alphas for a mesh triangle, the (first-half) vertex
+    // alpha for a stick and a sphere. Only a transparent occurrence reads it.
     std::vector<float> triAlpha;
     std::vector<float> sphereAlpha;
+    // Which frame record(s) this entry has been noted in, so dropping it
+    // dirties only the structure(s) built from it (#532): a transparent-only
+    // entry must not force a synchronous rebuild of the opaque structure.
+    bool inOpaque = false;
+    bool inTransparent = false;
     uint64_t params = 0;         // draw-call scalars the extraction used
     uint64_t gen = 0;            // bumped on every (re)extraction; 0 = never
   };
@@ -833,9 +838,11 @@ private:
     if (g.spheres.empty() && g.tris.empty())
       return;
     if (transparent) {
+      g.inTransparent = true;
       rtNoteTransparent(key, g.gen);
       return;
     }
+    g.inOpaque = true;
     _rtFrameKeys.push_back(key);
 
     // Pose delta = base^-1 · M_obj: divides the shared camera out of this draw's
@@ -895,6 +902,7 @@ private:
   uint64_t _rtTFrameSig = 0;
   uint64_t _rtTBuiltSig = 0;
   bool _rtTReady = false;
+  bool _rtTGeomDirty = false;          // a transparent-record entry was dropped
   size_t _rtTTriCount = 0;
   id<MTLAccelerationStructure> _rtTransAS = nil;
   id<MTLBuffer> _rtTColBuffer = nil;   // float4/tri: rgb, alpha
