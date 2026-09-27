@@ -156,11 +156,20 @@ class TestTheFramesDecision(testing.PyMOLTestCase):
 
     def testAnObjectThatDoesNotAskIsNotPeeled(self):
         cmd.set('transparency_peel', 0, 'j2')
+        # j4 goes, so the cap is not what keeps 'plain' off the list: with
+        # j1 and j3 there is a slot left for it
+        cmd.delete('j4')
         cmd.fragment('gly', 'plain')
+        cmd.show_as('sticks', 'plain')
         cmd.set('stick_transparency', 0.5, 'plain')   # translucent, no ask
         cmd.rebuild()
         cmd.refresh()
-        self.assertEqual(frame_peel()[1], ['j1', 'j3', 'j4'])
+        self.assertEqual(frame_peel()[1], ['j1', 'j3'])
+        # the control: once 'plain' does ask, it takes that slot
+        cmd.set('stick_material', 'jelly', 'plain')
+        cmd.rebuild()
+        cmd.refresh()
+        self.assertEqual(frame_peel()[1], ['j1', 'j3', 'plain'])
 
     def testNothingPeelsWithoutAPeelingRenderer(self):
         """The embedded core draws with no Metal renderer, so the frame peels
