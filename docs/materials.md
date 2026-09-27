@@ -232,8 +232,7 @@ knobs it has:
 
 `metal_rt_reflect`, `metal_rt_reflect_tint` and `metal_rt_reflect_rough`
 (object-scoped) predate materials. They set traced self-reflection directly
-and still work, but **prefer a material** (`plastic` or `metallic`) or a
-metal look.
+and still work, but **prefer a material** (`plastic` or `metallic`).
 
 How materials treat them:
 

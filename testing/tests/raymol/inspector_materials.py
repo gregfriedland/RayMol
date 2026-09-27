@@ -16,7 +16,6 @@ These pin them there, where they can be tested without a GPU or a window.
 Runs on a RayMol --testing build:
     pymol -ckqy testing/testing.py --run testing/tests/raymol/inspector_materials.py
 """
-import json
 import os
 import re
 

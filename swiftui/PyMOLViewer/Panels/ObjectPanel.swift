@@ -4006,7 +4006,7 @@ private struct ObjectMaterialRows: View {
                     }
                     .buttonStyle(.plain)
                     .help("Remove this object's reflection overrides, so a material "
-                          + "that carries its own (plastic, metallic, the named metals) "
+                          + "that carries its own (plastic, metallic) "
                           + "goes back to using them.")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
