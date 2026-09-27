@@ -5723,7 +5723,10 @@ static float3 mat_glass_shade(float3 base, float3 N, float3 V, float rough,
   // added raw. Their peak sum is 2.1, so added raw they hard-clipped into flat
   // white plateaus with faceted triangle edges on a dark background; this
   // way a peak still reaches ~0.99 (enough to stand out on the 0.85 light
-  // background) and the edge of every glint tapers.
+  // background) and the edge of every glint tapers. The curve's slope at 0 is
+  // 2, so faint glint tails come out about twice as bright as added raw, and
+  // frosted glass's broad glints (peak 0.52 * 2.1 = 1.09) top out near 0.89
+  // instead of clipping to white -- a softer bloom, which is the point.
   hi = room * F + float3(1.0 - exp(-2.0 * glint));
   return base * kMatGlassBaseAttenuation;
 }
@@ -6190,10 +6193,9 @@ static float3 vbo_material_shade(float3 baseColor, float3 nEye, float3 pModel,
     LightU lt, constant MaterialU& mat,
     texturecube<float> envMap, sampler envSmp) {
   if (kMatGlass) {
-    // Glass: a Fresnel rim and light glints over a mostly see-through body. The
-    // frost tap count
-    // is capped in the live view (mat.p[5] carries it) -- this runs per
-    // fragment on geometry that can cover the viewport.
+    // Glass: a Fresnel rim and light glints over a mostly see-through body.
+    // The frost tap count is capped in the live view (mat.p[5] carries it) --
+    // this runs per fragment on geometry that can cover the viewport.
     float3 N = normalize(nEye);
     if (N.z < 0.0) N = -N;
     float3 V = float3(0.0, 0.0, 1.0);
