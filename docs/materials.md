@@ -170,8 +170,9 @@ camera that must land at the pixel's own depth. Inside a cut, that ray can
 hit the clipped-away front geometry first, and the pixel then gets no traced
 reflection; its environment reflection is unaffected. Traced ambient occlusion
 falls back to a coarser surface normal there, and the clipped-away geometry
-still occludes the cut. With `metal_interior_cap` on, the cut face is a flat
-cap and is never reflective anyway. Making it reflect would mean mirroring
+still occludes the cut. With `metal_interior_cap` on, a clipped sphere, stick
+or closed surface shows a flat cap instead, and the cap is never reflective;
+cartoon gets no cap. Making it reflect would mean mirroring
 geometry you just clipped away.
 
 **Glass does not refract.** It is a Fresnel rim and glints over a see-through
