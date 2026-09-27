@@ -160,15 +160,19 @@ and jelly (like any transparent representation) cast no traced shadow, get
 no traced ambient occlusion, and don't appear in other objects'
 reflections (#532).
 
-**Where the near clipping plane cuts into a structure, the cut face may not
-reflect.** The ray-traced scene deliberately ignores the clipping planes, so
-geometry you have clipped away still casts shadows onto what remains. The
-material a pixel reflects with is found by a ray from the camera that must
-land at the pixel's own depth. Inside a cut, that ray can hit the clipped-away
-front geometry first, and the pixel shades without a traced reflection (traced
-ambient occlusion has the same limit). With `metal_interior_cap` on, the cut
-face is a flat cap and is never reflective anyway. Making it reflect would
-mean mirroring geometry you just clipped away.
+**Where the near clipping plane cuts into a structure, the cut face may miss
+its traced reflection** (#503). The ray-traced scene deliberately ignores the
+near and far clipping planes (the camera slab), so geometry clipped away by
+them still casts shadows onto what remains. (Per-representation clipping such
+as `surface_clip_front` is different: geometry it removes leaves the traced
+scene too.) The material a pixel reflects with is found by a ray from the
+camera that must land at the pixel's own depth. Inside a cut, that ray can
+hit the clipped-away front geometry first, and the pixel then gets no traced
+reflection; its environment reflection is unaffected. Traced ambient occlusion
+falls back to a coarser surface normal there, and the clipped-away geometry
+still occludes the cut. With `metal_interior_cap` on, the cut face is a flat
+cap and is never reflective anyway. Making it reflect would mean mirroring
+geometry you just clipped away.
 
 **Glass does not refract.** It is a Fresnel rim and glints over a see-through
 body. What is behind it is seen straight through, not bent.
