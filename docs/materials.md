@@ -17,11 +17,8 @@ surface over a marble cartoon with metallic sticks is one object.
 ## Quick start
 
 In the **Inspector**, each style-layer row (Cartoon, Surface, Sticks, Spheres)
-has a **Material** dropdown. When the chosen material has a look — `marble`,
-`clay`, or `metallic` (copper, gold, steel, chrome) — a **Look** chip appears
-beside it and applies the whole look: for marble and clay, the material plus
-the lighting that flatters it; for the metals, `metallic` plus the metal's
-colour and reflection settings. See [Looks](#looks-materials-plus-lighting).
+has a **Material** dropdown. A material changes only that representation's
+material: lighting is set in the Scene panel, and colour where it always was.
 
 From the command line:
 
@@ -231,45 +228,11 @@ knobs it has:
     - `.idtf` exports only triangles;
     - `.wrl` and `.obj` carry none.
 
-## Looks: materials plus lighting
-
-Some looks need more than a material. `pymol.materials` has bundles that set
-the material on **all four** material-bearing representations of each object
-in the selection, plus what else the look depends on: the lighting rig for
-`marble` and `clay`, the colour and reflection settings for the metals. Each
-function's docstring lists exactly what it writes.
-
-```python
-from pymol import materials
-materials.marble('myprotein')   # marble + a soft museum rig (specular down, light wrap)
-materials.clay('myprotein')     # clay + contact shadow and occlusion
-materials.copper('ligand')      # metallic + copper colour + reflection overrides
-materials.gold('ligand')
-materials.steel('ligand')
-materials.chrome('ligand')
-```
-
-- Lighting is **global** (there is one light rig), so calling two bundles in a
-  row leaves the second one's lighting.
-- The named metals **do** write colour, on the selection. That is what
-  separates a metal look from the `metallic` material.
-- `clay` and `marble` switch on screen-space shadows and occlusion
-  (`metal_shadows`, `metal_ssao`), which work without ray tracing (except that
-  cartoons get no occlusion: `metal_ssao_cartoon` is off by default), and set the
-  ray-traced ones (`metal_rt_shadow*`, `metal_rt_ao_*`), which need
-  `metal_raytrace`. The bundles deliberately don't switch that on.
-
-In the Inspector these are the **Look** chips on a representation row, shown
-when the row's material is `marble`, `clay` or `metallic` (which offers the
-four metals). They rewrite all four representation materials of the object,
-not just that row's.
-
 ## Legacy: `metal_rt_reflect*`
 
 `metal_rt_reflect`, `metal_rt_reflect_tint` and `metal_rt_reflect_rough`
 (object-scoped) predate materials. They set traced self-reflection directly
-and still work, but **prefer a material** (`plastic` or `metallic`) or a
-metal look.
+and still work, but **prefer a material** (`plastic` or `metallic`).
 
 How materials treat them:
 
