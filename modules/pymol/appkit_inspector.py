@@ -824,9 +824,10 @@ def _drawn_family(obj, rep_name):
     degrades clear and frosted glass to `default` on sphere impostors, and
     `MaterialResolveForDraw` does the same for such sticks when they emit
     stick_ball spheres (jelly is exempt from both, #526) -- and a degraded
-    rep draws as family 0, which reads the legacy triple. get_material_draw_params is documented as "the FINAL
-    material parameters a representation draws with ... after the legacy-slider
-    decision", which is exactly the question being asked here.
+    rep draws as family 0, which reads the legacy triple.
+    get_material_draw_params is documented as "the FINAL material parameters
+    a representation draws with ... after the legacy-slider decision", which
+    is exactly the question being asked here.
 
     Cost: this is the UNCACHED draw path, so for a glass-family sticks rep it
     re-runs MaterialRepEmitsStickBalls -- an O(atoms) walk the draw site
