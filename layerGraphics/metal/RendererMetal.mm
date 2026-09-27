@@ -5946,8 +5946,9 @@ static float mat_turb(float3 p) {  // turbulence: sum of |noise - 0.5|
   return s;
 }
 
-// How much of a noise octave survives at this pixel: 1 while its cells span
-// more than ~1.3 pixels, fading to 0 by ~0.7 of a pixel. `q` is the octave's
+// How much of a noise octave survives at this pixel: 1 while one pixel covers
+// at most one noise cell (a cell spans a pixel or more), fading to 0 by two
+// cells per pixel (a cell of half a pixel). `q` is the octave's
 // lookup coordinate, so fwidth(q) is how many noise cells one pixel covers.
 // Past Nyquist a cell is sub-pixel, and the value a pixel lands on is
 // effectively random -- it shimmers as the camera moves and does not match a
