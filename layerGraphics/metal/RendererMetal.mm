@@ -5706,8 +5706,8 @@ static float3 mat_glass_shade(float3 base, float3 N, float3 V, float rough,
   float3 halfVec = L1 + V;
   float ndoth1 = dot(halfVec, halfVec) > 1e-8
                    ? max(dot(N, normalize(halfVec)), 0.0) : 0.0;
-  // frosted_glass (rough 0.6) lands at a fifth of the exponent and about half
-  // the strength: a soft bloom where clear glass has a sharp point.
+  // frosted_glass (rough 0.6) lands at 46% of the exponent (27.6 of 60) and
+  // about half the strength: a soft bloom where clear glass has a sharp point.
   float expo = mix(kMatGlassGlintExp, kMatGlassGlintExp * 0.1, saturate(rough));
   float glint = (1.0 - 0.8 * saturate(rough)) *
                 (kMatGlassKeyGlint * pow(ndoth1, expo) +
@@ -5718,7 +5718,13 @@ static float3 mat_glass_shade(float3 base, float3 N, float3 V, float rough,
   // coverage, and glass's coverage is the body's (0.15), so a highlight folded
   // into the colour reached the screen at 15% of its strength. mat_glass_cover
   // puts it back on top at full strength.
-  hi = room * F + float3(glint);
+  //
+  // The glints go through a soft saturation, 1 - exp(-2g), rather than being
+  // added raw. Their peak sum is 2.1, so added raw they hard-clipped into flat
+  // white plateaus with faceted triangle edges on a dark background; this
+  // way a peak still reaches ~0.99 (enough to stand out on the 0.85 light
+  // background) and the edge of every glint tapers.
+  hi = room * F + float3(1.0 - exp(-2.0 * glint));
   return base * kMatGlassBaseAttenuation;
 }
 
@@ -5734,14 +5740,16 @@ static float3 mat_glass_shade(float3 base, float3 N, float3 V, float rough,
 // a single colour and coverage per fragment.
 // Marked unused: this block is shared by every material library, and the
 // sphere impostors -- where glass degrades to `default` -- never call it.
-// Without the attribute that is a new -Wunused-function in two libraries.
+// Without the attribute that is a new -Wunused-function in the sphere library
+// (the VBO and cylinder libraries both call it).
 __attribute__((unused)) static float4 mat_glass_cover(float3 body, float3 hi, float a) {
   float h = saturate(max(hi.r, max(hi.g, hi.b)));
   float cover = saturate(a + (1.0 - a) * h);
   // The soft knee (#494) is for the BODY only. It exists to keep a coloured
   // highlight from clipping toward white and taking the hue with it; a glint
-  // on glass IS white, and under the knee it could never pass ~0.86 -- below
-  // the 0.85 light background, which is where clear glass most needs one.
+  // on glass IS white, and the knee would squeeze it toward the 0.85 light
+  // background, which is where clear glass most needs one: a unit glint lands
+  // at ~0.83, and the knee only approaches 1.0 asymptotically.
   float3 rgb = (mat_soft_knee(body) * a + hi) / max(cover, 1e-4);
   return float4(saturate(rgb), cover);
 }
@@ -5800,7 +5808,7 @@ struct MaterialU {
 
 // Jelly (#496): a gummy -- a dense scattering BODY under a sharp wet skin. It
 // shares the glass family's pipeline and its peel, and is otherwise the
-// opposite material: glass is a clear body under a Fresnel rim.
+// opposite material: glass is a clear body under a Fresnel rim and glints.
 //
 // The prototype got here by REFRACTING the resolved opaque scene through a
 // 12-tap frosted disc and filtering it Beer-Lambert toward the base colour.
@@ -6182,15 +6190,17 @@ static float3 vbo_material_shade(float3 baseColor, float3 nEye, float3 pModel,
     LightU lt, constant MaterialU& mat,
     texturecube<float> envMap, sampler envSmp) {
   if (kMatGlass) {
-    // Glass: a Fresnel rim over a mostly see-through body. The frost tap count
+    // Glass: a Fresnel rim and light glints over a mostly see-through body. The
+    // frost tap count
     // is capped in the live view (mat.p[5] carries it) -- this runs per
     // fragment on geometry that can cover the viewport.
     float3 N = normalize(nEye);
     if (N.z < 0.0) N = -N;
     float3 V = float3(0.0, 0.0, 1.0);
     if (mat.mode == kMatMode_jelly) {
-      // Jelly needs the scene's LIGHTING, which glass does not: its body glows
-      // rather than transmitting. Hence the light terms here and not above.
+      // Jelly needs the scene's full LIGHTING -- ambient, direct, the wrap --
+      // because its body glows rather than transmitting; glass takes only the
+      // key light's direction, for its glints.
       return mat_jelly_shade(baseColor, N, V, lt.ambient, lt.direct, lt.reflect,
                              float3(lt.klx, lt.kly, lt.klz), mat, envMap, envSmp);
     }
