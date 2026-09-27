@@ -29,8 +29,11 @@ SOURCE = os.path.join('layerGraphics', 'metal', 'RendererMetal.mm')
 _LITERAL = re.compile(r'static NSString\* const (k\w+) = @R"\((.*?)\)"(.)', re.S)
 # Hand-written helpers in these literals are post_* / rt_* / mat_*; everything
 # else that looks like a call is an MSL builtin (smoothstep, sample_compare...).
+# An optional __attribute__((...)) prefix is allowed: mat_glass_cover carries
+# one, because it lives in the shared block and the sphere library never calls it.
 _DEF = re.compile(
-    r'^\s*(?:static\s+|fragment\s+|vertex\s+)?[\w:<>]+\s+((?:post|rt|mat)_\w+)\s*\(',
+    r'^\s*(?:__attribute__\(\(\w+\)\)\s+)?(?:static\s+|fragment\s+|vertex\s+)?'
+    r'[\w:<>]+\s+((?:post|rt|mat)_\w+)\s*\(',
     re.M)
 _CALL = re.compile(r'\b((?:post|rt|mat)_\w+)\s*\(')
 
@@ -277,6 +280,44 @@ class TestMetalShaderSources(testing.PyMOLTestCase):
         # a bad order is a silent NSLog and a material that does nothing.
         self.assertLess(shared.index('struct MaterialU {'),
                         shared.index('float3 mat_jelly_shade('))
+
+    def testGlassReflectionSurvivesTheBodysCoverage(self):
+        """#535: clear and frosted glass shipped as a flat tinted silhouette.
+
+        Two defects, both invisible to every C-side test. mat_glass_shade had
+        no light term at all, and what it did reflect was folded into the
+        colour -- which weighted-blended OIT scales by the fragment's coverage,
+        the body's 0.15, so the rim reached the screen at 15%. The fix hands
+        the reflection back separately and every glass OIT fragment composites
+        it over the body with mat_glass_cover."""
+        msl = shader_literals(self.source())
+        shade = _function_body(msl['kMaterialSrc'], 'float3 mat_glass_shade(')
+        # the scene's lights reach glass...
+        self.assertIn('keyDir', shade)
+        self.assertIn('kMatGlassKeyGlint', shade)
+        self.assertIn('kMatGlassHeadGlint', shade)
+        # ...and the reflection leaves through `hi`, not through the return.
+        hi_line = shade[shade.index('hi ='):].split(';')[0]
+        self.assertIn('room', hi_line)
+        self.assertIn('glint', hi_line)
+        ret = shade[shade.rindex('return'):]
+        self.assertNotIn('room', ret)
+        self.assertNotIn('glint', ret)
+        cover = _function_body(msl['kMaterialSrc'], 'float4 mat_glass_cover(')
+        # the knee is the BODY's: a white glint under it could not pass ~0.86,
+        # below the 0.85 light background
+        self.assertIn('mat_soft_knee(body) * a + hi', cover)
+        self.assertNotIn('mat_soft_knee(rgb)', cover)
+        self.assertIn('a + (1.0 - a) * h', cover)
+        for lib, fn in (('kVBOSrc', 'OITFragOut vbo_fragment_oit('),
+                        ('kCylinderImpostorSrc',
+                         'CylOITOut cyl_impostor_fragment_oit(')):
+            code = _function_body(msl[lib], fn)
+            self.assertIn('mat_glass_cover', code, fn)
+            # jelly keeps the shared path: its 0.85 carries its highlights
+            self.assertIn('kMatMode_jelly', code, fn)
+            self.assertLess(code.index('kMatGlass'), code.index('mat_glass_cover'),
+                            fn)
 
     def testRTBlurUsesTheSharedOrthoAwareDepth(self):
         """rt_composite's bilateral AO blur must reconstruct the neighbour depth

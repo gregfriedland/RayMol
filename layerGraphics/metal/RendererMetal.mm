@@ -5600,6 +5600,13 @@ constant int kMatMode_jelly = 6;
 // would have reached for this and moved the colour instead.
 constant float kMatGlassBaseAttenuation = 0.82;
 
+// Glass glints (#535): the key light's and the headlight's specular, with the
+// exponent they share. Tight on purpose -- clear glass reads as small sharp
+// points of light, not as a sheen.
+constant float kMatGlassKeyGlint = 1.2;
+constant float kMatGlassHeadGlint = 0.9;
+constant float kMatGlassGlintExp = 60.0;
+
 // Marble's light wrap: the waxy translucent diffusion of real stone. Applied on
 // BOTH the lit VBO path and the impostors so one object's cartoon and spheres
 // are lit the same way.
@@ -5656,7 +5663,8 @@ static float3 mat_fresnel(float3 f0, float vdoth) {
 // fixed offsets rather than a real cone: at this sample count a proper
 // distribution would alias worse than the offsets do.
 static float3 mat_glass_shade(float3 base, float3 N, float3 V, float rough,
-    int taps, texturecube<float> envMap, sampler envSmp) {
+    int taps, float3 keyDir, texturecube<float> envMap, sampler envSmp,
+    thread float3& hi) {
   float3 R = reflect(-V, N);
   float lod = sqrt(saturate(rough)) * 7.0;
   float3 room = float3(0.0);
@@ -5683,10 +5691,70 @@ static float3 mat_glass_shade(float3 base, float3 N, float3 V, float rough,
     room /= w;
   }
   // Glass is almost all rim: F0 is low, so the reflection appears at grazing
-  // angles and the face-on view stays clear. That is the whole look.
+  // angles and the face-on view stays clear.
   float ndotv = saturate(dot(N, V));
   float3 F = mat_fresnel(float3(0.04), ndotv);
-  return mat_soft_knee(base * kMatGlassBaseAttenuation + room * F);
+
+  // ...plus the scene's lights, glinting off the surface (#535). The first
+  // version had none: glass was the only lit material with no highlight at
+  // all, which on a light background left a flat tinted silhouette. Two
+  // glints, as the prototype's glass had: the key light, and the headlight --
+  // whose half-vector is V itself, so it catches every face turned toward the
+  // viewer, which on a molecular surface is hundreds of small bright points.
+  // Roughness (frosted_glass) widens and dims them.
+  float3 L1 = normalize(keyDir);
+  float3 halfVec = L1 + V;
+  float ndoth1 = dot(halfVec, halfVec) > 1e-8
+                   ? max(dot(N, normalize(halfVec)), 0.0) : 0.0;
+  // frosted_glass (rough 0.6) lands at 46% of the exponent (27.6 of 60) and
+  // about half the strength: a soft bloom where clear glass has a sharp point.
+  float expo = mix(kMatGlassGlintExp, kMatGlassGlintExp * 0.1, saturate(rough));
+  float glint = (1.0 - 0.8 * saturate(rough)) *
+                (kMatGlassKeyGlint * pow(ndoth1, expo) +
+                 kMatGlassHeadGlint * pow(ndotv, expo));
+
+  // What the SURFACE reflects is returned apart from what the BODY transmits:
+  // under weighted-blended OIT everything a fragment emits is scaled by its
+  // coverage, and glass's coverage is the body's (0.15), so a highlight folded
+  // into the colour reached the screen at 15% of its strength. mat_glass_cover
+  // puts it back on top at full strength.
+  //
+  // The glints go through a soft saturation, 1 - exp(-2g), rather than being
+  // added raw. Their peak sum is 2.1, so added raw they hard-clipped into flat
+  // white plateaus with faceted triangle edges on a dark background; this
+  // way a peak still reaches ~0.99 (enough to stand out on the 0.85 light
+  // background) and the edge of every glint tapers. The curve's slope at 0 is
+  // 2, so faint glint tails come out about twice as bright as added raw, and
+  // frosted glass's broad glints (peak 0.52 * 2.1 = 1.09) top out near 0.89
+  // instead of clipping to white -- a softer bloom, which is the point.
+  hi = room * F + float3(1.0 - exp(-2.0 * glint));
+  return base * kMatGlassBaseAttenuation;
+}
+
+// Composite glass for the OIT pass (#535): the see-through body at its own
+// coverage `a`, and the surface reflection `hi` on top of it at full strength.
+//
+// Premultiplied, that is body*a + hi. Weighted-blended OIT stores a colour and
+// ONE coverage per fragment, so the reflection has to buy coverage to be
+// seen: a' = a + (1 - a) * max(hi). Where there is no highlight a' is a and
+// the fragment is exactly the body; under a full-strength highlight a' is 1
+// and the pixel is the highlight. In between, the transmitted background is
+// dimmed by the highlight's share -- an approximation, but the one that keeps
+// a single colour and coverage per fragment.
+// Marked unused: this block is shared by every material library, and the
+// sphere impostors -- where glass degrades to `default` -- never call it.
+// Without the attribute that is a new -Wunused-function in the sphere library
+// (the VBO and cylinder libraries both call it).
+__attribute__((unused)) static float4 mat_glass_cover(float3 body, float3 hi, float a) {
+  float h = saturate(max(hi.r, max(hi.g, hi.b)));
+  float cover = saturate(a + (1.0 - a) * h);
+  // The soft knee (#494) is for the BODY only. It exists to keep a coloured
+  // highlight from clipping toward white and taking the hue with it; a glint
+  // on glass IS white, and the knee would squeeze it toward the 0.85 light
+  // background, which is where clear glass most needs one: a unit glint lands
+  // at ~0.83, and the knee only approaches 1.0 asymptotically.
+  float3 rgb = (mat_soft_knee(body) * a + hi) / max(cover, 1e-4);
+  return float4(saturate(rgb), cover);
 }
 
 // Environment specular for the reflective family: one GGX lobe against the
@@ -5743,7 +5811,7 @@ struct MaterialU {
 
 // Jelly (#496): a gummy -- a dense scattering BODY under a sharp wet skin. It
 // shares the glass family's pipeline and its peel, and is otherwise the
-// opposite material: glass is a clear body under a Fresnel rim.
+// opposite material: glass is a clear body under a Fresnel rim and glints.
 //
 // The prototype got here by REFRACTING the resolved opaque scene through a
 // 12-tap frosted disc and filtering it Beer-Lambert toward the base colour.
@@ -5989,7 +6057,12 @@ static float3 mat_impostor_composite(float3 base, float3 N, float3 pEye,
     }
     int taps = (m.mode == kMatMode_frosted_glass)
                  ? int(max(1.0, m.p[5])) : 1;
-    return mat_glass_shade(base, N, V, m.rough, taps, envMap, envSmp);
+    // Outside the OIT pass there is no coverage to separate the reflection
+    // from, so it is simply added; the OIT fragment uses mat_glass_cover.
+    float3 hi;
+    float3 body = mat_glass_shade(base, N, V, m.rough, taps, keyDir, envMap,
+                                  envSmp, hi);
+    return mat_soft_knee(body + hi);
   }
   if (kMatReflective) {
     // Same base as the lit VBO path, so one object's surface and its spheres
@@ -6120,21 +6193,28 @@ static float3 vbo_material_shade(float3 baseColor, float3 nEye, float3 pModel,
     LightU lt, constant MaterialU& mat,
     texturecube<float> envMap, sampler envSmp) {
   if (kMatGlass) {
-    // Glass: a Fresnel rim over a mostly see-through body. The frost tap count
-    // is capped in the live view (mat.p[5] carries it) -- this runs per
-    // fragment on geometry that can cover the viewport.
+    // Glass: a Fresnel rim and light glints over a mostly see-through body.
+    // The frost tap count is capped in the live view (mat.p[5] carries it) --
+    // this runs per fragment on geometry that can cover the viewport.
     float3 N = normalize(nEye);
     if (N.z < 0.0) N = -N;
     float3 V = float3(0.0, 0.0, 1.0);
     if (mat.mode == kMatMode_jelly) {
-      // Jelly needs the scene's LIGHTING, which glass does not: its body glows
-      // rather than transmitting. Hence the light terms here and not above.
+      // Jelly needs the scene's full LIGHTING -- ambient, direct, the wrap --
+      // because its body glows rather than transmitting; glass takes only the
+      // key light's direction, for its glints.
       return mat_jelly_shade(baseColor, N, V, lt.ambient, lt.direct, lt.reflect,
                              float3(lt.klx, lt.kly, lt.klz), mat, envMap, envSmp);
     }
     int taps = (mat.mode == kMatMode_frosted_glass)
                  ? int(max(1.0, mat.p[5])) : 1;
-    return mat_glass_shade(baseColor, N, V, mat.rough, taps, envMap, envSmp);
+    // Outside the OIT pass the reflection is simply added; vbo_fragment_oit
+    // composites it over the body with mat_glass_cover instead.
+    float3 hi;
+    float3 body = mat_glass_shade(baseColor, N, V, mat.rough, taps,
+                                  float3(lt.klx, lt.kly, lt.klz), envMap,
+                                  envSmp, hi);
+    return mat_soft_knee(body + hi);
   }
   if (kMatReflective) {
     // The reflective family's BASE: the default shading plus one GGX lobe
@@ -6338,8 +6418,25 @@ fragment OITFragOut vbo_fragment_oit(VBOVertexOut in [[stage_in]],
     constant MaterialU& mat [[buffer(2)]])
 {
   apply_rep_clip(clip, in.eyeDist);
-  float4 c = float4(vbo_material_shade(in.color.rgb, in.normalEye, in.posModel, lt, mat, envMap, envSmp),
-                    in.color.a);
+  float4 c;
+  if (kMatGlass && mat.mode != kMatMode_jelly) {
+    // Clear and frosted glass: body at its coverage, reflection on top (#535).
+    // Jelly is dense enough (0.85) that its highlights survive the coverage
+    // as they are, so it keeps the shared path.
+    float3 N = normalize(in.normalEye);
+    if (N.z < 0.0) N = -N;
+    int taps = (mat.mode == kMatMode_frosted_glass)
+                 ? int(max(1.0, mat.p[5])) : 1;
+    float3 hi;
+    float3 body = mat_glass_shade(in.color.rgb, N, float3(0.0, 0.0, 1.0),
+                                  mat.rough, taps,
+                                  float3(lt.klx, lt.kly, lt.klz), envMap,
+                                  envSmp, hi);
+    c = mat_glass_cover(body, hi, in.color.a);
+  } else {
+    c = float4(vbo_material_shade(in.color.rgb, in.normalEye, in.posModel, lt, mat, envMap, envSmp),
+               in.color.a);
+  }
   float w = oit_weight(c.a, in.position.z);
   OITFragOut o;
   o.accum = float4(c.rgb * c.a, c.a) * w;
@@ -8500,7 +8597,27 @@ fragment CylOITOut cyl_impostor_fragment_oit(CylVOut in [[stage_in]],
     constant CylU& u [[buffer(1)]],
     constant MaterialU& mat [[buffer(2)]]) {
   float3 rgb; float a; float depth;
-  cyl_shade_material(in, u, mat, envMap, envSmp, rgb, a, depth);
+  if (kMatGlass && mat.mode != kMatMode_jelly) {
+    // Glass sticks: the body at its coverage, the reflection on top (#535);
+    // see mat_glass_cover and vbo_fragment_oit.
+    float3 n = float3(0.0), pt = float3(0.0), base = float3(0.0);
+    float intensity = 0.0, specular = 0.0;
+    bool lit = true;
+    cyl_shade(in, u, rgb, a, depth, n, pt, base, intensity, specular, lit);
+    if (lit) {
+      int taps = (mat.mode == kMatMode_frosted_glass)
+                   ? int(max(1.0, mat.p[5])) : 1;
+      float3 hi;
+      float3 body = mat_glass_shade(base, n, float3(0.0, 0.0, 1.0), mat.rough,
+                                    taps, float3(u.klx, u.kly, u.klz), envMap,
+                                    envSmp, hi);
+      float4 g = mat_glass_cover(body, hi, a);
+      rgb = g.rgb;
+      a = g.a;
+    }
+  } else {
+    cyl_shade_material(in, u, mat, envMap, envSmp, rgb, a, depth);
+  }
   float w = cyl_oit_weight(a, depth);
   CylOITOut o;
   o.accum = float4(rgb * a, a) * w;
