@@ -137,3 +137,36 @@ class TestTheDefaultIsCompiledOut(testing.PyMOLTestCase):
             checked += 1
         # AO (tas, tcols), shadow (tas, tcols, tocc), reflection (tas, tnrms, tcols)
         self.assertGreaterEqual(checked, 8)
+
+
+class TestTheStructuresStaySeparate(testing.PyMOLTestCase):
+    """What keeps the transparent structure from costing the opaque one, and
+    from being built where nothing can use it. Source checks: the behaviour is
+    GPU-side."""
+
+    def header(self):
+        root = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir)
+        with open(os.path.normpath(os.path.join(
+                root, 'layerGraphics', 'metal', 'RendererMetal.h'))) as f:
+            return f.read()
+
+    def testDroppingATransparentOnlyEntryLeavesTheOpaqueStructureAlone(self):
+        src, _rt = rt_source()
+        self.assertRegex(src, r'if \(g->second\.inOpaque \|\| !g->second\.inTransparent\)\s*'
+                              r'_rtGeomDirty = true;\s*'
+                              r'if \(g->second\.inTransparent\)\s*_rtTGeomDirty = true;')
+        # ...and the transparent build is driven by its own flag
+        self.assertIn('!_rtTGeomDirty && _rtTFrameSig == _rtTBuiltSig', src)
+
+    def testNothingIsBuiltWithoutOpaqueCasters(self):
+        src, _rt = rt_source()
+        self.assertRegex(src, r'_rtTFrameKeys\.empty\(\) \|\|\s*_rtFrameKeys\.empty\(\)\) \{\s*'
+                              r'if \(_rtTransAS\) releaseRayTracingTransAS\(\);')
+
+    def testGridModeRecordsNoTransparentGeometry(self):
+        self.assertIn('if (transparent && (!_rtTransparent || !_rtFrameCells.empty()))',
+                      self.header())
+
+    def testTheShadowWalkCountsDistinctRepsNotHits(self):
+        _src, rt = rt_source()
+        self.assertIn('for (int k = 0; k < 32 && nSeen < 8 && T > 0.02; ++k)', rt)

@@ -875,10 +875,9 @@ void RendererMetal::beginFrame()
   // exists — building (with its own cmd buffer + wait) must not happen while a
   // render command buffer is in flight (that stalls/blackouts the frame).
   // Model-space geometry is stable, so one-frame latency is invisible.
-  // metal_rt_transparent (#532) first, while the opaque record still holds the
-  // previous frame (the transparent build skips a frame with no opaque
-  // casters). Called unconditionally so turning RT (or the setting) off
-  // releases it.
+  // metal_rt_transparent (#532). Called unconditionally so turning RT (or the
+  // setting) off releases it; independent of the opaque build below (it reads
+  // _rtFrameKeys, which neither build modifies, and its own dirty flag).
   ensureRayTracingTransAS();
   if (_rtEnabled) ensureRayTracingAS();
   // Arm the OIT clear for this frame (#488). The peel path opens several
@@ -2323,10 +2322,13 @@ static float rt_trans_T(ray r, primitive_acceleration_structure tas,
   intersector<> it;
   it.assume_geometry_type(geometry_type::triangle);
   it.accept_any_intersection(false);
+  // Up to 8 DISTINCT reps, over at most 32 hits: repeat hits on a rep already
+  // counted (every face of a sphere rep, every fold of one surface) must not
+  // use up the budget before a second rep behind them is reached.
   float T = 1.0;
   uint seen[8];
   int nSeen = 0;
-  for (int k = 0; k < 8 && T > 0.02; ++k) {
+  for (int k = 0; k < 32 && nSeen < 8 && T > 0.02; ++k) {
     auto h = it.intersect(r, tas);
     if (h.type == intersection_type::none) break;
     uint o = tocc[h.primitive_id];

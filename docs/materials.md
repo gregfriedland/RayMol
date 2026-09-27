@@ -171,7 +171,7 @@ in other objects' reflections. `set metal_rt_transparent, 1` puts them in
   Each transparent representation counts once along a ray, so a closed glass
   shell shadows once rather than at both of its walls (an object with two
   transparent representations, such as jelly spheres and sticks, attenuates
-  once for each it crosses). This needs traced shadows
+  once for each it crosses, up to eight per ray). This needs traced shadows
   (`metal_rt_shadows`, on by default).
 - **Ambient occlusion.** A transparent object occludes in proportion to its
   alpha.
