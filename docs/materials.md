@@ -136,7 +136,8 @@ is ignored:
 | `marble` | `knob2` Vein scale, `knob5` Vein contrast, `knob6` Vein sharpness |
 
 In the **Inspector**, a layer's Material menu has **Custom…** under the
-materials whenever the current material has knobs. Choosing it keeps that
+materials whenever the material the layer draws with has knobs (not, for
+example, glass on spheres, which draws as `default`). Choosing it keeps that
 material and shows its knobs as sliders at the values it draws with; moving
 one tunes that layer only, and the menu then reads **Custom (metallic)**.
 **Reset** goes back to the material's own values, and picking any material

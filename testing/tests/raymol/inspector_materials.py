@@ -241,14 +241,32 @@ class TestCustomMaterial(testing.PyMOLTestCase):
     def rep(self, name='sticks'):
         return [r for r in reps_payload('m1') if r['rep'] == name][0]
 
-    def testTheMaterialTableCarriesTheCoresKnobs(self):
+    def testEachMaterialsKnobsComeFromTheCore(self):
         from pymol import _cmd
-        for mid, name, knobs in ai.material_names():
-            self.assertEqual([k[0] for k in knobs],
+        for mid, name in ai.material_names():
+            self.assertEqual([k[0] for k in ai.material_knobs(mid)],
                              [k[0] for k in _cmd.get_material_knobs(mid)], name)
-        by_name = {n: k for _i, n, k in ai.material_names()}
-        self.assertEqual(by_name['default'], [])
-        self.assertEqual([k[0] for k in by_name['marble']], ['knob2', 'knob5', 'knob6'])
+        by_name = {n: i for i, n in ai.material_names()}
+        self.assertEqual(ai.material_knobs(by_name['default']), [])
+        self.assertEqual([k[0] for k in ai.material_knobs(by_name['marble'])],
+                         ['knob2', 'knob5', 'knob6'])
+
+    def testEveryPolledLineFitsInOneFeedbackLine(self):
+        """PyMOL splits feedback at ~1024 chars (OrthoLineLength), and a split
+        line fails to parse on the Swift side -- which left every material
+        menu disabled when the knobs rode on the MATERIALS line."""
+        import io, contextlib, json
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ai.poll_materials()
+        lines = buf.getvalue().splitlines()
+        self.assertTrue(lines[0].startswith('MATERIALS:'))
+        knob_lines = [l for l in lines if l.startswith('MATKNOBS:')]
+        self.assertGreaterEqual(len(knob_lines), 9)
+        for l in lines:
+            self.assertLess(len(l), 1000, l[:60])
+        mid, payload = knob_lines[0][len('MATKNOBS:'):].split(':', 1)
+        self.assertEqual(json.loads(payload), ai.material_knobs(int(mid)))
 
     def testTheRepShipsWhatTheDrawUsesAndWhatIsOverridden(self):
         cmd.set('stick_material', 'metallic', 'm1')
@@ -266,13 +284,19 @@ class TestCustomMaterial(testing.PyMOLTestCase):
         self.assertEqual(self.rep()['material']['custom'], [])
 
     def testPickingANamedMaterialClearsTheOverrides(self):
-        """What CustomMaterial.pick sends."""
+        """What CustomMaterial.pick sends: set the material, and unset the
+        overrides the payload reports in `set`. Re-picking a material that HAS
+        the overridden knob is what shows the unset ran -- a material without
+        it would hide a leftover anyway."""
         cmd.set('stick_material', 'metallic', 'm1')
         cmd.set('stick_material_rough', 0.05, 'm1')
-        cmd.do('set stick_material, 7, m1\n' + '\n'.join(
-            'unset stick_material_%s, m1' % k for k in self.KNOBS))
-        self.assertEqual(cmd.get('stick_material', 'm1'), 'marble')
-        self.assertEqual(self.rep()['material']['custom'], [])
+        self.assertEqual(self.rep()['material']['set'], ['rough'])
+        cmd.do('set stick_material, 2, m1\nunset stick_material_rough, m1')
+        self.assertEqual(cmd.get('stick_material', 'm1'), 'plastic')
+        m = self.rep()['material']
+        self.assertEqual(m['custom'], [])
+        self.assertEqual(m['set'], [])
+        self.assertAlmostEqual(m['knobs']['rough'], 0.15, places=4)   # plastic's own
 
     def testAKnobCommandWritesTheLayersOverride(self):
         """What CustomMaterial.setKnob sends."""

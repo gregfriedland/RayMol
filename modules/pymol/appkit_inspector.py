@@ -59,10 +59,8 @@ CUSTOM_KNOBS = ('reflect', 'tint', 'rough', 'knob1', 'knob2', 'knob3',
 
 
 def material_names():
-    """The materials the Inspector dropdown may offer, as
-    [[id, name, knobs], ...] with `default` first. `knobs` is the material's
-    Custom knobs (#569), [[suffix, label, min, max], ...] -- only the ones its
-    shader reads -- so the Custom sliders come from the core too.
+    """The materials the Inspector dropdown may offer, as [[id, name], ...] with
+    `default` first.
 
     Only the IMPLEMENTED ones: a material whose shader has not landed yet is a
     real id that can be set by name from the command line and round-trips
@@ -70,25 +68,38 @@ def material_names():
     silently renders as `default`. Emitted once at startup rather than on every
     poll -- the table cannot change within a session."""
     try:
-        from pymol import setting, _cmd
-        out = []
-        for (i, n) in setting.get_material_names(1):
-            try:
-                knobs = [[str(k), str(l), float(lo), float(hi)]
-                         for (k, l, lo, hi) in _cmd.get_material_knobs(int(i))]
-            except Exception:
-                knobs = []
-            out.append([int(i), str(n), knobs])
-        return out
+        from pymol import setting
+        return [[int(i), str(n)] for (i, n) in setting.get_material_names(1)]
+    except Exception:
+        return []
+
+
+def material_knobs(mid):
+    """Material `mid`'s Custom knobs (#569), [[suffix, label, min, max], ...]:
+    only the ones its shader reads, so the Custom sliders come from the core."""
+    try:
+        from pymol import _cmd
+        return [[str(k), str(l), float(lo), float(hi)]
+                for (k, l, lo, hi) in _cmd.get_material_knobs(int(mid))]
     except Exception:
         return []
 
 
 def poll_materials():
-    """Print `MATERIALS:<json>` once, for the Inspector's material dropdowns."""
+    """Print `MATERIALS:<json>` once, for the Inspector's material dropdowns,
+    then one `MATKNOBS:<id>:<json>` line per material with knobs.
+
+    Separate lines because PyMOL's feedback splits a line at ~1024 chars
+    (OrthoLineLength): the whole table with its knobs is over that, and a split
+    line fails to parse -- which left every material menu disabled."""
     import json
     try:
-        print('MATERIALS:' + json.dumps(material_names()))
+        names = material_names()
+        print('MATERIALS:' + json.dumps(names, separators=(',', ':')))
+        for mid, _name in names:
+            knobs = material_knobs(mid)
+            if knobs:
+                print('MATKNOBS:%d:%s' % (mid, json.dumps(knobs, separators=(',', ':'))))
     except Exception:
         print('MATERIALS:[]')
 
@@ -149,7 +160,12 @@ def _custom_state(rep_name, obj, explicit):
         has = {row[0] for row in _cmd.get_material_knobs(drawn)}
         custom = [k for k in CUSTOM_KNOBS if k in has and
                   setting._get_index('%s_material_%s' % (prefix, k)) in explicit]
-        return {'drawn': drawn, 'knobs': knobs, 'custom': custom}
+        # every override the object carries for this layer, knob or not: what
+        # a pick or Reset has to unset (and nothing else, so it stays quiet)
+        explicit_here = [k for k in CUSTOM_KNOBS
+                         if setting._get_index('%s_material_%s' % (prefix, k)) in explicit]
+        return {'drawn': drawn, 'knobs': knobs, 'custom': custom,
+                'set': explicit_here}
     except Exception:
         return None
 

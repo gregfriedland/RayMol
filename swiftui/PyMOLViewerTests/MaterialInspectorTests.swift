@@ -136,17 +136,21 @@ final class MaterialInspectorTests: XCTestCase {
 
     /// The literals are the join with inspector_materials.py, which runs them.
     func testPickingANamedMaterialClearsTheLayersOverrides() {
-        let cmd = CustomMaterial.pick("stick_material", id: 7, on: "m1")
-        let lines = cmd.components(separatedBy: "\n")
-        XCTAssertEqual(lines.first, "set stick_material, 7, m1")
-        XCTAssertEqual(Array(lines.dropFirst()),
-                       CustomMaterial.knobs.map { "unset stick_material_\($0), m1" })
+        let lines = CustomMaterial.pick("stick_material", id: 7, clearing: ["rough", "knob5"],
+                                        on: "m1").components(separatedBy: "\n")
+        XCTAssertEqual(lines, ["set stick_material, 7, m1",
+                               "unset stick_material_rough, m1",
+                               "unset stick_material_knob5, m1"])
+        // nothing to clear: one line, not ten
+        XCTAssertEqual(CustomMaterial.pick("stick_material", id: 7, clearing: [], on: "m1"),
+                       "set stick_material, 7, m1")
     }
 
     func testInheritClearsTheMaterialAndItsOverrides() {
-        let lines = CustomMaterial.inherit("surface_material", on: "m1").components(separatedBy: "\n")
-        XCTAssertEqual(lines.first, "unset surface_material, m1")
-        XCTAssertEqual(lines.count, 1 + CustomMaterial.knobs.count)
+        XCTAssertEqual(CustomMaterial.inherit("surface_material", clearing: ["tint"], on: "m1"),
+                       "unset surface_material, m1\nunset surface_material_tint, m1")
+        XCTAssertEqual(CustomMaterial.inherit("surface_material", clearing: [], on: "m1"),
+                       "unset surface_material, m1")
     }
 
     func testAKnobWritesTheLayersOverride() {
@@ -155,23 +159,36 @@ final class MaterialInspectorTests: XCTestCase {
         XCTAssertEqual(CustomMaterial.stem("cartoon_material"), "cartoon")
     }
 
-    func testTheMaterialLineCarriesEachMaterialsKnobs() {
-        let line = "MATERIALS:[[0,\"default\",[]],[3,\"metallic\",[[\"reflect\",\"Reflection\",0,1],"
-            + "[\"rough\",\"Roughness\",0,1]]],[7,\"marble\",[[\"knob6\",\"Vein sharpness\",1,20]]]]"
-        let knobs = PyMOLEngine.parseMaterialKnobs(line)
-        XCTAssertEqual(knobs[0], [])
-        XCTAssertEqual(knobs[3]?.map { $0.suffix }, ["reflect", "rough"])
-        XCTAssertEqual(knobs[7]?.first, MaterialKnobInfo(suffix: "knob6", label: "Vein sharpness", min: 1, max: 20))
-        // the names parse is unchanged by the third element
-        XCTAssertEqual(PyMOLEngine.parseMaterials(line)?.map { $0.name }, ["default", "metallic", "marble"])
-        // an older core's two-element rows carry no knobs, and that is not an error
-        XCTAssertEqual(PyMOLEngine.parseMaterialKnobs("MATERIALS:[[0,\"default\"]]"), [:])
+    /// The gate that keeps Custom off a layer that has degraded to `default`
+    /// (glass on spheres or ball-and-stick): knobs come from the DRAWN
+    /// material, and only when it is the one the setting names.
+    func testCustomIsOfferedOnlyForTheMaterialTheLayerDraws() {
+        let rough = MaterialKnobInfo(suffix: "rough", label: "Roughness", min: 0, max: 1)
+        let table: [Int: [MaterialKnobInfo]] = [4: [rough], 3: [rough]]
+        XCTAssertEqual(CustomMaterial.offeredKnobs(base: 4, drawn: 4, table: table), [rough])
+        XCTAssertEqual(CustomMaterial.offeredKnobs(base: 4, drawn: 0, table: table), [])  // degraded
+        XCTAssertEqual(CustomMaterial.offeredKnobs(base: 4, drawn: nil, table: table), []) // no payload
+        XCTAssertEqual(CustomMaterial.offeredKnobs(base: 0, drawn: 0, table: table), [])
+    }
+
+    /// One short line per material: the whole table on one line is over
+    /// PyMOL's ~1024-char feedback cap and would be split.
+    func testEachMaterialsKnobsArriveOnTheirOwnLine() {
+        let parsed = PyMOLEngine.parseMaterialKnobs(
+            "MATKNOBS:7:[[\"knob2\",\"Vein scale\",0.02,1],[\"knob6\",\"Vein sharpness\",1,20]]")
+        XCTAssertEqual(parsed?.0, 7)
+        XCTAssertEqual(parsed?.1.map { $0.suffix }, ["knob2", "knob6"])
+        XCTAssertEqual(parsed?.1.last, MaterialKnobInfo(suffix: "knob6", label: "Vein sharpness", min: 1, max: 20))
+        XCTAssertNil(PyMOLEngine.parseMaterialKnobs("MATKNOBS:x:[]"))
+        XCTAssertNil(PyMOLEngine.parseMaterialKnobs("MATERIALS:[[0,\"default\"]]"))
     }
 
     func testTheRepPayloadCarriesTheCustomState() {
         let st = PyMOLEngine.parseMaterialCustom(
-            ["material": ["drawn": 3, "knobs": ["reflect": 0.6, "rough": 0.05], "custom": ["rough"]]])
+            ["material": ["drawn": 3, "knobs": ["reflect": 0.6, "rough": 0.05], "custom": ["rough"],
+                          "set": ["rough", "knob5"]]])
         XCTAssertEqual(st?.drawn, 3)
+        XCTAssertEqual(st?.set, ["rough", "knob5"])
         XCTAssertEqual(st?.knobs["rough"], 0.05)
         XCTAssertEqual(st?.custom, ["rough"])
         XCTAssertTrue(st?.isCustom ?? false)

@@ -94,7 +94,10 @@ struct MaterialCustomState: Equatable {
     /// `default` (glass on spheres or ball-and-stick), which has no knobs.
     var drawn: Int = 0
     var knobs: [String: Double] = [:]   // suffix -> the value the draw uses
-    var custom: Set<String> = []        // suffixes the object overrides
+    var custom: Set<String> = []        // overridden knobs the drawn material has
+    /// Every override the object carries for this layer, including ones the
+    /// drawn material ignores: what a pick, Inherit or Reset must unset.
+    var set: [String] = []
     var isCustom: Bool { !custom.isEmpty }
 }
 
@@ -360,21 +363,39 @@ enum CustomMaterial {
         isCustom ? "Custom (\(base))" : base
     }
 
-    /// Unset every override of this layer.
-    static func clear(_ materialSetting: String, on obj: String) -> String {
-        knobs.map { "unset \(stem(materialSetting))_material_\($0), \(obj)" }
+    /// The knobs a layer may offer as Custom: those of the material it DRAWS
+    /// with, and only when that is the material its setting names. A layer
+    /// that has degraded to `default` (glass on spheres or ball-and-stick)
+    /// draws 0 and offers none.
+    static func offeredKnobs(base: Int, drawn: Int?,
+                             table: [Int: [MaterialKnobInfo]]) -> [MaterialKnobInfo] {
+        guard let drawn, drawn == base else { return [] }
+        return table[drawn] ?? []
+    }
+
+    /// Unset the given overrides of this layer -- the ones the object carries
+    /// (MaterialCustomState.set), so a layer with none sends nothing extra.
+    static func clear(_ materialSetting: String, _ suffixes: [String],
+                      on obj: String) -> String {
+        suffixes.map { "unset \(stem(materialSetting))_material_\($0), \(obj)" }
             .joined(separator: "\n")
     }
 
     /// Pick a named material: set it, and drop the overrides written for the
     /// previous one.
-    static func pick(_ materialSetting: String, id: Int, on obj: String) -> String {
-        "set \(materialSetting), \(id), \(obj)\n" + clear(materialSetting, on: obj)
+    static func pick(_ materialSetting: String, id: Int, clearing suffixes: [String],
+                     on obj: String) -> String {
+        (["set \(materialSetting), \(id), \(obj)"]
+            + (suffixes.isEmpty ? [] : [clear(materialSetting, suffixes, on: obj)]))
+            .joined(separator: "\n")
     }
 
     /// Inherit: unset the material and its overrides.
-    static func inherit(_ materialSetting: String, on obj: String) -> String {
-        "unset \(materialSetting), \(obj)\n" + clear(materialSetting, on: obj)
+    static func inherit(_ materialSetting: String, clearing suffixes: [String],
+                        on obj: String) -> String {
+        (["unset \(materialSetting), \(obj)"]
+            + (suffixes.isEmpty ? [] : [clear(materialSetting, suffixes, on: obj)]))
+            .joined(separator: "\n")
     }
 
     /// One knob's override.
@@ -4007,9 +4028,10 @@ private struct MaterialSection: View {
     /// The knobs of the material the layer DRAWS with. Not the setting's: a
     /// degraded layer draws `default` and has none, so Custom is not offered.
     private var knobs: [MaterialKnobInfo] {
-        guard let drawn = custom?.drawn, drawn == baseID else { return [] }
-        return engine.materialKnobs[drawn] ?? []
+        CustomMaterial.offeredKnobs(base: baseID, drawn: custom?.drawn,
+                                    table: engine.materialKnobs)
     }
+    private var overrides: [String] { custom?.set ?? [] }
     private var isCustom: Bool { custom?.isCustom ?? false }
     private var showsKnobs: Bool { !knobs.isEmpty && (isCustom || customOpen) }
 
@@ -4102,19 +4124,22 @@ private struct MaterialSection: View {
 
     private func pick(_ id: Int) {
         customOpen = false
-        engine.runCommand(CustomMaterial.pick(prop.setting, id: id, on: objName), naming: objName)
+        engine.runCommand(CustomMaterial.pick(prop.setting, id: id, clearing: overrides,
+                                              on: objName), naming: objName)
         engine.refreshExpandedDetail()
     }
 
     private func inherit() {
         customOpen = false
-        engine.runCommand(CustomMaterial.inherit(prop.setting, on: objName), naming: objName)
+        engine.runCommand(CustomMaterial.inherit(prop.setting, clearing: overrides,
+                                                 on: objName), naming: objName)
         engine.refreshExpandedDetail()
     }
 
     private func reset() {
         customOpen = false
-        engine.runCommand(CustomMaterial.clear(prop.setting, on: objName), naming: objName)
+        guard !overrides.isEmpty else { return }
+        engine.runCommand(CustomMaterial.clear(prop.setting, overrides, on: objName), naming: objName)
         engine.refreshExpandedDetail()
     }
 

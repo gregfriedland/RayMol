@@ -3714,6 +3714,8 @@ final class PyMOLEngine: ObservableObject {
                     // swallow
                 } else if line.hasPrefix("MATERIALS:") {
                     parseMaterialsFeedback(line)
+                } else if line.hasPrefix("MATKNOBS:") {
+                    parseMaterialKnobsFeedback(line)
                 } else if line.hasPrefix("SETTINGS:ready") {
                     loadSettingsCatalogFile()
                 } else if line.hasPrefix("SETTINGS:err") {
@@ -3952,31 +3954,32 @@ final class PyMOLEngine: ObservableObject {
 
     private func parseMaterialsFeedback(_ line: String) {
         guard let out = PyMOLEngine.parseMaterials(line) else { return }
-        let knobs = PyMOLEngine.parseMaterialKnobs(line)
-        DispatchQueue.main.async {
-            self.materialNames = out
-            self.materialKnobs = knobs
-        }
+        DispatchQueue.main.async { self.materialNames = out }
     }
 
-    /// `MATERIALS:[[id, name, [[suffix, label, min, max], ...]], ...]` -> the
-    /// knobs by id. A row without the third element (an older core) has none.
-    static func parseMaterialKnobs(_ line: String) -> [Int: [MaterialKnobInfo]] {
-        let json = String(line.dropFirst("MATERIALS:".count))
+    private func parseMaterialKnobsFeedback(_ line: String) {
+        guard let (id, knobs) = PyMOLEngine.parseMaterialKnobs(line) else { return }
+        DispatchQueue.main.async { self.materialKnobs[id] = knobs }
+    }
+
+    /// `MATKNOBS:<id>:[[suffix, label, min, max], ...]` -> (id, knobs). One
+    /// line per material: the whole table in one line is over PyMOL's ~1024-
+    /// char feedback cap, and a split line would not parse.
+    static func parseMaterialKnobs(_ line: String) -> (Int, [MaterialKnobInfo])? {
+        guard line.hasPrefix("MATKNOBS:") else { return nil }
+        let rest = line.dropFirst("MATKNOBS:".count)
+        guard let colon = rest.firstIndex(of: ":"), let id = Int(rest[..<colon]) else { return nil }
+        let json = String(rest[rest.index(after: colon)...])
         guard let data = json.data(using: .utf8),
-              let rows = try? JSONSerialization.jsonObject(with: data) as? [[Any]]
-        else { return [:] }
-        var out: [Int: [MaterialKnobInfo]] = [:]
-        for r in rows where r.count >= 3 {
-            guard let id = r[0] as? Int, let ks = r[2] as? [[Any]] else { continue }
-            out[id] = ks.compactMap { k in
-                guard k.count >= 4, let s = k[0] as? String, let l = k[1] as? String,
-                      let lo = (k[2] as? NSNumber)?.doubleValue,
-                      let hi = (k[3] as? NSNumber)?.doubleValue, lo < hi else { return nil }
-                return MaterialKnobInfo(suffix: s, label: l, min: lo, max: hi)
-            }
+              let ks = try? JSONSerialization.jsonObject(with: data) as? [[Any]]
+        else { return nil }
+        let knobs: [MaterialKnobInfo] = ks.compactMap { k in
+            guard k.count >= 4, let s = k[0] as? String, let l = k[1] as? String,
+                  let lo = (k[2] as? NSNumber)?.doubleValue,
+                  let hi = (k[3] as? NSNumber)?.doubleValue, lo < hi else { return nil }
+            return MaterialKnobInfo(suffix: s, label: l, min: lo, max: hi)
         }
-        return out
+        return (id, knobs)
     }
 
     /// A rep payload's `material` entry -> MaterialCustomState, or nil.
@@ -3989,6 +3992,9 @@ final class PyMOLEngine: ObservableObject {
         }
         if let cs = m["custom"] as? [Any] {
             st.custom = Set(cs.compactMap { $0 as? String })
+        }
+        if let ss = m["set"] as? [Any] {
+            st.set = ss.compactMap { $0 as? String }
         }
         return st
     }
