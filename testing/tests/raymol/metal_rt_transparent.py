@@ -3,8 +3,9 @@
 Metal RT used to leave every transparent draw out of its acceleration
 structure, so glass, frosted glass and jelly cast no traced shadow or AO and
 were absent from reflections. With `metal_rt_transparent 1` the transparent
-draws go into a SEPARATE structure: shadow and AO rays that reach no opaque
-caster are attenuated by the transparent reps they cross, and a reflection ray
+draws go into a SEPARATE structure: a shadow ray that reaches no opaque caster
+is attenuated by the transparent reps it crosses, an AO ray that misses opaque
+geometry occludes by the alpha of a transparent hit, and a reflection ray
 blends the nearest transparent surface over what it hit.
 
 It is off by default, and the default must stay byte-identical. That rests on
@@ -69,8 +70,10 @@ class TestTheDefaultIsCompiledOut(testing.PyMOLTestCase):
 
     def testTheDefaultPipelinesAreSpecialisedFalse(self):
         src, _rt = rt_source()
-        # the specialisation writes index 0, the constant's
-        self.assertRegex(src, r'setConstantValue:&t type:MTLDataTypeBool atIndex:0\]')
+        # the specialisation writes index 0, the constant's, with the value
+        # the caller asked for
+        self.assertRegex(src, r'bool t = transparent;\s*'
+                              r'\[fc setConstantValue:&t type:MTLDataTypeBool atIndex:0\]')
         # the default pair is built false; the transparent pair only when the
         # setting is on
         self.assertIn('buildRTPipelines(false, &_rtAOPipeline, &_rtResolvePipeline);', src)
@@ -87,3 +90,11 @@ class TestTheDefaultIsCompiledOut(testing.PyMOLTestCase):
         for slot, rest in args:
             self.assertIn('function_constant(kRTTrans)', rest, 'buffer(%s)' % slot)
 
+    def testTheTransparentPipelinesAreUsedOnlyWithTheStructure(self):
+        src, _rt = rt_source()
+        # chosen only when the setting is on AND the structure and its
+        # pipelines exist -- otherwise the default pair, which binds nothing new
+        self.assertRegex(src, r'const bool doRTTrans = doRT && _rtTransparent && _rtTReady && '
+                              r'_rtTransAS &&\s*_rtAOPipelineT && _rtResolvePipelineT;')
+        self.assertIn('setRenderPipelineState:doRTTrans ? _rtAOPipelineT : _rtAOPipeline]', src)
+        self.assertIn('setRenderPipelineState:doRTTrans ? _rtResolvePipelineT : _rtResolvePipeline]', src)

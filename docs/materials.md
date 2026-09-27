@@ -168,8 +168,10 @@ in other objects' reflections. `set metal_rt_transparent, 1` puts them in
 
 - **Shadows.** A transparent object lets through `1 - alpha` of the light, so
   jelly (alpha 0.85) casts a dark shadow and clear glass (0.15) a faint one.
-  Each transparent object counts once along a ray, so a closed glass shell
-  shadows once rather than at both of its walls. This needs traced shadows
+  Each transparent representation counts once along a ray, so a closed glass
+  shell shadows once rather than at both of its walls (an object with two
+  transparent representations, such as jelly spheres and sticks, attenuates
+  once for each it crosses). This needs traced shadows
   (`metal_rt_shadows`, on by default).
 - **Ambient occlusion.** A transparent object occludes in proportion to its
   alpha.

@@ -2312,9 +2312,11 @@ constant bool kRTTrans [[function_constant(0)]];
 
 // Transmittance along a ray through the transparent structure: the product of
 // (1 - alpha) over the transparent reps it crosses. Each occurrence (one
-// object's rep) counts ONCE however many of its faces the ray passes, so the
-// entry and exit of a closed shell attenuate once -- the one skin the peeled
-// raster draws, rather than a jelly shell going black at its two crossings.
+// recorded draw: one rep of one object) counts ONCE however many of its faces
+// the ray passes, so the entry and exit of a closed shell attenuate once -- for
+// a single-rep object, the one skin the peeled raster draws -- rather than a
+// jelly shell going black at its two crossings. An object with several
+// transparent reps attenuates once per rep it crosses.
 static float rt_trans_T(ray r, primitive_acceleration_structure tas,
                         device const float4* tcols, device const uint* tocc) {
   intersector<> it;
