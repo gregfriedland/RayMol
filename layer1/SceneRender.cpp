@@ -981,7 +981,10 @@ void SceneRenderAll(PyMOLGlobals* G, SceneUnitContext* context, float* normal,
 
 /**
  * Objects whose transparent geometry should be depth-peeled this frame (#488),
- * in draw order, capped at kMaxPeeledObjects.
+ * in draw order, capped at kMaxPeeledObjects -- if the renderer can peel at
+ * all (SceneRendererCanPeel; SceneCollectPeelObjects applies both). Split so
+ * _cmd.get_frame_peel reports exactly what the scene loop decides, and so the
+ * Enabled / request / cap part is observable where no renderer exists.
  *
  * Each peeled object costs a full-frame depth blit and two encoder boundaries,
  * PER GRID CELL -- and under MSAA the scene pass re-opens between them, which
@@ -993,12 +996,10 @@ void SceneRenderAll(PyMOLGlobals* G, SceneUnitContext* context, float* normal,
  */
 static constexpr int kMaxPeeledObjects = 3;
 
-static std::vector<pymol::CObject*> SceneCollectPeelObjects(PyMOLGlobals* G)
+std::vector<pymol::CObject*> SceneCollectPeelCandidates(PyMOLGlobals* G)
 {
   std::vector<pymol::CObject*> out;
   CScene* I = G->Scene;
-  if (!G->Renderer || !G->Renderer->peelSupported())
-    return out;   // no targets or pipelines: nothing peels, nothing changes
   for (auto obj : I->NonGadgetObjs) {
     if (!obj)
       continue;
@@ -1012,6 +1013,9 @@ static std::vector<pymol::CObject*> SceneCollectPeelObjects(PyMOLGlobals* G)
     // An object nobody can see must not consume one of the cap's slots, nor
     // cost a depth blit and two encoder boundaries per grid cell -- nor pay for
     // resolving whether it wants peeling at all, so this is checked FIRST.
+    // Defence only as things stand: `disable` goes through SceneObjectDel,
+    // which takes the object out of NonGadgetObjs altogether (so reverting
+    // this check fails no test -- TestTheFramesDecision pins the behaviour).
     if (!obj->Enabled)
       continue;
     if (!MaterialObjectWantsPeel(G, nullptr, objSet, obj))
@@ -1021,6 +1025,18 @@ static std::vector<pymol::CObject*> SceneCollectPeelObjects(PyMOLGlobals* G)
       break;
   }
   return out;
+}
+
+bool SceneRendererCanPeel(PyMOLGlobals* G)
+{
+  return G->Renderer && G->Renderer->peelSupported();
+}
+
+static std::vector<pymol::CObject*> SceneCollectPeelObjects(PyMOLGlobals* G)
+{
+  if (!SceneRendererCanPeel(G))
+    return {};   // no targets or pipelines: nothing peels, nothing changes
+  return SceneCollectPeelCandidates(G);
 }
 
 /**

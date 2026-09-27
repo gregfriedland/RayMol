@@ -2729,7 +2729,8 @@ static PyObject* CmdGetBuiltTransparency(PyObject* self, PyObject* args)
  * because a jelly object's implied alpha was measured peeled and an unpeeled
  * one is denser (see the table comment in layer1/Material.cpp). Bounding this
  * by the cap would be worse, not better: the cap is per frame and depends on
- * object order, so it is not a property of the object being asked about.
+ * object order, so it is not a property of the object being asked about --
+ * that is what _cmd.get_frame_peel answers.
  *
  * _cmd.get_object_peel(object_name_or_empty[, state=0])
  */
@@ -2771,6 +2772,43 @@ static PyObject* CmdGetObjectPeel(PyObject* self, PyObject* args)
     result = PyInt_FromLong(
         MaterialObjectWantsPeel(G, stateSetting, objSetting, obj) ? 1 : 0);
   }
+  APIExitBlocked(G);
+  return APIAutoNone(result);
+}
+
+/**
+ * The FRAME's peel decision, as the scene loop makes it: which objects are
+ * depth-peeled, after the gates get_object_peel does not apply -- Enabled,
+ * kMaxPeeledObjects, draw order -- and whether the renderer can peel at all.
+ * Same functions the loop calls (SceneRender.cpp), so the two cannot drift.
+ *
+ * Returns (renderer_can_peel, [object names]). The names are the candidates
+ * the loop peels when renderer_can_peel is true; when it is false (the GL path,
+ * a headless core, missing Metal peel targets) nothing peels this frame.
+ * Reported separately rather than as an empty list so the Enabled / cap / order
+ * part stays observable without a Metal renderer.
+ *
+ * _cmd.get_frame_peel()
+ */
+static PyObject* CmdGetFramePeel(PyObject* self, PyObject* args)
+{
+  PyMOLGlobals* G = nullptr;
+  if (!PyArg_ParseTuple(args, "O", &self)) {
+    API_HANDLE_ERROR;
+    return APIAutoNone(nullptr);
+  }
+  API_SETUP_PYMOL_GLOBALS;
+  if (!G) {
+    return APIAutoNone(nullptr);
+  }
+  APIEnterBlocked(G);
+  auto const candidates = SceneCollectPeelCandidates(G);
+  PyObject* names = PyList_New(candidates.size());
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    PyList_SetItem(names, i, PyUnicode_FromString(candidates[i]->Name));
+  }
+  PyObject* result = Py_BuildValue("(ON)",
+      SceneRendererCanPeel(G) ? Py_True : Py_False, names);
   APIExitBlocked(G);
   return APIAutoNone(result);
 }
@@ -7018,6 +7056,7 @@ static PyMethodDef Cmd_methods[] = {
   {"get_material_draw_params", CmdGetMaterialDrawParams, METH_VARARGS},
   {"get_material_ray_params", CmdGetMaterialRayParams, METH_VARARGS},
   {"get_object_peel", CmdGetObjectPeel, METH_VARARGS},
+  {"get_frame_peel", CmdGetFramePeel, METH_VARARGS},
   {"get_origin", CmdGetOrigin, METH_VARARGS},
   {"get_position", CmdGetPosition, METH_VARARGS},
   {"get_povray", CmdGetPovRay, METH_VARARGS},
