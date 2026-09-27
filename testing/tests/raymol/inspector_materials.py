@@ -225,9 +225,9 @@ class TestSceneMaterialRows(testing.PyMOLTestCase):
 
 class TestCustomMaterial(testing.PyMOLTestCase):
     """The Custom material's Inspector half (#569), Python side: the knobs the
-    MATKNOBS lines carry, the per-rep state the poll ships, and what the
-    Swift command strings (MaterialInspectorTests, the literals are the join)
-    do to the session."""
+    MATKNOBS lines carry, the per-rep state the poll ships, and what commands
+    of the form the Swift strings send (MaterialInspectorTests pins those
+    strings; the line format is the join) do to the session."""
     KNOBS = ('reflect', 'tint', 'rough', 'knob1', 'knob2', 'knob3',
              'knob4', 'knob5', 'knob6')
 

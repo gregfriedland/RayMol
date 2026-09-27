@@ -159,6 +159,14 @@ final class MaterialInspectorTests: XCTestCase {
         XCTAssertEqual(CustomMaterial.stem("cartoon_material"), "cartoon")
     }
 
+    /// The race fix: a knob dragged since the last poll is cleared too.
+    func testAPickClearsWhatWasTunedSinceTheLastPoll() {
+        XCTAssertEqual(CustomMaterial.overrides(set: [], touched: ["rough"]), ["rough"])
+        XCTAssertEqual(CustomMaterial.overrides(set: ["rough"], touched: ["rough", "tint"]),
+                       ["rough", "tint"])
+        XCTAssertEqual(CustomMaterial.overrides(set: ["knob5"], touched: []), ["knob5"])
+    }
+
     /// The gate that keeps Custom off a layer that has degraded to `default`
     /// (glass on spheres or ball-and-stick): knobs come from the DRAWN
     /// material, and only when it is the one the setting names.

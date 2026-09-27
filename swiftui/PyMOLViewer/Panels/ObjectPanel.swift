@@ -373,6 +373,12 @@ enum CustomMaterial {
         return table[drawn] ?? []
     }
 
+    /// What a pick, Inherit or Reset must unset: the overrides the last poll
+    /// reported, plus any knob written since (the poll lags a drag), each once.
+    static func overrides(set: [String], touched: Set<String>) -> [String] {
+        set + knobs.filter { touched.contains($0) && !set.contains($0) }
+    }
+
     /// Unset the given overrides of this layer -- the ones the object carries
     /// (MaterialCustomState.set), so a layer with none sends nothing extra.
     static func clear(_ materialSetting: String, _ suffixes: [String],
@@ -4019,9 +4025,10 @@ private struct MaterialSection: View {
     /// Custom chosen but nothing moved yet: the sliders show, nothing is
     /// written. Overrides in the payload keep the section open by themselves.
     @State private var customOpen = false
-    /// Knobs this view has written since the last poll: `set` in the payload
-    /// lags a drag by up to a poll, and a pick in that window must still
-    /// clear what was just tuned.
+    /// Knobs this view has written since the last pick, Inherit or Reset.
+    /// `set` in the payload lags a drag by up to a poll, so a pick in that
+    /// window must still clear what was just tuned; an extra unset of a knob
+    /// the payload has since caught up on is harmless.
     @State private var touched: Set<String> = []
 
     private var baseID: Int { Int(value.rounded()) }
@@ -4036,8 +4043,7 @@ private struct MaterialSection: View {
                                     table: engine.materialKnobs)
     }
     private var overrides: [String] {
-        let known = custom?.set ?? []
-        return known + CustomMaterial.knobs.filter { touched.contains($0) && !known.contains($0) }
+        CustomMaterial.overrides(set: custom?.set ?? [], touched: touched)
     }
     private var isCustom: Bool { custom?.isCustom ?? false }
     private var showsKnobs: Bool { !knobs.isEmpty && (isCustom || customOpen) }

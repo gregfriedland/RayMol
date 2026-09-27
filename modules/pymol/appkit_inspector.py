@@ -135,7 +135,9 @@ def _custom_prefix(rep_name):
 def _custom_state(rep_name, obj, explicit):
     """What the Inspector's Custom sliders need for one rep (#569):
     {'drawn': the material id the layer DRAWS with, 'knobs': {suffix: value
-    the draw uses}, 'custom': [overridden suffixes that material has]}.
+    the draw uses}, 'custom': [overridden suffixes that material has],
+    'set': [every override the object carries for the layer]} -- `set` is
+    what a pick, Inherit or Reset unsets.
 
     `drawn` is the draw's own answer, not the setting: glass on spheres or on
     ball-and-stick degrades to `default` (0), which has no knobs, so Custom
