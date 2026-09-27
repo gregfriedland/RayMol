@@ -69,15 +69,27 @@ class TestMaterialDocs(testing.PyMOLTestCase):
 
 
 class TestCustomKnobsAreDocumented(testing.PyMOLTestCase):
-    def testEveryKnobHasARow(self):
-        """Custom's overrides (#568) are named `<rep>_material_<knob>`, so they
-        are derived from the setting names too: every knob suffix in use must
-        have a row in the Custom section's table."""
+    def testEveryMaterialsKnobsAreItsRow(self):
+        """Custom's knobs (#568) differ per MATERIAL, not per family -- marble
+        reads p[1] as vein scale and never reads p[0] -- so the table has a row
+        per material, and each row must name exactly the knobs the core says
+        that material has (_cmd.get_material_knobs), with the same labels."""
+        from pymol import _cmd
         with open(DOC, encoding='utf-8') as handle:
             text = section(handle.read(), "Custom: tuning a layer's material")
-        documented = first_cells(text)
-        knobs = sorted({n.split('_material_', 1)[1]
-                        for n in setting.get_name_list() if '_material_' in n})
-        self.assertTrue(knobs)
-        for k in knobs:
-            self.assertIn(k, documented, k)
+        rows = {}
+        for line in text.splitlines():
+            cells = [c.strip() for c in line.split('|')]
+            if len(cells) > 3 and cells[1].startswith('`'):
+                rows[cells[1].strip('`')] = cells[2]
+        checked = 0
+        for mid, name in setting.get_material_names(1):
+            knobs = _cmd.get_material_knobs(mid)
+            if not knobs:
+                self.assertNotIn(name, rows, name)
+                continue
+            expected = ', '.join('`%s` %s' % (k[0], k[1]) for k in knobs)
+            self.assertEqual(rows.get(name), expected, name)
+            checked += 1
+        self.assertEqual(checked, len(rows))
+        self.assertGreaterEqual(checked, 9)

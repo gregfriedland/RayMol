@@ -119,26 +119,32 @@ slide when you rotate, pan or zoom.
 Each layer can tune its material without becoming a different one. The
 overrides are object-scoped settings named `<rep>_material_<knob>`, for the
 `cartoon`, `surface`, `stick` and `sphere` layers; an unset one means the
-material's own value. They tune the material's shading model, never replace
-it, so only the knobs that model has are used:
+material's own value. They tune the material, never replace it, and each
+material has only the knobs its shader reads -- an override of any other knob
+is ignored:
 
-| Knob | reflective (`plastic`, `metallic`) | glass (`glass`, `frosted_glass`, `jelly`) | procedural (`matte`, `marble`, `clay`, `rubber`) |
-|---|---|---|---|
-| `reflect` | reflection strength | — | — |
-| `tint` | how much the colour tints the reflection | — | — |
-| `rough` | reflection blur | frost | — |
-| `knob1` | — | jelly: absorption | grain amount |
-| `knob2` | — | jelly: inner glow | grain frequency |
-| `knob3` | — | jelly: wet highlight | edge darkening |
-| `knob4` | — | — | sheen (rubber) |
-| `knob5` | — | — | vein contrast (marble) |
-| `knob6` | — | — | vein sharpness (marble) |
+| Material | Knobs |
+|---|---|
+| `plastic` | `reflect` Reflection, `tint` Reflection tint, `rough` Roughness |
+| `metallic` | `reflect` Reflection, `tint` Reflection tint, `rough` Roughness |
+| `glass` | `rough` Reflection blur |
+| `frosted_glass` | `rough` Frost |
+| `jelly` | `rough` Skin reflection blur, `knob1` Absorption, `knob2` Inner glow, `knob3` Wet highlight |
+| `matte` | `knob1` Grain, `knob2` Grain frequency |
+| `clay` | `knob1` Grain, `knob2` Grain frequency, `knob3` Edge darkening |
+| `rubber` | `knob1` Grain, `knob2` Grain frequency, `knob3` Highlight, `knob4` Sheen |
+| `marble` | `knob2` Vein scale, `knob5` Vein contrast, `knob6` Vein sharpness |
 
 ```
 set surface_material, metallic, myprotein
 set surface_material_rough, 0.05, myprotein      # a sharper metallic, this layer only
 unset surface_material_rough, myprotein          # back to metallic's own
 ```
+
+Two knobs only show under a condition: **Grain frequency** changes nothing
+while **Grain** is 0 (matte's own grain is 0), and a **Reflection blur** blurs
+the environment the material reflects, so it is invisible while `material_env`
+is the flat background colour.
 
 `default` has no knobs. A global value is not an override: only the object's
 (or state's) own value counts. Scenes capture them with the material. The CPU

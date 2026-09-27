@@ -2424,6 +2424,43 @@ static PyObject* CmdGetMaterialNames(PyObject*, PyObject* args)
 }
 
 /**
+ * Custom material (#568): the knobs material `id` has, as
+ * [(suffix, label, min, max), ...] in display order. `suffix` completes the
+ * per-layer override setting: `<rep>_material_<suffix>`. Empty for `default`
+ * and for an id with no knobs. The Inspector builds its Custom sliders from
+ * this, so it can only offer knobs the material's shader reads.
+ *
+ * _cmd.get_material_knobs(id)
+ */
+static PyObject* CmdGetMaterialKnobs(PyObject*, PyObject* args)
+{
+  int id = 0;
+  if (!PyArg_ParseTuple(args, "i", &id)) {
+    API_HANDLE_ERROR;
+    return APIAutoNone(nullptr);
+  }
+  static const char* const kSuffix[kMaterialKnobSlotCount] = {"reflect",
+      "tint", "rough", "knob1", "knob2", "knob3", "knob4", "knob5", "knob6"};
+  const MaterialKnob* knobs = nullptr;
+  int const n = MaterialKnobs(id, &knobs);
+  PyObject* list = PyList_New(0);
+  if (!list) {
+    return APIAutoNone(nullptr);
+  }
+  for (int i = 0; i < n; ++i) {
+    PyObject* item = Py_BuildValue("ssff", kSuffix[knobs[i].slot],
+        knobs[i].label, knobs[i].min, knobs[i].max);
+    if (!item) {
+      Py_DECREF(list);
+      return APIAutoNone(nullptr);
+    }
+    PyList_Append(list, item);
+    Py_DECREF(item);
+  }
+  return list;
+}
+
+/**
  * Materials (#503): the material id one representation of one object resolves
  * to for a draw -- object value, then the rep's global value, then
  * material_default. Internal; the Inspector and the CI test read it.
@@ -7052,6 +7089,7 @@ static PyMethodDef Cmd_methods[] = {
   {"get_object_ttt", CmdGetObjectTTT, METH_VARARGS},
   {"get_object_settings", CmdGetObjectSettings, METH_VARARGS},
   {"get_material_names", CmdGetMaterialNames, METH_VARARGS},
+  {"get_material_knobs", CmdGetMaterialKnobs, METH_VARARGS},
   {"get_material_family", CmdGetMaterialFamily, METH_VARARGS},
   {"get_effective_material", CmdGetEffectiveMaterial, METH_VARARGS},
   {"get_rep_material", CmdGetRepMaterial, METH_VARARGS},
