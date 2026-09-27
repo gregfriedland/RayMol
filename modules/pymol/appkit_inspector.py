@@ -821,9 +821,9 @@ def _drawn_family(obj, rep_name):
     """The family a representation actually DRAWS with, or None.
 
     Not the family of the material the SETTING holds. `MaterialResolve`
-    degrades a glass-family material to `default` on sphere impostors, and
-    `MaterialResolveForDraw` does the same for glass sticks that emit
-    stick_ball spheres -- and a degraded rep draws as family 0, which reads the
+    degrades clear and frosted glass to `default` on sphere impostors, and
+    `MaterialResolveForDraw` does the same for such sticks when they emit
+    stick_ball spheres (jelly is exempt from both, #526) -- and a degraded rep draws as family 0, which reads the
     legacy triple. get_material_draw_params is documented as "the FINAL
     material parameters a representation draws with ... after the legacy-slider
     decision", which is exactly the question being asked here.

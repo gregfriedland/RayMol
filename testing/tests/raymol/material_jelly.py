@@ -371,6 +371,9 @@ class TestJelly(testing.PyMOLTestCase):
                                JELLY_TRANSPARENCY, places=5)
         family_, mode = draw_params('m1', repres['spheres'])[:2]
         self.assertEqual((family_, mode), (GLASS_FAMILY, JELLY_MODE))
+        # ...and it asks for peel, as jelly does on every rep it draws on:
+        # its 0.85 was measured peeled, one skin per object
+        self.assertEqual(resolved_peel('m1'), 1)
         # the user's slider still wins
         cmd.set('sphere_transparency', 0.4, 'm1')
         build('m1', 'spheres')
@@ -380,7 +383,8 @@ class TestJelly(testing.PyMOLTestCase):
     def testJellyBallAndStickStaysJelly(self):
         """Glass on a stick_ball rep degrades the WHOLE rep to default (its
         balls would be near-invisible discs). Jelly's balls are fine, so a
-        jelly ball-and-stick keeps its material and its implied alpha."""
+        jelly ball-and-stick keeps its material, its implied alpha and its
+        peel request."""
         cmd.hide('everything', 'm1')
         cmd.set('stick_material', 'jelly', 'm1')
         cmd.set('stick_ball', 1, 'm1')
@@ -389,10 +393,13 @@ class TestJelly(testing.PyMOLTestCase):
         self.assertEqual((family_, mode), (GLASS_FAMILY, JELLY_MODE))
         self.assertAlmostEqual(built_transparency('m1', repres['sticks']),
                                JELLY_TRANSPARENCY, places=5)
-        # ...while clear glass on the same ball-and-stick still degrades
+        self.assertEqual(resolved_peel('m1'), 1)
+        # ...while clear glass on the same ball-and-stick still degrades, peel
+        # request included: a `default` rep asks for none
         cmd.set('stick_material', 'glass', 'm1')
         build('m1', 'sticks')
         self.assertEqual(draw_params('m1', repres['sticks'])[0], 0)
+        self.assertEqual(resolved_peel('m1'), 0)
 
     # -- the non-negotiables --------------------------------------------------
 

@@ -410,9 +410,11 @@ static MaterialParams MaterialResolveForDrawCached(PyMOLGlobals* G,
   int const id = MaterialResolveSettingId(G, set1, set2, repType);
   MaterialParams params = MaterialResolve(id, repType);
   // stick_ball spheres are emitted by the STICK rep, so they arrive as cRepCyl
-  // and take stick_material -- including a glass one, which the sphere impostor
-  // has no path for. A glassy stick beside near-invisible ball discs looks
-  // broken, so the WHOLE rep degrades to `default` rather than half of it.
+  // and take stick_material -- including clear or frosted glass, which
+  // MaterialResolve keeps off sphere impostors. A glassy stick beside
+  // near-invisible ball discs looks broken, so the WHOLE rep degrades to
+  // `default` rather than half of it. Jelly is exempt, as it is from the
+  // sphere rule (#526): its balls read as gummy balls.
   //
   // This rule depends on a setting, not on the rep alone, so MaterialResolve
   // cannot express it. It lives here rather than at the draw site because

@@ -119,7 +119,8 @@ slide when you rotate, pan or zoom.
 
 The glass family carries an **implied alpha**: glass 0.15, frosted glass 0.2,
 jelly 0.85. It is used when a representation's own transparency slider
-(`transparency`, `cartoon_transparency`, `stick_transparency`) is at 0. **Your
+(`transparency`, `cartoon_transparency`, `stick_transparency`,
+`sphere_transparency`) is at 0. **Your
 slider always wins.** Set `transparency, 0.5` on a glass surface and it is
 50% transparent glass. The implied alpha is a build input and is never
 written as a setting, so a session opened in a build that doesn't know `glass`
@@ -289,6 +290,6 @@ It exits non-zero, and lists the cause at the top of the page, when:
 Expected cases are declared in `manifest.json` with their reasons, and the
 page labels them instead of failing:
 
-- the glass family on spheres, which must still match `default`;
+- clear and frosted glass on spheres, which must still match `default`;
 - plastic and metallic on a dark background without ray tracing;
 - the glass family's ray-tracing invariance (#532).
