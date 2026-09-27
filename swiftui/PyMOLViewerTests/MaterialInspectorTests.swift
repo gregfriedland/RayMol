@@ -100,6 +100,10 @@ final class MaterialInspectorTests: XCTestCase {
         XCTAssertTrue(TranslucentLayers.caption(peel: 0, resolved: true).contains("Every layer"))
         XCTAssertTrue(TranslucentLayers.caption(peel: -1, resolved: true).contains("nearest only"))
         XCTAssertTrue(TranslucentLayers.caption(peel: -1, resolved: false).contains("all layers"))
+        // any other explicit value is Nearest only, as the core reads it --
+        // never "Auto"
+        XCTAssertTrue(TranslucentLayers.caption(peel: 2, resolved: true).contains("One skin"))
+        XCTAssertFalse(TranslucentLayers.caption(peel: 2, resolved: true).contains("Auto"))
     }
 
     func testThePeelControlWritesTheTriStateOnTheObject() {

@@ -298,17 +298,20 @@ enum TranslucentLayers {
         "How a see-through object is drawn. Nearest only draws it as one skin, "
         + "without its inner walls and joins; All shows every layer. Auto picks "
         + "Nearest only for glass, frosted glass and jelly, unless another "
-        + "see-through layer of the object would disappear behind the skin."
+        + "see-through layer of the object would disappear behind the skin. "
+        + "Metal renderer only, for up to three objects at a time."
 
+    /// Keyed the way the core reads the setting: any negative value is Auto,
+    /// 0 is All, and any other value is an explicit Nearest only.
     static func caption(peel: Int, resolved: Bool) -> String {
-        switch peel {
-        case 1: return "One skin: the inner walls and joins are not drawn."
-        case 0: return "Every layer is drawn, inner walls and joins included."
-        default:
+        if peel < 0 {
             return resolved
                 ? "Auto: nearest only (a glass-family material asks for one skin)."
                 : "Auto: all layers."
         }
+        return peel == 0
+            ? "Every layer is drawn, inner walls and joins included."
+            : "One skin: the inner walls and joins are not drawn."
     }
 }
 
@@ -3884,17 +3887,20 @@ private struct ObjectMaterialRows: View {
     /// as one skin (peel on, 1); "All" draws every layer (peel off, 0). The
     /// caption says so in words, and what Auto currently resolves to.
     private var peelRow: some View {
+        // Label on its own line and the choices under it: "Nearest only" is
+        // the longest cell in the panel, and side by side with the label the
+        // row truncated in a narrow inspector.
         VStack(alignment: .leading, spacing: 2) {
+            Text("Translucent layers")
+                .font(.system(size: 10))
+                .foregroundColor(PanelTheme.textColor)
             HStack(spacing: 6) {
-                Text("Translucent layers")
-                    .font(.system(size: 10))
-                    .foregroundColor(PanelTheme.textColor)
-                    .fixedSize()
                 TriStateSetting(value: meta.peel,
                                 options: TranslucentLayers.options) {
                     engine.runCommand(MaterialCommands.setPeel($0, on: objName), naming: objName)
                     engine.refreshExpandedDetail()
                 }
+                .fixedSize()
                 Spacer(minLength: 0)
             }
             Text(TranslucentLayers.caption(peel: meta.peel, resolved: meta.peelResolved))
