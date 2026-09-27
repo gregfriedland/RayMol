@@ -327,8 +327,9 @@ class TestMetalShaderSources(testing.PyMOLTestCase):
         msl = shader_literals(self.source())
         grain = _function_body(msl['kMaterialSrc'], 'float mat_grain(')
         self.assertEqual(grain.count('mat_octave_fade('), 2)
-        fade = _function_body(msl['kMaterialSrc'], 'float mat_octave_fade(')
-        self.assertIn('fwidth(', fade)
+        cells = _function_body(msl['kMaterialSrc'], 'float mat_cells_per_pixel(')
+        self.assertIn('dfdx(', cells)
+        self.assertIn('dfdy(', cells)
 
     def testRTBlurUsesTheSharedOrthoAwareDepth(self):
         """rt_composite's bilateral AO blur must reconstruct the neighbour depth

@@ -5946,30 +5946,42 @@ static float mat_turb(float3 p) {  // turbulence: sum of |noise - 0.5|
   return s;
 }
 
-// How much of a noise octave survives at this pixel: 1 while one pixel covers
-// at most one noise cell (a cell spans a pixel or more), fading to 0 by two
-// cells per pixel (a cell of half a pixel). `q` is the octave's
-// lookup coordinate, so fwidth(q) is how many noise cells one pixel covers.
-// Past Nyquist a cell is sub-pixel, and the value a pixel lands on is
-// effectively random -- it shimmers as the camera moves and does not match a
-// high-res export of the same view. Fading the octave to its mean (0, since
-// the octaves are centred) is the band-limit.
-static float mat_octave_fade(float3 q) {
-  float cells = length(fwidth(q));
-  return 1.0 - smoothstep(1.0, 2.0, cells);
+// How many noise cells one pixel covers at lookup coordinate `q`: the longer
+// of the two screen-axis derivatives. Rotation-invariant -- length(fwidth(q))
+// would sum |dx| and |dy| per component and grow up to 2x as an object turns in
+// the image plane, so the amount of grain would change with orientation.
+static float mat_cells_per_pixel(float3 q) {
+  return max(length(dfdx(q)), length(dfdy(q)));
+}
+
+// How much of a noise octave survives: 1 while a cell spans ~1.4 pixels or
+// more (0.7 cells per pixel), fading to 0 by 1.4 cells per pixel (a cell of
+// ~0.7 px). Nyquist would start at 0.5; the band starts a little later so
+// clay keeps its fine grain at normal zoom (it is what separates clay from
+// matte), and was tuned against measured shimmer under a sub-pixel pan.
+// Past it a cell is sub-pixel and the value a pixel lands on
+// is effectively random -- it shimmers as the camera moves. Fading the octave
+// to its mean (0, since the octaves are centred) is the band-limit. It is set
+// per pixel, so a larger export keeps finer grain than the live view; the two
+// agree wherever an octave survives in both.
+static float mat_octave_fade(float cells) {
+  return 1.0 - smoothstep(0.7, 1.4, cells);
 }
 
 // Two octaves of model-space grain, centred on 1.0. Every grainy material uses
 // the same shape so they differ only by amplitude and frequency. Each octave
 // is faded out as it drops below the pixel size (mat_octave_fade): zoomed in,
 // nothing changes; zoomed out, the grain settles to the flat albedo instead of
-// shimmering. Only ever called from fragment functions (fwidth needs them).
+// shimmering. Only ever called from fragment functions (the derivatives need
+// them). The second octave's lookup is the first's scaled by `harmonic` (plus
+// a constant), so its footprint is too: one derivative serves both.
 static float mat_grain(float3 pModel, float amount, float freq, float harmonic, float offset) {
   if (amount <= 0.0) return 1.0;
   float3 q1 = pModel * freq;
-  float3 q2 = pModel * freq * harmonic + offset;
-  return 1.0 + amount * mat_octave_fade(q1) * (mat_noise(q1) * 2.0 - 1.0)
-             + 0.5 * amount * mat_octave_fade(q2) * (mat_noise(q2) * 2.0 - 1.0);
+  float cells1 = mat_cells_per_pixel(q1);
+  return 1.0 + amount * mat_octave_fade(cells1) * (mat_noise(q1) * 2.0 - 1.0)
+             + 0.5 * amount * mat_octave_fade(cells1 * harmonic)
+                   * (mat_noise(q1 * harmonic + offset) * 2.0 - 1.0);
 }
 
 // --- marble ----------------------------------------------------------------
