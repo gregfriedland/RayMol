@@ -80,7 +80,7 @@ struct RepState: Equatable {
 }
 
 /// One knob a material has (#568): the override setting's suffix, what it does,
-/// and a slider range. From `_cmd.get_material_knobs` via the MATERIALS line.
+/// and a slider range. From `_cmd.get_material_knobs` via one `MATKNOBS:` line per material.
 struct MaterialKnobInfo: Equatable {
     let suffix: String
     let label: String
@@ -4019,6 +4019,10 @@ private struct MaterialSection: View {
     /// Custom chosen but nothing moved yet: the sliders show, nothing is
     /// written. Overrides in the payload keep the section open by themselves.
     @State private var customOpen = false
+    /// Knobs this view has written since the last poll: `set` in the payload
+    /// lags a drag by up to a poll, and a pick in that window must still
+    /// clear what was just tuned.
+    @State private var touched: Set<String> = []
 
     private var baseID: Int { Int(value.rounded()) }
     private var baseName: String {
@@ -4031,7 +4035,10 @@ private struct MaterialSection: View {
         CustomMaterial.offeredKnobs(base: baseID, drawn: custom?.drawn,
                                     table: engine.materialKnobs)
     }
-    private var overrides: [String] { custom?.set ?? [] }
+    private var overrides: [String] {
+        let known = custom?.set ?? []
+        return known + CustomMaterial.knobs.filter { touched.contains($0) && !known.contains($0) }
+    }
     private var isCustom: Bool { custom?.isCustom ?? false }
     private var showsKnobs: Bool { !knobs.isEmpty && (isCustom || customOpen) }
 
@@ -4124,6 +4131,7 @@ private struct MaterialSection: View {
 
     private func pick(_ id: Int) {
         customOpen = false
+        defer { touched = [] }
         engine.runCommand(CustomMaterial.pick(prop.setting, id: id, clearing: overrides,
                                               on: objName), naming: objName)
         engine.refreshExpandedDetail()
@@ -4131,6 +4139,7 @@ private struct MaterialSection: View {
 
     private func inherit() {
         customOpen = false
+        defer { touched = [] }
         engine.runCommand(CustomMaterial.inherit(prop.setting, clearing: overrides,
                                                  on: objName), naming: objName)
         engine.refreshExpandedDetail()
@@ -4138,12 +4147,14 @@ private struct MaterialSection: View {
 
     private func reset() {
         customOpen = false
+        defer { touched = [] }
         guard !overrides.isEmpty else { return }
         engine.runCommand(CustomMaterial.clear(prop.setting, overrides, on: objName), naming: objName)
         engine.refreshExpandedDetail()
     }
 
     private func setKnob(_ suffix: String, _ v: Double) {
+        touched.insert(suffix)
         engine.runCommand(CustomMaterial.setKnob(prop.setting, suffix, v, on: objName), naming: objName)
     }
 }

@@ -218,7 +218,8 @@ final class PyMOLEngine: ObservableObject {
     /// looks this build cannot draw. Only the IMPLEMENTED rows arrive here --
     /// the rest are real ids that still work by name from the command line.
     @Published var materialNames: [(id: Int, name: String)] = []
-    /// Each material's Custom knobs (#569), by material id. Same MATERIALS line.
+    /// Each material's Custom knobs (#569), by material id, from the
+    /// `MATKNOBS:<id>:` lines that follow MATERIALS.
     @Published var materialKnobs: [Int: [MaterialKnobInfo]] = [:]
     /// How many times the material table has been asked for; see
     /// requestMaterialsIfNeeded().

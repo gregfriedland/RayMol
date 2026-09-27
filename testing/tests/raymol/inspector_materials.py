@@ -225,7 +225,7 @@ class TestSceneMaterialRows(testing.PyMOLTestCase):
 
 class TestCustomMaterial(testing.PyMOLTestCase):
     """The Custom material's Inspector half (#569), Python side: the knobs the
-    MATERIALS line carries, the per-rep state the poll ships, and what the
+    MATKNOBS lines carry, the per-rep state the poll ships, and what the
     Swift command strings (MaterialInspectorTests, the literals are the join)
     do to the session."""
     KNOBS = ('reflect', 'tint', 'rough', 'knob1', 'knob2', 'knob3',
@@ -261,6 +261,10 @@ class TestCustomMaterial(testing.PyMOLTestCase):
             ai.poll_materials()
         lines = buf.getvalue().splitlines()
         self.assertTrue(lines[0].startswith('MATERIALS:'))
+        # names only: the knobs must not ride here, at any compactness -- the
+        # table is ~70 chars from the cap even with compact separators
+        for row in json.loads(lines[0][len('MATERIALS:'):]):
+            self.assertEqual(len(row), 2, row)
         knob_lines = [l for l in lines if l.startswith('MATKNOBS:')]
         self.assertGreaterEqual(len(knob_lines), 9)
         for l in lines:
@@ -319,13 +323,17 @@ class TestCustomMaterial(testing.PyMOLTestCase):
         by_name = {n: i for i, n in setting.get_material_names(1)}
         self.assertEqual(self.rep()['material']['drawn'], by_name['glass'])
 
-    def testALeftoverOverrideIsNotCustom(self):
+    def testALeftoverOverrideIsNotCustomButIsStillCleared(self):
         """An override the drawn material has no knob for is ignored by the
-        core, so it must not make the row read Custom."""
+        core, so it must not make the row read Custom -- but it is still in
+        `set`, what a pick or Reset unsets, or it would come back the next
+        time a material with that knob is picked."""
         cmd.set('stick_material', 'metallic', 'm1')
         cmd.set('stick_material_rough', 0.05, 'm1')
         cmd.set('stick_material', 'marble', 'm1')     # marble has no rough
-        self.assertEqual(self.rep()['material']['custom'], [])
+        m = self.rep()['material']
+        self.assertEqual(m['custom'], [])
+        self.assertEqual(m['set'], ['rough'])
 
     def testEachLayerReportsItsOwnOverrides(self):
         cmd.show('spheres', 'm1')
