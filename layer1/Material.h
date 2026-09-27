@@ -223,14 +223,15 @@ bool MaterialRepEmitsStickBalls(PyMOLGlobals* G, const CoordSet* cs,
  *     and `specTint` mixes the highlight from white (0) toward the primitive's
  *     own colour (1). The base colour itself is never changed.
  *
- * Limits, all of them `ray`'s own rather than the table's: the textures are
- * evaluated in camera space, so they slide as the camera moves (see
- * MaterialRayParamsFor); the tint applies to the lit surface's highlight, not
- * to the `ray_transparency_specular` highlight carried through a transparent
- * layer, which stays white; and the scene EXPORTS (`save` to .pov, .wrl, .obj,
- * .dae, .idtf) read neither the texture nor these knobs, only the implied
- * transparency baked into the geometry -- a metallic object exports with the
- * default finish.
+ * Limits, all of them `ray`'s own rather than the table's: the positional
+ * textures (Swirl 1, Matte 2) are evaluated in camera space, so they slide as
+ * the camera moves, and Matte 1 is per-sample noise with no pattern to lock
+ * (see MaterialRayParamsFor); the tint applies to the lit surface's highlight,
+ * not to the `ray_transparency_specular` highlight carried through a
+ * transparent layer, which stays white; and the scene EXPORTS read neither the
+ * texture nor these knobs -- a metallic object exports with the default
+ * finish. Of the implied transparency, .dae, .gltf and .idtf carry it on every
+ * primitive, .pov on triangles only, and .wrl and .obj not at all.
  *
  * `default` is {0, 1, 1, 0}: no texture and today's lighting, byte for byte.
  * So are glass and jelly -- the glass family reaches `ray` through the

@@ -283,11 +283,13 @@ MaterialRayParams MaterialRayParamsFor(int id)
      its table on every render, so no two traces of either match. frosted_glass
      takes Matte 1 as well, on top of the transparency it already implies.
 
-     A known limit of all three: `ray`'s textures are evaluated at the impact
-     point in CAMERA space (Swirl 1 entirely, Matte 2 un-rotated but not
-     un-translated), so the pattern slides over the surface as the camera
-     moves. The viewport's procedural materials are locked to the object;
-     under `ray` a movie of a marble object will show its veins swim.
+     A known limit of the positional textures: Swirl 1 (marble) is evaluated
+     at the impact point in CAMERA space, and Matte 2 (rubber) un-rotates it
+     but does not un-translate it, so those patterns slide over the surface as
+     the camera moves. The viewport's procedural materials are locked to the
+     object; under `ray` a movie of a marble object will show its veins swim.
+     Matte 1 (clay, frosted_glass) reads no position at all -- it is fresh
+     noise per sample, so there is no pattern to lock or to slide.
 
      The highlight knobs are best effort, and deliberately few. matte drops the
      highlight entirely, as its Lambert shader does. plastic is a brighter
