@@ -204,6 +204,85 @@ bool MaterialRepEmitsStickBalls(PyMOLGlobals* G, const CoordSet* cs,
     const CSetting* set1, const CSetting* set2);
 
 /**
+ * What the CPU ray tracer (`ray`) does with a material (#499).
+ *
+ * `ray` has none of the Metal shaders, so a material reaches it as the few
+ * knobs its lighting model already has, best effort:
+ *
+ *   - `wobble` is a `ray_texture` mode -- the bump textures `ray` has had all
+ *     along. marble -> 2 (Swirl 1), clay -> 1 (Matte 1), rubber -> 4 (Matte 2),
+ *     frosted_glass -> 1 (Matte 1, on top of its implied transparency).
+ *     Only the MODE comes from the material. The texture's knobs stay the
+ *     user's `ray_texture_settings`, because CRay holds ONE WobbleParam triple
+ *     per render: a material that brought its own would be overwritten by the
+ *     next representation's, silently. So a marble surface renders exactly as
+ *     the same surface under `ray_texture 2`, which is what makes the mapping
+ *     testable.
+ *   - `specular`, `diffuse` and `specTint` shape the highlight per PRIMITIVE:
+ *     the highlight is scaled by `specular`, the lit diffuse term by `diffuse`,
+ *     and `specTint` mixes the highlight from white (0) toward the primitive's
+ *     own colour (1). The base colour itself is never changed.
+ *
+ * Limits, all of them `ray`'s own rather than the table's: the positional
+ * textures (Swirl 1, Matte 2) are evaluated in camera space, so they slide as
+ * the camera moves, and Matte 1 is per-sample noise with no pattern to lock
+ * (see MaterialRayParamsFor); the tint applies to the lit surface's highlight,
+ * not to the `ray_transparency_specular` highlight carried through a
+ * transparent layer, which stays white; and the scene EXPORTS read neither the
+ * texture nor these knobs -- a metallic object exports with the default
+ * finish. Of the implied transparency, .dae and .gltf carry it on every
+ * primitive; .pov carries it on triangles only; .idtf exports ONLY triangles
+ * (spheres and sticks are left out of the file), and carries it on those;
+ * .wrl and .obj carry none.
+ *
+ * `default` is {0, 1, 1, 0}: no texture and today's lighting, byte for byte.
+ * So are glass and jelly -- the glass family reaches `ray` through the
+ * transparency it implies at rep-build time (MaterialEffectiveTransparency),
+ * and only frosted_glass adds a texture on top.
+ */
+struct MaterialRayParams {
+  int wobble = 0;
+  float specular = 1.0f;
+  float diffuse = 1.0f;
+  float specTint = 0.0f;
+};
+
+/**
+ * MaterialRayParams for a material id. An id with no row, or one not
+ * implemented, gets `default`'s.
+ */
+MaterialRayParams MaterialRayParamsFor(int id);
+
+/**
+ * The material id `ray` stamps on a representation's primitives: the
+ * representation's material after the draw-time degradations
+ * (MaterialResolveForDraw), so `ray` and the viewport agree about what the
+ * rep is made of. 0 for reps that take no material. Resolved ONCE per rep and
+ * handed to MaterialRayWobble, because for a glass stick rep the resolve scans
+ * every atom for `stick_ball`.
+ */
+int MaterialRayId(PyMOLGlobals* G, const CSetting* set1,
+    const CSetting* set2, int repType, const CoordSet* cs = nullptr);
+
+/**
+ * The `ray_texture` mode a representation is traced with. An EXPLICIT
+ * `ray_texture` wins outright over the material's:
+ *
+ *   - a value set on the object or its state, whatever it is -- 0 included,
+ *     which is how a marble surface is traced without the swirl;
+ *   - otherwise the global value, if non-zero. The global 0 is also the
+ *     default, and cannot say whether it was chosen, so it is not explicit.
+ *
+ * Only when neither applies does the material's mode (MaterialRayParamsFor)
+ * take effect. For `default`, whose mode is 0, this returns exactly the
+ * resolved `ray_texture` the tracer always used.
+ *
+ * @param materialId from MaterialRayId
+ */
+int MaterialRayWobble(PyMOLGlobals* G, const CSetting* set1,
+    const CSetting* set2, int materialId);
+
+/**
  * Name of a material id, or nullptr when no row has that id.
  */
 const char* MaterialGetName(int id);
