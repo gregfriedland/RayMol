@@ -1,0 +1,104 @@
+"""`line_stick_helper` keeps the lines under TRANSLUCENT sticks only (#527).
+
+The helper suppresses the lines under a stick, where they are hidden anyway.
+Under a see-through stick they are not hidden, and suppressing them leaves
+nothing to see, so the lines build turns the helper off for a translucent stick
+(#495 extended that to a stick a MATERIAL makes translucent, e.g. glass).
+
+"Translucent" used to mean any transparency above R_SMALL4, so an 85%-opaque
+stick -- `stick_transparency 0.15`, or jelly's implied 0.15 -- kept a faint
+wireframe down the middle of every bond. It now means MORE than half
+transparent.
+
+Asserted on what the lines BUILD decided (`get_built_line_stick_helper`), not
+on the setting. When the helper stays on and every line is under a stick,
+RepWireBondNew emits no geometry and discards the rep, so the accessor raises
+"not built"; when the helper is turned off, the rep is built and records 0.
+
+Runs on a RayMol --testing build:
+    pymol -ckqy testing/testing.py --run testing/tests/raymol/line_stick_helper.py
+"""
+from pymol import _cmd, cmd, testing
+
+
+def built_line_stick_helper(obj):
+    return _cmd.get_built_line_stick_helper(cmd._COb, obj)
+
+
+class TestLineStickHelperThreshold(testing.PyMOLTestCase):
+    def setUp(self):
+        super().setUp()
+        cmd.reinitialize()
+        cmd.fragment('ala', 'm1')
+        cmd.show('lines', 'm1')
+        cmd.show('sticks', 'm1')
+
+    def build(self):
+        cmd.rebuild('m1')
+        cmd.refresh()
+
+    def assertLinesSuppressed(self):
+        self.build()
+        # Matched on the message: a bare assertRaises would also pass on "no
+        # such molecular object", i.e. report the rule verified on a typo.
+        with self.assertRaisesRegex(Exception, 'not built'):
+            built_line_stick_helper('m1')
+
+    def assertLinesKept(self):
+        self.build()
+        try:
+            helper = built_line_stick_helper('m1')
+        except Exception as exc:
+            self.fail('the lines rep was discarded, i.e. every line under a '
+                      'translucent stick was suppressed: %s' % exc)
+        self.assertEqual(helper, 0)
+
+    def testTheHelperIsOnThroughout(self):
+        # ...so every difference below is the build's decision, not the user's
+        self.assertEqual(cmd.get_setting_boolean('line_stick_helper', 'm1'), 1)
+
+    def testOpaqueSticksSuppressTheirLines(self):
+        self.assertLinesSuppressed()
+
+    def testAMostlyOpaqueStickSuppressesItsLinesToo(self):
+        # the #527 case: 0.15 used to keep them
+        cmd.set('stick_transparency', 0.15, 'm1')
+        self.assertLinesSuppressed()
+
+    def testHalfTransparentIsNotYetTranslucent(self):
+        # the boundary: "more than half"
+        cmd.set('stick_transparency', 0.5, 'm1')
+        self.assertLinesSuppressed()
+
+    def testAMostlyTransparentStickKeepsItsLines(self):
+        cmd.set('stick_transparency', 0.6, 'm1')
+        self.assertLinesKept()
+
+    def testGlassSticksKeepTheirLines(self):
+        # translucent without writing stick_transparency: through the material
+        # (#495). Glass implies 0.85.
+        cmd.set('stick_material', 'glass', 'm1')
+        self.assertEqual(cmd.get_setting_float('stick_transparency', 'm1'), 0.0)
+        self.assertLinesKept()
+
+    def testJellySticksSuppressTheirLines(self):
+        # jelly implies 0.15: a dense gummy, not a see-through stick
+        cmd.set('stick_material', 'jelly', 'm1')
+        self.assertLinesSuppressed()
+
+    def testChangingTheSliderRebuildsTheLines(self):
+        # the decision must follow the slider without an explicit rebuild of
+        # the lines rep, or a session keeps whatever the first build decided
+        cmd.refresh()
+        cmd.set('stick_transparency', 0.8, 'm1')
+        cmd.refresh()
+        try:
+            helper = built_line_stick_helper('m1')
+        except Exception as exc:
+            self.fail('the lines rep kept its opaque-stick decision after '
+                      'stick_transparency changed: %s' % exc)
+        self.assertEqual(helper, 0)
+        cmd.set('stick_transparency', 0.2, 'm1')
+        cmd.refresh()
+        with self.assertRaisesRegex(Exception, 'not built'):
+            built_line_stick_helper('m1')

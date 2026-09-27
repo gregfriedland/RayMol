@@ -549,17 +549,19 @@ Rep *RepWireBondNew(CoordSet * cs, int state)
   line_color = SettingGet_color(G, cs->Setting.get(), obj->Setting.get(), cSetting_line_color);
   line_width = SettingGet_f(G, cs->Setting.get(), obj->Setting.get(), cSetting_line_width);
   
-  // Through MaterialEffectiveTransparency: the rule is "translucent sticks keep
-  // their lines", and a GLASS stick is translucent without ever writing the
-  // setting (#495). Reading the raw value left the helper on, so `show lines` +
-  // `show sticks` + a glass stick material suppressed the lines exactly where
-  // the sticks are -- see-through sticks with nothing behind them.
+  // "Translucent sticks keep their lines": a see-through stick with the lines
+  // under it suppressed shows nothing. Read through MaterialEffectiveTransparency
+  // so a GLASS stick counts, which is translucent without ever writing the
+  // setting (#495). Translucent means MORE than half transparent (#527): the
+  // threshold was R_SMALL4, i.e. any transparency at all, so an 85%-opaque stick
+  // (jelly, or `stick_transparency 0.15`) kept a wireframe down its middle.
+  const float kLinesUnderTranslucentSticks = 0.5F;
   if (line_stick_helper &&
       MaterialEffectiveTransparency(G, cs->Setting.get(), obj->Setting.get(),
           cRepCyl,
           SettingGet_f(G, cs->Setting.get(), obj->Setting.get(),
               cSetting_stick_transparency),
-          cs) > R_SMALL4)
+          cs) > kLinesUnderTranslucentSticks)
     line_stick_helper = false;
   // Recorded on the rep below, once it exists: the SETTING says what the user
   // asked for, this says what the build decided, and only the second one moves
