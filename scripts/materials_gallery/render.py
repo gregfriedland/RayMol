@@ -28,7 +28,6 @@ import argparse
 import json
 import os
 import plistlib
-import shutil
 import subprocess
 import sys
 import time
@@ -160,7 +159,20 @@ def main():
               flush=True)
         if not ok:
             failed.append(tag)
-    shutil.copy(os.path.join(HERE, 'manifest.json'), args.out)
+    # The manifest gallery.py reads is the one that was RENDERED: a subset run
+    # (--only / --materials) must not be judged against cells it never drew.
+    rendered = dict(manifest)
+    rendered['reps'] = {r: manifest['reps'][r] for r in reps}
+    rendered['materials'] = mats
+    if not args.lock_check:
+        rendered['lock_check'] = dict(manifest['lock_check'], reps=[])
+    else:
+        # every lock material is rendered whatever --materials says; only
+        # the representation filter applies to the lock pairs
+        rendered['lock_check'] = dict(manifest['lock_check'],
+            reps=[r for r in manifest['lock_check']['reps'] if r in reps])
+    with open(os.path.join(args.out, 'manifest.json'), 'w') as handle:
+        json.dump(rendered, handle, indent=2)
     if failed:
         sys.exit('%d renders produced nothing: %s' % (len(failed), ', '.join(failed)))
 

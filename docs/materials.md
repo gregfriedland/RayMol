@@ -19,8 +19,9 @@ surface over a marble cartoon with metallic sticks is one object.
 In the **Inspector**, each style-layer row (Cartoon, Surface, Sticks, Spheres)
 has a **Material** dropdown. When the chosen material has a look — `marble`,
 `clay`, or `metallic` (copper, gold, steel, chrome) — a **Look** chip appears
-beside it and applies the whole look (material plus lighting); see
-[Looks](#looks-materials-plus-lighting).
+beside it and applies the whole look: for marble and clay, the material plus
+the lighting that flatters it; for the metals, `metallic` plus the metal's
+colour and reflection settings. See [Looks](#looks-materials-plus-lighting).
 
 From the command line:
 
@@ -75,7 +76,8 @@ A global `set cartoon_material, default` therefore does *not* block
 with an error, and so is one of `transparency_peel`. Use separate objects to
 give parts of a structure different materials. `material_default` and
 `material_env` are global only: setting them on an object prints PyMOL's
-usual "global-level setting" warning and has no effect.
+usual "global-level setting" warning. The object-level value is stored (and
+`get` reports it) but the renderer reads only the global one.
 
 **`get` and logs show names.** `get`, the `Setting: … set to …` line, `.pml`
 logs and the Settings panel print `marble` rather than an id. Sessions (`.pse`)
@@ -93,7 +95,7 @@ reach them.
 | `default` | default | all | Today's shading, unchanged. |
 | `matte` | procedural | all | Lambert only: no highlight at all. |
 | `plastic` | reflective | all | Glossy clear coat: a white environment reflection over the base colour. Traced reflections when ray tracing is on. |
-| `metallic` | reflective | all | The reflection is tinted by the base colour. The body is darker, the highlight coloured. |
+| `metallic` | reflective | all | A stronger, rougher environment reflection, tinted by the base colour. The body and the light highlight are `default`'s, so the difference is all in what it reflects (under `ray`, see below, the body is darker and the highlight tinted). |
 | `glass` | glass | cartoon, surface, sticks | Clear body (implied alpha 0.15) under a Fresnel rim, with key-light and headlight glints. |
 | `frosted_glass` | glass | cartoon, surface, sticks | Glass with a blurred environment and soft, broad glints (implied alpha 0.2). |
 | `jelly` | glass | cartoon, surface, sticks | A dense gummy body (implied alpha 0.85) with an inner glow and a wet highlight. |
@@ -195,8 +197,9 @@ knobs it has:
 
 Some looks need more than a material. `pymol.materials` has bundles that set
 the material on **all four** material-bearing representations of each object
-in the selection, plus the scene settings the look depends on. Each function's
-docstring lists exactly what it writes.
+in the selection, plus what else the look depends on: the lighting rig for
+`marble` and `clay`, the colour and reflection settings for the metals. Each
+function's docstring lists exactly what it writes.
 
 ```python
 from pymol import materials
@@ -212,8 +215,10 @@ materials.chrome('ligand')
   row leaves the second one's lighting.
 - The named metals **do** write colour, on the selection. That is what
   separates a metal look from the `metallic` material.
-- The occlusion and shadow parts of `clay` and `marble` are ray-tracing terms.
-  They need `metal_raytrace`, which the bundles deliberately don't switch on.
+- `clay` and `marble` switch on screen-space shadows and occlusion
+  (`metal_shadows`, `metal_ssao`), which work everywhere, and set the
+  ray-traced ones (`metal_rt_shadow*`, `metal_rt_ao_*`), which need
+  `metal_raytrace`. The bundles deliberately don't switch that on.
 
 In the Inspector these are the **Look** chips on a representation row, shown
 when the row's material is `marble`, `clay` or `metallic` (which offers the
@@ -268,6 +273,18 @@ cell:
 - its high-frequency detail;
 - its PNG size.
 
-It flags any material that came out indistinguishable from `default`. The
-`--lock-check` pairs pan an orthoscopic camera and check that each procedural
-pattern moves with the object.
+It exits non-zero, and lists the cause at the top of the page, when:
+
+- a material came out indistinguishable from `default`;
+- two materials in one cell render alike;
+- a material is identical with and without ray tracing;
+- an image is missing or blank;
+- a procedural pattern does not stay locked. The `--lock-check` pairs pan an
+  orthoscopic camera and check that each pattern moves with the object.
+
+Expected cases are declared in `manifest.json` with their reasons, and the
+page labels them instead of failing:
+
+- the glass family on spheres, which must still match `default`;
+- plastic and metallic on a dark background without ray tracing;
+- the glass family's ray-tracing invariance (#532).
