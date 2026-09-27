@@ -2,18 +2,18 @@ import XCTest
 import SwiftUI
 @testable import RayMol
 
-/// The Inspector's OBJECT-wide material controls (#498): the peel tri-state,
-/// the collapsed legacy reflection group, and the two scene-wide material
-/// rows.
+/// The Inspector's OBJECT-wide material controls (#498): the peel tri-state
+/// and the two scene-wide material rows. (The legacy reflection group was
+/// removed in #565.)
 ///
 /// What these pin is the Swift half. The decisions themselves live in the core
-/// and in `modules/pymol/appkit_inspector.py` — whether the legacy triple is
-/// dead for an object, what auto-peel resolves to — and are tested there. Here:
+/// and in `modules/pymol/appkit_inspector.py` — what auto-peel resolves to —
+/// and are tested there. Here:
 /// that the rows exist where they should, that nothing duplicates them, and
 /// that the payload is parsed without inventing values.
 final class MaterialInspectorTests: XCTestCase {
 
-    // MARK: - the legacy reflection triple is object-wide, once
+    // MARK: - the retired reflection triple is in no panel
 
     /// It used to be three slider rows in EACH of the four material-bearing rep
     /// panels: twelve controls over three object-scoped settings, every one
@@ -23,14 +23,14 @@ final class MaterialInspectorTests: XCTestCase {
     /// ribbon or mesh would be exactly as wrong and is the one a reviewer
     /// scanning the four would miss.
     func testNoRepPanelCarriesTheObjectScopedReflectionTriple() {
+        // Retired outright in #565; no panel may bring them back either.
         let objectScoped = ["metal_rt_reflect", "metal_rt_reflect_tint",
                             "metal_rt_reflect_rough"]
         for rep in RepCatalog.order {
             guard let spec = RepCatalog.specs[rep] else { continue }
             for setting in objectScoped {
                 XCTAssertFalse(spec.properties.contains { $0.setting == setting },
-                               "\(rep) still carries \(setting); it is object-scoped "
-                               + "and belongs on the object header")
+                               "\(rep) still carries \(setting), retired in #565")
             }
         }
     }
@@ -62,20 +62,15 @@ final class MaterialInspectorTests: XCTestCase {
     func testAPayloadWithoutTheNewKeysReadsAsAuto() {
         let meta = PyMOLEngine.parseObjMeta(["state": 1, "all": 0])
         XCTAssertEqual(meta.peel, -1)
-        XCTAssertFalse(meta.legacyReflectionDead)
-        XCTAssertEqual(meta.reflect, [0, 0, 0])
     }
 
     func testTheObjectRowsAreParsedFromThePayload() {
         let meta = PyMOLEngine.parseObjMeta([
             "state": 1, "all": 0,
             "peel": 1, "peel_resolved": 1,
-            "refl": [0.6, 0.35, 0.2], "legacy_dead": 1,
         ])
         XCTAssertEqual(meta.peel, 1)
         XCTAssertTrue(meta.peelResolved)
-        XCTAssertEqual(meta.reflect, [0.6, 0.35, 0.2])
-        XCTAssertTrue(meta.legacyReflectionDead)
     }
 
     // MARK: - what the controls SEND
@@ -95,56 +90,31 @@ final class MaterialInspectorTests: XCTestCase {
                        "set transparency_peel, 1, m1")
     }
 
-    /// Object-scoped, always. A selection-scoped `set` of these would be
-    /// accepted and write an atom-level value no draw path reads.
-    func testTheReflectionSlidersWriteTheObject() {
-        XCTAssertEqual(MaterialCommands.setReflect("metal_rt_reflect", 0.5, on: "m1"),
-                       "set metal_rt_reflect, 0.5000, m1")
-        XCTAssertEqual(MaterialCommands.setReflect("metal_rt_reflect_rough", 0.05, on: "obj2"),
-                       "set metal_rt_reflect_rough, 0.0500, obj2")
-    }
-
-    /// The gates that keep the rows off the objects they do not apply to.
+    /// The gate that keeps the peel row off the objects it does not apply to.
     ///
-    /// They are GATES, not values, so unlike every other key in this payload
-    /// they default to OFF rather than to the setting's own default: a payload
-    /// that predates them renders no rows rather than inert ones.
+    /// It is a GATE, not a value, so unlike every other key in this payload it
+    /// defaults to OFF rather than to the setting's own default: a payload that
+    /// predates it renders no row rather than an inert one.
     func testTheObjectRowsAreOffByDefaultUntilThePayloadSaysOtherwise() {
-        XCTAssertFalse(ObjStateMeta().hasMaterialRows)
         XCTAssertFalse(ObjStateMeta().hasPeelRow)
         XCTAssertFalse(ObjStateMeta().showsObjectMaterialRows)
         XCTAssertFalse(PyMOLEngine.parseObjMeta(["state": 1]).showsObjectMaterialRows)
-        XCTAssertTrue(PyMOLEngine.parseObjMeta(["material_rows": 1]).hasMaterialRows)
         XCTAssertTrue(PyMOLEngine.parseObjMeta(["peel_row": 1]).hasPeelRow)
     }
 
-    /// The two gates are independent, and that asymmetry is the point: peel
-    /// applies to anything SceneCollectPeelObjects can peel (an isosurface
-    /// included), materials only to molecules. A single flag hid the peel
-    /// control from the object class whose front/back double blend it exists
-    /// to fix.
-    func testPeelAndMaterialRowsAreGatedSeparately() {
-        let surface = PyMOLEngine.parseObjMeta(["peel_row": 1, "material_rows": 0])
-        XCTAssertTrue(surface.hasPeelRow)
-        XCTAssertFalse(surface.hasMaterialRows)
-        XCTAssertTrue(surface.showsObjectMaterialRows)   // the header still shows
-
-        let group = PyMOLEngine.parseObjMeta(["peel_row": 0, "material_rows": 0])
-        XCTAssertFalse(group.showsObjectMaterialRows)
-    }
-
-    /// Clearing restores the undefined state, which nothing else in the panel
-    /// offers: a reflective material draws its own table row until one of
-    /// these is set, and the first touch of a slider makes the displayed 0
-    /// real and detaches it for good.
-    func testClearingReflectionUnsetsAllThree() {
-        let cmdText = MaterialCommands.clearReflect(on: "m1")
-        XCTAssertEqual(cmdText, "unset metal_rt_reflect, m1\n"
-                              + "unset metal_rt_reflect_tint, m1\n"
-                              + "unset metal_rt_reflect_rough, m1")
-    }
-
     // MARK: - the two scene-wide rows
+
+    /// The Scene panel's global Reflections / tint / roughness sliders drove
+    /// the retired triple's global fallback (#565) and went with it.
+    func testTheSceneCatalogOffersNoRetiredReflectionSlider() {
+        let names = Set(SceneCatalog.params.map { $0.setting })
+        for n in ["metal_rt_reflect", "metal_rt_reflect_tint", "metal_rt_reflect_rough"] {
+            XCTAssertFalse(names.contains(n), n)
+        }
+        // ...while the two global RT reflection knobs stay
+        XCTAssertTrue(names.contains("metal_rt_reflect_env"))
+        XCTAssertTrue(names.contains("metal_rt_reflect_samples"))
+    }
 
     func testTheSceneCatalogOffersBothMaterialRows() {
         let byName = Dictionary(uniqueKeysWithValues:

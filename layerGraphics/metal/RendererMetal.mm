@@ -2214,7 +2214,7 @@ struct RTU {
   float aoCreaseRadiusPx;  // crease ring radius in pixels (== PostU.aoRadiusPx)
   float aoExemptEnabled;   // >0.5: aoMaskTex marks cartoon/ribbon pixels that skip it (#79)
   float pad3;              // -> 12 floats after lightViewProj (still a 16-byte multiple)
-  // Traced self-reflections (metal_rt_reflect*): env 0 = bg colour / 1 = studio
+  // Traced self-reflections (reflective materials): env 0 = bg colour / 1 = studio
   // gradient on miss; samples = rays/pixel for glossy materials (offscreen);
   // sphereCount = number of sphere instances (ids below it are spheres);
   // matCount = rows in the material table; then the two-light model.
@@ -2722,7 +2722,7 @@ fragment float4 rt_composite(PostVOut in [[stage_in]],
     }
   }
 
-  // Traced self-reflections (metal_rt_reflect / _tint / _rough, per object).
+  // Traced self-reflections (each draw's material reflect / tint / rough).
   // A primary ray finds the primitive under the pixel -> its occurrence's
   // material and a barycentric-smooth normal. If the material reflects, one
   // reflection ray (NS jittered rays for glossy exports) is traced against the
@@ -3911,7 +3911,7 @@ void RendererMetal::runPostChain()
     u.aoExemptEnabled = aoMaskReady ? 1.0f : 0.0f;
     u.pad3 = 0.0f;
     // Traced self-reflections: materials come from the per-occurrence table
-    // (metal_rt_reflect/_tint/_rough per object); only the global knobs and the
+    // (each draw's reflect/tint/rough); only the global knobs and the
     // hit-shading light model travel in the uniform. matCount 0 = nothing
     // reflective this frame -> the composite skips the reflection block.
     bool anyReflective = false;

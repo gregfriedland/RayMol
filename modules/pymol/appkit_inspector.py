@@ -129,7 +129,6 @@ TRANSP_SETTINGS = ['cartoon_transparency', 'sphere_transparency', 'transparency'
 SCENE_SETTINGS = ['metal_raytrace', 'metal_rt_shadows', 'metal_shadows', 'metal_ssao',
                   'metal_rt_samples', 'metal_rt_ao_radius', 'metal_rt_ao_intensity',
                   'metal_rt_shadow_intensity', 'metal_rt_scale',
-                  'metal_rt_reflect', 'metal_rt_reflect_tint', 'metal_rt_reflect_rough',
                   'metal_rt_reflect_env', 'metal_rt_reflect_samples',
                   'metal_rt_transparent',
                   'metal_outline', 'metal_outline_width', 'metal_msaa',
@@ -434,24 +433,14 @@ def _build(objs):
             continue
         entry = {'state': int(round(_num('state', o))),
                  'all': int(round(_num('all_states', o)))}
-        # Object-wide material rows (#498). These live on the object header
-        # rather than in a rep panel because the settings are object-scoped:
-        # carried per rep, the same value appeared in four places and moving
-        # one moved them all.
-        # ...but only for objects each row MEANS something for, and the two
-        # groups of rows do not have the same answer. Peel applies to anything
-        # the scene loop can peel; materials only to molecules.
+        # Object-wide peel row (#498). It lives on the object header rather
+        # than in a rep panel because the setting is object-scoped, and only
+        # for objects the scene loop can peel.
         kind = _object_kind(o)
         entry['peel_row'] = int(_takes_peel_row(kind))
-        entry['material_rows'] = int(_takes_material_rows(kind))
         if entry['peel_row']:
             entry['peel'] = int(round(_num('transparency_peel', o)))
             entry['peel_resolved'] = _object_peel(o)
-        if entry['material_rows']:
-            entry['refl'] = [_num('metal_rt_reflect', o),
-                             _num('metal_rt_reflect_tint', o),
-                             _num('metal_rt_reflect_rough', o)]
-            entry['legacy_dead'] = _legacy_reflection_is_dead(o, detail.get(o, []))
         # Per-state titles (e.g. compound names from a multi-record SDF, which
         # PyMOL stores as each state's title). Included only when at least one
         # state carries a non-empty title, so ordinary single structures add
@@ -732,25 +721,6 @@ def _takes_peel_row(kind):
     return bool(kind) and kind not in _NO_PEEL_ROW_KINDS
 
 
-def _takes_material_rows(kind):
-    """True for the objects the material/reflection rows apply to: molecules,
-    and not groups.
-
-    Measurements, CGOs and maps have no material and no reps, so the legacy
-    reflection group would render LIVE and inert directly above "No
-    representations shown".
-
-    Note what this is NOT for. An earlier version of this comment said probing
-    those objects for their peel floods the console with "named object not
-    found." -- that is wrong, and worth correcting rather than deleting:
-    ExecutiveFindObjectByName returns the object for any cExecObject, which a
-    measurement, a CGO and a map all are. The names that DO reach that error
-    are selections and deleted ones, and neither can arrive here -- the
-    inspector never expands a selection row, and _build's `known` guard drops
-    deleted names before this."""
-    return kind == 'object:molecule'
-
-
 def _object_peel(obj):
     """The RESOLVED peel answer for `obj` (#488), not the raw tri-state.
 
@@ -768,88 +738,6 @@ def _object_peel(obj):
         return int(_cmd.get_object_peel(cmd._COb, obj or ''))
     except Exception:
         return 0
-
-
-#: The one material family that ignores the legacy metal_rt_reflect* triple.
-#:
-#: GLASS only. An earlier version of this listed procedural too, on the
-#: strength of the comment in MaterialApplyLegacyTriple -- "the procedural
-#: materials do not read these at all" -- which is true of the RASTER shaders
-#: (mat_shade_procedural reads m.p[] and m.mode, never m.reflect) and false of
-#: the draw as a whole: that function OVERWRITES reflect/tint/rough from the
-#: object settings for every family except reflective and glass, and the values
-#: go straight into the ray tracer's per-occurrence table. The triple is an
-#: RT-only knob in the first place -- the scene-level copies carry
-#: `dependsOn: metal_raytrace` -- so the RT path is the consumer that decides.
-#:
-#: Reflective is not deaf either, for the other reason: it starts from its
-#: table row, but an EXPLICIT per-object value still wins (#497).
-_TRIPLE_DEAF_FAMILIES = (3,)
-
-
-def _drawn_family(obj, rep_name):
-    """The family a representation actually DRAWS with, or None.
-
-    Not the family of the material the SETTING holds. `MaterialResolve`
-    degrades clear and frosted glass to `default` on sphere impostors, and
-    `MaterialResolveForDraw` does the same for such sticks when they emit
-    stick_ball spheres (jelly is exempt from both, #526) -- and a degraded
-    rep draws as family 0, which reads the legacy triple.
-    get_material_draw_params is documented as "the FINAL material parameters
-    a representation draws with ... after the legacy-slider decision", which
-    is exactly the question being asked here.
-
-    Cost: this is the UNCACHED draw path, so for a glass-family sticks rep it
-    re-runs MaterialRepEmitsStickBalls -- an O(atoms) walk the draw site
-    deliberately avoids by caching the answer on the rep. It is paid at most
-    once per rep per poll tick and the loop below short-circuits on the first
-    non-deaf rep, so in practice it is one call; but there is no cached Python
-    entry point, and on a very large glass-sticks object it is real. See #530."""
-    try:
-        from pymol import _cmd
-        from pymol.constants import repres
-        entry = MATERIAL_REPS.get(rep_name)
-        if not entry:
-            return None
-        params = _cmd.get_material_draw_params(
-            cmd._COb, obj or '', repres[entry[1]])
-        return int(params[0]) if params else None
-    except Exception:
-        return None
-
-
-def _legacy_reflection_is_dead(obj, reps):
-    """True when the legacy metal_rt_reflect* triple cannot change anything the
-    object currently DRAWS, so the Inspector can disable the group and say why.
-
-    #498 specifies "once every active rep has a non-default material". Two
-    things make the real test narrower, and both were found by rendering rather
-    than by reading:
-
-      * a REFLECTIVE material still honours an explicit per-object value
-        (#497), so `metallic` keeps the sliders live;
-      * a PROCEDURAL material does not read them in the raster shader but does
-        take them on the ray-traced path, which is the only path they affect at
-        all.
-
-    So the family must be glass, and it must be the family the rep DRAWS with
-    rather than the one its setting names -- clear and frosted glass degrade
-    to `default` on spheres and on ball-and-stick sticks, and `default` reads
-    the triple.
-
-    A rep with NO material setting (ribbon, mesh, lines, dots, labels) draws
-    with `default` shading and reads it too, so one of those on screen keeps the
-    group live.
-    """
-    if not reps:
-        return 0
-    for rep in reps:
-        if not MATERIAL_REPS.get(rep.get('rep')):
-            return 0
-        family = _drawn_family(obj, rep.get('rep'))
-        if family is None or family not in _TRIPLE_DEAF_FAMILIES:
-            return 0
-    return 1
 
 
 def poll_panel():

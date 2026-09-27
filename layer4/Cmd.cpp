@@ -2486,10 +2486,10 @@ static PyObject* CmdGetRepMaterial(PyObject* self, PyObject* args)
 }
 
 /* The FINAL material parameters a representation draws with: family, mode and
-   the reflect/tint/rough triple after the legacy-slider decision. Exposed so
-   the rules can be asserted without a Metal context -- `frosted_glass` losing
-   its roughness to `metal_rt_reflect_rough` (default 0) made it render as clear
-   glass, and nothing in Python could see the difference. */
+   the reflect/tint/rough triple as MaterialDrawParams finalises it. Exposed so
+   the rules can be asserted without a Metal context -- `frosted_glass` once
+   lost its roughness to a legacy slider and rendered as clear glass, and
+   nothing in Python could see the difference. */
 static PyObject* CmdGetMaterialDrawParams(PyObject* self, PyObject* args)
 {
   PyMOLGlobals* G = nullptr;

@@ -3929,15 +3929,11 @@ final class PyMOLEngine: ObservableObject {
             titles: (m["titles"] as? [Any])?.map { $0 as? String ?? "" } ?? [],
             peel: (m["peel"] as? NSNumber)?.intValue ?? -1,
             peelResolved: ((m["peel_resolved"] as? NSNumber)?.intValue ?? 0) != 0,
-            reflect: (m["refl"] as? [Any])?.map { ($0 as? NSNumber)?.doubleValue ?? 0 }
-                ?? [0, 0, 0],
-            legacyReflectionDead: ((m["legacy_dead"] as? NSNumber)?.intValue ?? 0) != 0,
-            // These two break the "default to the setting's own" rule above, on
-            // purpose: they are GATES, not values. A payload that predates them
-            // renders no rows rather than rendering rows in a neutral state,
-            // which is the safe direction — an inert control on an object it
-            // does not apply to is worse than a missing one.
-            hasMaterialRows: ((m["material_rows"] as? NSNumber)?.intValue ?? 0) != 0,
+            // This one breaks the "default to the setting's own" rule above, on
+            // purpose: it is a GATE, not a value. A payload that predates it
+            // renders no row rather than a row in a neutral state, which is the
+            // safe direction — an inert control on an object it does not apply
+            // to is worse than a missing one.
             hasPeelRow: ((m["peel_row"] as? NSNumber)?.intValue ?? 0) != 0)
     }
 
