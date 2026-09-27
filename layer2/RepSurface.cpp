@@ -1563,12 +1563,14 @@ void RepSurface::render(RenderInfo* info)
   }
 
   // Through MaterialEffectiveTransparency, as the build's two reads are
-  // (#524, #528). This alpha feeds ray->transparentf() for a ONE-colour
-  // surface -- a multi-colour one takes the per-vertex VA array the build
-  // already baked it into -- and the picking gate below, whose job is to let
-  // a click through a transparent surface. Read raw, a glass surface traced
-  // opaque when uniformly coloured and translucent when not, and swallowed
-  // every click in the viewport while plainly see-through.
+  // (#524, #528). This alpha feeds ray->transparentf() for every surface type
+  // under `ray` -- solid, dots, mesh; a multi-colour solid surface prefers the
+  // per-vertex VA array the build already baked it into -- and the GL picking
+  // gate below, whose job is to let a click through a transparent, unpickable
+  // surface. Read raw, a glass surface traced opaque when uniformly coloured
+  // and translucent when not, and in a GL build blocked clicks on the atoms
+  // behind it while plainly see-through. (The Metal app picks through
+  // metal_pick and never reaches that gate.)
   auto alpha = MaterialEffectiveTransparency(G, cs->Setting.get(),
       obj->Setting.get(), cRepSurface,
       SettingGet_f(

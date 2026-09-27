@@ -1430,24 +1430,25 @@ void CoordSet::render(RenderInfo * info)
     if (!ray) {
       ObjectUseColor(Obj);
     } else {
-      // A material picks the texture MODE when ray_texture is 0 (#499); the
-      // triple stays ray_texture_settings -- see MaterialRayParams.
-      ray->wobble(MaterialRayWobble(G, Setting.get(), Obj->Setting.get(), a,
-                      SettingGet<int>(*this, cSetting_ray_texture), this),
+      // A material picks the texture MODE unless ray_texture is explicit
+      // (#499); the triple stays ray_texture_settings -- see
+      // MaterialRayParams.
+      int const materialId =
+          MaterialRayId(G, Setting.get(), Obj->Setting.get(), a, this);
+      ray->wobble(MaterialRayWobble(
+                      G, Setting.get(), Obj->Setting.get(), materialId),
           SettingGet<const float*>(*this, cSetting_ray_texture_settings));
-      ray->material(MaterialSettingForRep(a)
-                        ? MaterialResolveForDraw(
-                              G, Setting.get(), Obj->Setting.get(), a, this)
-                              .mode
-                        : 0);
+      ray->material(materialId);
       ray->color3fv(ColorGet(G, Obj->Color));
     }
 
     if (ray || pick) {
       r->render(info);
       if (ray) {
-        // Not left armed for whatever the ray adds next: another object's
-        // CGO, a map mesh, a label drawn outside this loop.
+        // What the MATERIAL armed is not left on for whatever the ray adds
+        // next -- another object's CGO, a map mesh. Wobble goes back to this
+        // object's own ray_texture, not to 0: that value always did carry
+        // over to the next object, and `default` keeps doing exactly that.
         ray->material(0);
         ray->wobble(SettingGet<int>(*this, cSetting_ray_texture), nullptr);
       }

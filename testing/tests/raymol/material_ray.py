@@ -175,6 +175,21 @@ class TestTheMapping(_RayCase):
         cmd.set('surface_material', 'metallic', 'm')
         self.assertEqual(ray_params('m', 'surface')[:2], (4, 3))
 
+    def testAnObjectLevelZeroIsExplicitToo(self):
+        # Set on the object, 0 is a choice -- "trace this marble without the
+        # swirl" -- and it beats both the material and a non-zero global.
+        peptide(material='marble')
+        cmd.set('ray_texture', 0, 'm')
+        self.assertEqual(ray_params('m', 'surface')[0], 0)
+        cmd.set('ray_texture', 4)
+        self.assertEqual(ray_params('m', 'surface')[0], 0)
+        # Unset, the global 4 is explicit again...
+        cmd.unset('ray_texture', 'm')
+        self.assertEqual(ray_params('m', 'surface')[0], 4)
+        # ...and a global 0 is not: it is also the default.
+        cmd.set('ray_texture', 0)
+        self.assertEqual(ray_params('m', 'surface')[0], 2)
+
     def testRayFollowsTheDrawDegradations(self):
         # glass has no sphere-impostor path and degrades to default there --
         # so under `ray` a frosted_glass sphere must not pick up the frost
@@ -215,6 +230,12 @@ class TestTheRenders(_RayCase):
                 continue
             share = changed_share(self.render(material=name), base)
             self.assertGreater(share, 0.01, name)
+
+    def testAnObjectLevelZeroTracesMarbleWithoutTheSwirl(self):
+        marble = self.render(material='marble', tex=0)
+        # material still applies its (neutral) highlight knobs, so this is the
+        # default image exactly
+        self.assertTrue(np.array_equal(marble, self.render()))
 
     def testMarbleTracesExactlyAsSwirl1(self):
         marble = self.render(material='marble')

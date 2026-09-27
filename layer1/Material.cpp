@@ -277,9 +277,17 @@ MaterialRayParams MaterialRayParamsFor(int id)
      as veining. Matte 1 perturbs every sample's normal at random, a fine dry
      grain (unglazed clay); Matte 2 perturbs it through a coarser positional
      lookup, a mottled skin (rubber). These three ALSO keep default's
-     highlight, so "clay under ray" and "default under ray_texture 1" are the
-     same image -- the property the mapping is tested by. frosted_glass takes
-     Matte 1 as well, on top of the transparency it already implies.
+     highlight, so "marble under ray" and "default under ray_texture 2" are the
+     same image, byte for byte. Clay and rubber are the same only
+     STATISTICALLY: Matte 1 and Matte 2 draw from rand(), and RayNew refills
+     its table on every render, so no two traces of either match. frosted_glass
+     takes Matte 1 as well, on top of the transparency it already implies.
+
+     A known limit of all three: `ray`'s textures are evaluated at the impact
+     point in CAMERA space (Swirl 1 entirely, Matte 2 un-rotated but not
+     un-translated), so the pattern slides over the surface as the camera
+     moves. The viewport's procedural materials are locked to the object;
+     under `ray` a movie of a marble object will show its veins swim.
 
      The highlight knobs are best effort, and deliberately few. matte drops the
      highlight entirely, as its Lambert shader does. plastic is a brighter
@@ -323,17 +331,32 @@ MaterialRayParams MaterialRayParamsFor(int id)
   return r;
 }
 
-int MaterialRayWobble(PyMOLGlobals* G, const CSetting* set1,
-    const CSetting* set2, int repType, int rayTexture, const CoordSet* cs)
+int MaterialRayId(PyMOLGlobals* G, const CSetting* set1,
+    const CSetting* set2, int repType, const CoordSet* cs)
 {
-  if (rayTexture != 0) {
-    return rayTexture; // an explicit ray_texture wins outright
-  }
   if (!MaterialSettingForRep(repType)) {
     return 0; // this rep takes no material; skip the resolve entirely
   }
-  return MaterialRayParamsFor(
-      MaterialResolveForDraw(G, set1, set2, repType, cs).mode).wobble;
+  return MaterialResolveForDraw(G, set1, set2, repType, cs).mode;
+}
+
+int MaterialRayWobble(PyMOLGlobals* G, const CSetting* set1,
+    const CSetting* set2, int materialId)
+{
+  // A value SET on the object or its state is explicit whatever it is, 0
+  // included: that is how a user traces a marble surface without the swirl.
+  int texture = 0;
+  if (SettingGetIfDefined_i(G, set1, cSetting_ray_texture, &texture) ||
+      SettingGetIfDefined_i(G, set2, cSetting_ray_texture, &texture)) {
+    return texture;
+  }
+  // The global value cannot say whether 0 was chosen or merely inherited, so
+  // only a non-zero one is explicit there.
+  texture = SettingGetGlobal_i(G, cSetting_ray_texture);
+  if (texture != 0) {
+    return texture;
+  }
+  return MaterialRayParamsFor(materialId).wobble;
 }
 
 const char* MaterialGetName(int id)

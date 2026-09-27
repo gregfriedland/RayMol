@@ -2569,11 +2569,8 @@ static PyObject* CmdGetMaterialRayParams(PyObject* self, PyObject* args)
     CoordSet* cs = objmol->getCoordSet(resolved);
     const CSetting* set1 = cs ? cs->Setting.get() : nullptr;
     const CSetting* set2 = objmol->Setting.get();
-    int const wobble = MaterialRayWobble(G, set1, set2, repType,
-        SettingGet_i(G, set1, set2, cSetting_ray_texture), cs);
-    int const id = MaterialSettingForRep(repType)
-                       ? MaterialResolveForDraw(G, set1, set2, repType, cs).mode
-                       : 0;
+    int const id = MaterialRayId(G, set1, set2, repType, cs);
+    int const wobble = MaterialRayWobble(G, set1, set2, id);
     MaterialRayParams const r = MaterialRayParamsFor(id);
     result = Py_BuildValue(
         "(iifff)", wobble, id, r.specular, r.diffuse, r.specTint);
