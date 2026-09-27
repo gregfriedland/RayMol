@@ -164,19 +164,24 @@ def _scene_keyframes():
     except Exception:
         saved = 1
     seen = None
-    for f in range(1, n + 1):
+    # Displaying a frame runs its authored commands (enter_scene, interpolated
+    # `set`s), so the scrub is wrapped: it READS the cuts and must leave the
+    # live settings as it found them (#508).
+    from pymol import raymol_scenes as _rs
+    with _rs.preserved():
+        for f in range(1, n + 1):
+            try:
+                cmd.frame(f)
+                cur = cmd.get('scene_current_name') or ''
+            except Exception:
+                continue
+            if cur and cur != seen:
+                out.append((f, cur, 0.0))
+            seen = cur
         try:
-            cmd.frame(f)
-            cur = cmd.get('scene_current_name') or ''
+            cmd.frame(saved)
         except Exception:
-            continue
-        if cur and cur != seen:
-            out.append((f, cur, 0.0))
-        seen = cur
-    try:
-        cmd.frame(saved)
-    except Exception:
-        pass
+            pass
     return out
 
 
@@ -191,8 +196,16 @@ def place_scene(frame, name, linear=0):
         n = int(frame)
         power, lin = _ease(linear)
         cmd.frame(n)                 # playhead to n first (applies interpolation)
-        cmd.scene(name, 'recall')    # now the live view+reps ARE the scene
-        cmd.mview('store', first=n, scene=name)
+        # Recall only to READ the scene into the live view for the keyframe:
+        # suspended, so the Python hook does not apply its settings and
+        # per-object overrides to the live session (#508) -- enter_scene
+        # replays those at playback.
+        # `mview store ... scene=` recalls the scene again itself, so it belongs
+        # inside the same suspension.
+        from pymol import raymol_scenes as _rs
+        with _rs.suspended():
+            cmd.scene(name, 'recall')    # now the live view+reps ARE the scene
+            cmd.mview('store', first=n, scene=name)
         try:
             from pymol import raymol_scenes as _rs
             motion = _rs.emit_object_motion(name, n)
@@ -334,8 +347,10 @@ def append_template(kind, duration=8.0, axis='y', angle=30.0,
                 for i, nm in enumerate(names):
                     f = start + 1 + i * per
                     cmd.frame(f)
-                    cmd.scene(nm, 'recall')
-                    cmd.mview('store', first=f, scene=nm)
+                    from pymol import raymol_scenes as _rs
+                    with _rs.suspended():   # read, not apply (#508)
+                        cmd.scene(nm, 'recall')
+                        cmd.mview('store', first=f, scene=nm)   # recalls too
                     try:
                         from pymol import raymol_scenes as _rs
                         motion += _rs.emit_object_motion(nm, f)
@@ -491,8 +506,11 @@ def rebuild(spec_json):
             sc = it.get('scene')
             if sc:
                 name = base64.b64decode(sc).decode('utf-8')
-                cmd.scene(name, 'recall')       # live view+reps become the scene
-                cmd.mview('store', first=f, scene=name, power=power, linear=linear)
+                from pymol import raymol_scenes as _rs
+                with _rs.suspended():           # read, not apply (#508)
+                    cmd.scene(name, 'recall')   # live view+reps become the scene
+                    # mview store ... scene= recalls the scene itself as well
+                    cmd.mview('store', first=f, scene=name, power=power, linear=linear)
                 # Preserve the scene's stored state for non-swept objects.
                 try:
                     cmd.mview('store', first=f, state=int(cmd.get_state()))

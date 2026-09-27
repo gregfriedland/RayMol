@@ -201,6 +201,46 @@ def suspended():
     return _Suspend()
 
 
+# A key no `cmd.scene` name can be (scene names cannot hold NUL), used only
+# while preserved() is active.
+_LIVE = '\x00live'
+
+
+class _Preserved:
+    def __init__(self, _self):
+        self._self = _self
+
+    def __enter__(self):
+        _scene_settings[_LIVE] = _capture(self._self)
+        _scene_object_settings[_LIVE] = _capture_object_settings(self._self)
+        _scene_object_capture[_LIVE] = tuple(OBJECT_CAPTURE)
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            apply_settings(_LIVE, self._self)
+            _apply_object_settings(_LIVE, self._self)
+        finally:
+            for d in (_scene_settings, _scene_object_settings,
+                      _scene_object_capture):
+                d.pop(_LIVE, None)
+        return False
+
+
+def preserved(_self=cmd):
+    """Context manager: put every captured global and per-object override back
+    as it was when the block exits (#508).
+
+    For code that has to DISPLAY movie frames only to read something off them
+    -- appkit_movie._scene_keyframes scrubs every frame to find the scene cuts
+    -- because displaying a frame runs its authored commands: each scene
+    keyframe's enter_scene and each interpolated `set`. Without this, building
+    a movie left the live session carrying whatever the last scrubbed frame
+    applied. Restored through the same conditional writes as a recall, so an
+    unchanged value costs nothing."""
+    return _Preserved(_self)
+
+
 def _current(_self=cmd):
     try:
         return _self.get("scene_current_name") or ""
@@ -429,6 +469,13 @@ def _apply_object_settings(name, _self=cmd):
                     _self.unset(s, o)
             except Exception:
                 pass
+
+
+def apply_object_settings(name, _self=cmd):
+    """Public name for _apply_object_settings: the movie animator replays a
+    scene's per-object overrides at its keyframe (raymol_scene_anim.enter_scene)
+    exactly as a recall does (#508)."""
+    _apply_object_settings(name, _self)
 
 
 def _capture_ttt(_self=cmd):
