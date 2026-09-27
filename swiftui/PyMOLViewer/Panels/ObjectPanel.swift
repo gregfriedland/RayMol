@@ -4177,7 +4177,7 @@ private struct RepPropertyGrid: View {
                                 colorState: state.settingColors[p.setting] ?? "inherit")
         case .menu:
             // Options come from the core (engine.materialNames), so a build
-            // whose table differs cannot be offered a look it can't draw.
+            // whose table differs cannot be offered a material it can't draw.
             MenuSetting(options: options(for: p), value: v,
                         onSelect: { set(p.setting, $0) },
                         onInherit: { unset(p.setting) })

@@ -3,8 +3,8 @@ import SwiftUI
 @testable import RayMol
 
 /// The Inspector's OBJECT-wide material controls (#498): the peel tri-state,
-/// the collapsed legacy reflection group, the suggested-lighting join, and the
-/// two scene-wide material rows.
+/// the collapsed legacy reflection group, and the two scene-wide material
+/// rows.
 ///
 /// What these pin is the Swift half. The decisions themselves live in the core
 /// and in `modules/pymol/appkit_inspector.py` — whether the legacy triple is
