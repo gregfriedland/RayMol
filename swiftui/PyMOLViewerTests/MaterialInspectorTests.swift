@@ -204,6 +204,24 @@ final class MaterialInspectorTests: XCTestCase {
         XCTAssertFalse(MaterialCustomState().isCustom)
     }
 
+    // MARK: - layer Looks
+
+    func testALookAppliesToOneLayer() {
+        XCTAssertEqual(CustomMaterial.applyLook("gold", "stick_material", on: "m1"),
+                       "apply_look gold, m1, stick")
+        XCTAssertEqual(CustomMaterial.applyLook("statuary", "surface_material", on: "m1"),
+                       "apply_look statuary, m1, surface")
+    }
+
+    func testTheLookListParses() {
+        let looks = PyMOLEngine.parseLooks(
+            "LOOKS:[[\"gold\",\"Gold\",\"metallic\"],[\"statuary\",\"Marble (statuary)\",\"marble\"]]")
+        XCTAssertEqual(looks, [MaterialLook(name: "gold", label: "Gold", material: "metallic"),
+                               MaterialLook(name: "statuary", label: "Marble (statuary)", material: "marble")])
+        XCTAssertNil(PyMOLEngine.parseLooks("LOOKS:[]"))
+        XCTAssertNil(PyMOLEngine.parseLooks("MATERIALS:[[0,\"default\"]]"))
+    }
+
     // MARK: - the two scene-wide rows
 
     /// The Scene panel's global Reflections / tint / roughness sliders drove

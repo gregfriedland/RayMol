@@ -144,6 +144,15 @@ one tunes that layer only, and the menu then reads **Custom (metallic)**.
 from the menu clears the tuning. To tune a different material, pick it first,
 then Custom.
 
+**Looks** are one-click starting points for a layer: the **Look** chip beside
+the Material menu offers Gold, Copper, Bronze, Steel, Chrome, Marble
+(statuary) and Clay (terracotta). A Look sets that layer's material, its
+Custom knobs and the layer's colour -- nothing else: no other layer, no
+lighting. The menu then reads **Custom (metallic)**, so Reset or picking a
+material undoes the tuning, and the Color row's **Inherit** takes the colour
+off. From the command line: `apply_look gold, myprotein, surface` (layers:
+`cartoon`, `surface`, `stick`, `sphere`).
+
 From the command line:
 
 ```

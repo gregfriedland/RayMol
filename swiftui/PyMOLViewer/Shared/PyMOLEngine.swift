@@ -221,6 +221,8 @@ final class PyMOLEngine: ObservableObject {
     /// Each material's Custom knobs (#569), by material id, from the
     /// `MATKNOBS:<id>:` lines that follow MATERIALS.
     @Published var materialKnobs: [Int: [MaterialKnobInfo]] = [:]
+    /// The layer Looks (pymol.looks), from the `LOOKS:` line after MATERIALS.
+    @Published var materialLooks: [MaterialLook] = []
     /// How many times the material table has been asked for; see
     /// requestMaterialsIfNeeded().
     private var materialRequests = 0
@@ -3717,6 +3719,10 @@ final class PyMOLEngine: ObservableObject {
                     parseMaterialsFeedback(line)
                 } else if line.hasPrefix("MATKNOBS:") {
                     parseMaterialKnobsFeedback(line)
+                } else if line.hasPrefix("LOOKS:") {
+                    if let looks = PyMOLEngine.parseLooks(line) {
+                        DispatchQueue.main.async { self.materialLooks = looks }
+                    }
                 } else if line.hasPrefix("SETTINGS:ready") {
                     loadSettingsCatalogFile()
                 } else if line.hasPrefix("SETTINGS:err") {
@@ -3981,6 +3987,20 @@ final class PyMOLEngine: ObservableObject {
             return MaterialKnobInfo(suffix: s, label: l, min: lo, max: hi)
         }
         return (id, knobs)
+    }
+
+    /// `LOOKS:[[name, label, material], ...]` -> the Look menu's entries.
+    static func parseLooks(_ line: String) -> [MaterialLook]? {
+        guard line.hasPrefix("LOOKS:"),
+              let data = String(line.dropFirst("LOOKS:".count)).data(using: .utf8),
+              let rows = try? JSONSerialization.jsonObject(with: data) as? [[Any]]
+        else { return nil }
+        let out: [MaterialLook] = rows.compactMap { r in
+            guard r.count >= 3, let n = r[0] as? String, let l = r[1] as? String,
+                  let m = r[2] as? String, !n.isEmpty else { return nil }
+            return MaterialLook(name: n, label: l, material: m)
+        }
+        return out.isEmpty ? nil : out
     }
 
     /// A rep payload's `material` entry -> MaterialCustomState, or nil.
