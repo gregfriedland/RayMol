@@ -2227,9 +2227,13 @@ final class PyMOLEngine: ObservableObject {
             + "_am.capture_template_views(_b64.b64decode('\(idsB64)').decode('utf-8'), "
             + "'\(kind)', axis='\(axis)', angle=\(angle))")
         let per = max(duration / Double(count - 1), 0.2)   // 3 gaps span the duration
+        // A roll is one continuous spin: easing each 120° gap would slow the camera
+        // to a near-stop at every waypoint (a 6x speed pulse). Rock keeps the ease,
+        // since its waypoints are where the motion reverses.
+        let linear = kind == "roll"
         for id in ids {
             timelineItems.append(TimelineItem(id: id, kind: .camera,
-                                              transition: Transition(seconds: per, linear: false)))
+                                              transition: Transition(seconds: per, linear: linear)))
         }
         rebuildMovie()
     }
