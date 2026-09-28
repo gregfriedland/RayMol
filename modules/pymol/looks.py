@@ -11,7 +11,9 @@ What a Look writes, for layer `<rep>` of the object:
   * `<rep>_material` -- the look's material;
   * `<rep>_material_<knob>` -- that material's Custom overrides, after clearing
     any left from before (the layer then reads "Custom (metallic)");
-  * `<rep>_color` -- the layer's colour, as a named colour `look_<name>`.
+  * `<rep>_color` -- the layer's colour, as a named colour `look_<name>`,
+    which the look (re)defines in the colour table: the one thing outside the
+    layer it touches. Every layer using that Look shares it.
 
 So it is undone the ordinary ways: Reset or picking a material clears the
 knobs, and the layer's Color row (Inherit) takes the colour off.
@@ -43,8 +45,10 @@ LOOKS = (
     # the mirror end: barely tinted, almost perfectly smooth
     ('chrome', 'Chrome', 'metallic', 0xdbe2e9,
      {'reflect': 0.75, 'tint': 0.10, 'rough': 0.05}),
-    ('statuary', 'Marble (statuary)', 'marble', 0xece8df, {}),
-    ('terracotta', 'Clay (terracotta)', 'clay', 0xc0643f, {}),
+    # statuary: white marble with faint veins; terracotta: a coarser, drier clay
+    ('statuary', 'Marble (statuary)', 'marble', 0xece8df, {'knob5': 0.45}),
+    ('terracotta', 'Clay (terracotta)', 'clay', 0xc0643f,
+     {'knob1': 0.16, 'knob3': 0.60}),
 )
 
 _BY_NAME = {row[0]: row for row in LOOKS}
@@ -63,7 +67,8 @@ def apply_look(look, object, layer, quiet=1, _self=cmd):
 DESCRIPTION
 
     "apply_look" gives one layer of one object a named look: a material, its
-    Custom knobs and a colour. Nothing else changes.
+    Custom knobs and a colour (the named colour look_<name>). No other layer,
+    object or setting changes.
 
 USAGE
 

@@ -4169,7 +4169,10 @@ private struct MaterialSection: View {
 
     private func applyLook(_ name: String) {
         customOpen = false
-        touched = []
+        // The Look writes knobs this view cannot list; mark them all, so a pick
+        // before the next poll still clears them (unsetting an unset knob is
+        // harmless).
+        touched = Set(CustomMaterial.knobs)
         engine.runCommand(CustomMaterial.applyLook(name, prop.setting, on: objName), naming: objName)
         engine.refreshExpandedDetail()
     }

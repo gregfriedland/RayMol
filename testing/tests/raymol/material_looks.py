@@ -66,15 +66,25 @@ class TestLooks(testing.PyMOLTestCase):
         """No other layer, no other object, no global setting -- the old Looks
         changed the scene's lighting for everything on screen."""
         before = global_settings()
+        colours_before = {n for n, _i in cmd.get_color_indices()}
         other_layers = [params('m1', l) for l in ('cartoon', 'surface', 'sphere')]
         other_object = params('m2', 'stick')
         cmd.apply_look('chrome', 'm1', 'stick')
         self.assertEqual(global_settings(), before)
+        # the one thing outside the layer: the Look's named colour
+        self.assertEqual({n for n, _i in cmd.get_color_indices()} - colours_before,
+                         {'look_chrome'})
         self.assertEqual([params('m1', l) for l in ('cartoon', 'surface', 'sphere')],
                          other_layers)
         self.assertEqual(params('m2', 'stick'), other_object)
         for l in ('cartoon', 'surface', 'sphere'):
             self.assertEqual(cmd.get('%s_material' % l, 'm1'), 'default', l)
+
+    def testEveryLookLeavesTheLayerCustom(self):
+        """Each Look sets at least one knob, so the layer reads "Custom (...)"
+        and Reset undoes it -- the same for every Look."""
+        for name, _l, _m, _c, knobs in looks.LOOKS:
+            self.assertTrue(knobs, name)
 
     def testALookReplacesTheLastOnesKnobs(self):
         """Chrome sets reflect; steel does not -- chrome's must not survive."""
