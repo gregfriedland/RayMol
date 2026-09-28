@@ -27,6 +27,7 @@ Z* -------------------------------------------------------------------
 #include"Map.h"
 #include"Selector.h"
 #include"ObjectMolecule.h"
+#include"Material.h"
 #include"Ortho.h"
 #include"Util.h"
 #include"Matrix.h"
@@ -10761,12 +10762,49 @@ static void ObjMolCoordSetUpdateSpawn(PyMOLGlobals * G,
 
 
 /*========================================================================*/
+int ObjectMolecule::repsShownByAtoms() const
+{
+  if (!RepVisAtomsValid) {
+    int bits = 0;
+    for (int a = 0; a < NAtom; ++a) {
+      bits |= AtomInfo[a].visRep;
+    }
+    RepVisAtoms = bits;
+    RepVisAtomsValid = true;
+  }
+  return RepVisAtoms;
+}
+
+/*========================================================================*/
 void ObjectMolecule::update()
 {
   auto I = this;
   int a; /*, ok; */
 
   OrthoBusyPrime(G);
+  /* Side chains with no material of their own follow the cartoon's while one
+     is shown (MaterialSourceRep). Shading is resolved per draw, but a glass
+     material's implied alpha is baked in at BUILD time -- so showing or hiding
+     the cartoon rebuilds the stick and sphere layers whenever that switches
+     them to a different material. With every material `default` the two ids
+     agree and nothing is rebuilt. */
+  {
+    int const shown = (repsShownByAtoms() & cRepCartoonBit) ? 1 : 0;
+    if (CartoonShownSeen >= 0 && shown != CartoonShownSeen) {
+      const CSetting* set2 = Setting.get();
+      int const cartoon =
+          MaterialResolveSettingId(G, nullptr, set2, cRepCartoon);
+      if (MaterialResolveSettingId(G, nullptr, set2, cRepCyl) != cartoon) {
+        invalidate(cRepCyl, cRepInvColor, -1);
+        // line_stick_helper reads the sticks' (implied) transparency.
+        invalidate(cRepLine, cRepInvRep, -1);
+      }
+      if (MaterialResolveSettingId(G, nullptr, set2, cRepSphere) != cartoon) {
+        invalidate(cRepSphere, cRepInvColor, -1);
+      }
+    }
+    CartoonShownSeen = shown;
+  }
   /* if the cached representation is invalid, reset state */
   if(!I->RepVisCacheValid) {
     /* note which representations are active */
@@ -10868,6 +10906,7 @@ void ObjectMolecule::invalidate(cRep_t rep, cRepInv_t level, int state)
 
   if(level >= cRepInvVisib) {
     I->RepVisCacheValid = false;
+    I->RepVisAtomsValid = false;
   }
 
   if (level >= cRepInvBondsNoNonbonded) {

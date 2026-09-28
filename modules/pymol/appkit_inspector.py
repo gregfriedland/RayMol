@@ -142,8 +142,9 @@ def _custom_state(rep_name, obj, explicit):
     """What the Inspector's Custom sliders need for one rep (#569):
     {'drawn': the material id the layer DRAWS with, 'knobs': {suffix: value
     the draw uses}, 'custom': [overridden suffixes that material has],
-    'set': [every override the object carries for the layer]} -- `set` is
-    what a pick, Inherit or Reset unsets.
+    'set': [every override the object carries for the layer], 'follows':
+    whether the layer draws with the cartoon's material} -- `set` is what a
+    pick, Inherit or Reset unsets.
 
     `drawn` is the draw's own answer, not the setting: glass on spheres or on
     ball-and-stick degrades to `default` (0), which has no knobs, so Custom
@@ -172,8 +173,14 @@ def _custom_state(rep_name, obj, explicit):
         # a pick or Reset has to unset (and nothing else, so it stays quiet)
         explicit_here = [k for k in CUSTOM_KNOBS
                          if setting._get_index('%s_material_%s' % (prefix, k)) in explicit]
+        # A stick or sphere layer with no material of its own draws with the
+        # cartoon's while one is shown (MaterialSourceRep): its row then says
+        # so, and offers no Custom -- the knobs it draws with are the cartoon's.
+        rep_index = repres[MATERIAL_REPS[rep_name][1]]
+        source = _cmd.get_rep_material(cmd._COb, obj or '', rep_index, -1, 1)
+        follows = source is not None and source != rep_index
         return {'drawn': drawn, 'knobs': knobs, 'custom': custom,
-                'set': explicit_here}
+                'set': explicit_here, 'follows': follows}
     except Exception:
         return None
 

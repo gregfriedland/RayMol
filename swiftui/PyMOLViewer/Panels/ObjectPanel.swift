@@ -88,8 +88,8 @@ struct MaterialKnobInfo: Equatable {
     let max: Double
 }
 
-/// A layer Look (pymol.looks): a material, its knobs and a colour for ONE
-/// layer, applied with `apply_look <name>, <object>, <layer>`.
+/// A layer Look (pymol.looks): a material and its knobs for ONE layer, and a
+/// colour on that layer's atoms, applied with `apply_look <name>, <object>, <layer>`.
 struct MaterialLook: Equatable {
     let name: String
     let label: String
@@ -106,6 +106,9 @@ struct MaterialCustomState: Equatable {
     /// Every override the object carries for this layer, including ones the
     /// drawn material ignores: what a pick, Inherit or Reset must unset.
     var set: [String] = []
+    /// A stick or sphere layer with no material of its own, drawing with the
+    /// cartoon's (and its tuning) while the object shows one.
+    var follows: Bool = false
     var isCustom: Bool { !custom.isEmpty }
 }
 
@@ -367,8 +370,9 @@ enum CustomMaterial {
     }
 
     /// What the row's menu reads.
-    static func label(base: String, isCustom: Bool) -> String {
-        isCustom ? "Custom (\(base))" : base
+    static func label(base: String, isCustom: Bool, follows: Bool = false) -> String {
+        if follows { return "Cartoon's (\(base))" }
+        return isCustom ? "Custom (\(base))" : base
     }
 
     /// The knobs a layer may offer as Custom: those of the material it DRAWS
@@ -412,7 +416,7 @@ enum CustomMaterial {
             .joined(separator: "\n")
     }
 
-    /// Apply a layer Look: that layer only -- material, knobs and colour.
+    /// Apply a layer Look: that layer's material and knobs, and its atoms' colour.
     static func applyLook(_ look: String, _ materialSetting: String, on obj: String) -> String {
         "apply_look \(look), \(obj), \(stem(materialSetting))"
     }
@@ -4052,9 +4056,13 @@ private struct MaterialSection: View {
     /// The knobs of the material the layer DRAWS with. Not the setting's: a
     /// degraded layer draws `default` and has none, so Custom is not offered.
     private var knobs: [MaterialKnobInfo] {
-        CustomMaterial.offeredKnobs(base: baseID, drawn: custom?.drawn,
-                                    table: engine.materialKnobs)
+        // A following layer draws with the CARTOON's knobs; its own would be
+        // ignored, so it offers none. Tune the cartoon, or pick a material.
+        if follows { return [] }
+        return CustomMaterial.offeredKnobs(base: baseID, drawn: custom?.drawn,
+                                           table: engine.materialKnobs)
     }
+    private var follows: Bool { custom?.follows ?? false }
     private var overrides: [String] {
         CustomMaterial.overrides(set: custom?.set ?? [], touched: touched)
     }
@@ -4110,7 +4118,7 @@ private struct MaterialSection: View {
     private var menu: some View {
         Menu {
             ForEach(engine.materialNames, id: \.id) { m in
-                let sel = m.id == baseID && !(isCustom || customOpen)
+                let sel = m.id == baseID && !(isCustom || customOpen || follows)
                 Button(action: { pick(m.id) }) {
                     Text(sel ? "• \(m.name)" : m.name)
                 }
@@ -4122,11 +4130,14 @@ private struct MaterialSection: View {
                 }
             }
             Divider()
-            Button("Inherit", action: inherit)
+            // Unsetting is also how a side chain goes back to following the
+            // cartoon, when the object shows one.
+            Button(follows ? "• Cartoon's" : "Inherit", action: inherit)
         } label: {
             HStack(spacing: 3) {
                 // "Custom" once something is tuned, not merely opened.
-                Text(CustomMaterial.label(base: baseName, isCustom: isCustom))
+                Text(CustomMaterial.label(base: baseName, isCustom: isCustom,
+                                          follows: follows))
                     .font(.system(size: 10))
                 Text("⌄").font(.system(size: 9))
             }
@@ -4138,13 +4149,16 @@ private struct MaterialSection: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+        .help(follows ? "Drawn with the cartoon's material, tuning and colour. "
+                        + "Pick a material to give this layer its own." : "")
         .disabled(engine.materialNames.isEmpty)
         .opacity(engine.materialNames.isEmpty ? 0.4 : 1.0)
     }
 
     /// The Look chip: one-click starting points for THIS layer (material,
-    /// knobs, colour). The result reads "Custom (material)" and is undone by
-    /// Reset or a material pick; the colour by the Color row's Inherit.
+    /// knobs, and a base-coat colour on the layer's atoms, which "by element"
+    /// can recolour on top). The result reads "Custom (material)" and is
+    /// undone by Reset or a material pick; the colour by any recolouring.
     private var lookMenu: some View {
         Menu {
             ForEach(engine.materialLooks, id: \.name) { look in
@@ -4163,8 +4177,8 @@ private struct MaterialSection: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Apply a look to this layer only: a material, its settings and a colour. "
-              + "Reset or picking a material undoes it.")
+        .help("Apply a look to this layer: a material, its settings, and a colour on its atoms "
+              + "that By Element can recolour on top. Reset or picking a material undoes the material.")
     }
 
     private func applyLook(_ name: String) {

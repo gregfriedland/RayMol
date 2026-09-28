@@ -70,6 +70,25 @@ set surface_material, glas, myprotein
 A global `set cartoon_material, default` therefore does *not* block
 `material_default`; only the object-level one does.
 
+**Side chains follow the cartoon.** While an object shows a cartoon, its
+sticks and spheres draw with the cartoon's material and the cartoon's Custom
+tuning, unless that layer has a material of its own. A material of its own means
+`stick_material` / `sphere_material` set on the object or one of its states
+(an explicit `default` counts), or a non-`default` global value. So in
+cartoon-plus-side-chains, the side chains match the backbone they hang from.
+`unset stick_material, myprotein` makes the sticks follow again.
+
+- The Inspector's stick or sphere Material row then reads **Cartoon's
+  (metallic)**. Picking a material there gives the layer its own; **Cartoon's**
+  in the same menu (Inherit) goes back to following.
+- A following layer offers no Custom sliders, because it is tuned through the
+  cartoon.
+- Surfaces never follow.
+- The rule is per object, not per atom. A ligand shown as sticks in the same
+  object follows too, and "shows a cartoon" means any atom has it.
+- The layer still degrades as its own representation: spheres following a
+  glass cartoon draw `default`, as glass spheres always do.
+
 **Object-scoped, never per atom.** A selection-scoped `set` of one of the four
 `*_material` settings (`set cartoon_material, marble, chain A`) is rejected
 with an error, and so is one of `transparency_peel`. Use separate objects to
@@ -154,13 +173,27 @@ unset surface_material_rough, myprotein          # back to metallic's own
 
 **Looks** are one-click starting points for a layer: the **Look** chip beside
 the Material menu offers Gold, Copper, Bronze, Steel, Chrome, Marble
-(statuary) and Clay (terracotta). A Look sets that layer's material, its
-Custom knobs and the layer's colour -- no other layer, no lighting. The
-colour is a named colour, `look_gold` and so on, which the Look defines. The
-menu then reads **Custom (metallic)** (or marble, or clay), so Reset or
-picking a material undoes the tuning, and the Color row's **Inherit** takes
-the colour off. From the command line: `apply_look gold, myprotein, surface` (layers:
+(statuary) and Clay (terracotta). A Look sets that layer's material and its
+Custom knobs, and changes no lighting. The menu then reads **Custom
+(metallic)** (or marble, or clay), so Reset or picking a material undoes the
+tuning. From the command line: `apply_look gold, myprotein, surface` (layers:
 `cartoon`, `surface`, `stick`, `sphere`).
+
+A Look's colour is a base coat on the **atoms**: the named colour `look_gold`
+(and so on), which the Look defines.
+
+- It colours the atoms the layer is shown on. For a cartoon that means the
+  cartoon's whole residues, so the side chains that follow its material take
+  its colour too.
+- A ligand in the same object keeps its colour. A layer shown on no atom
+  colours the whole object.
+- The Look clears that layer's colour setting (`cartoon_color`, ...), and for a
+  cartoon the following sticks' and spheres' too, since a layer colour would
+  hide the atom colours.
+- **By element** then recolours the non-carbons on top: a gold cartoon with
+  side chains keeps gold carbons and gets element-coloured N, O and S.
+- Being atom colours, the colour shows on every layer drawn on those atoms.
+  Any later colouring replaces it.
 
 Some knobs only show under a condition:
 
