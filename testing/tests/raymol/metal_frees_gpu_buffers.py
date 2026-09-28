@@ -8,8 +8,8 @@ path the macOS and iOS apps render with -- never did, so every rep rebuild
 (a material or colour change, each tick of a transparency slider, a surface
 recompute) leaked the old copy and its MTLBuffer. On an iPhone 15 Pro that
 grew RayMol to its ~3.5 GB per-app limit and iOS killed it (Jetsam, no crash
-report); in the simulator the same material/transparency churn grew the app
-~16 MB per change, and was flat with the drain.
+report); in the simulator, alternating transparency and material grew the app
+~19 MB per transparency+material iteration, and was flat with the drain.
 
 The leak needs a Metal GPU to reproduce, so this pins the drain in the
 source: SceneRenderMetal calls FreeAllVBOs before its update phase rebuilds

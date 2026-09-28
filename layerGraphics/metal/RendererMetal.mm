@@ -3239,6 +3239,7 @@ void RendererMetal::ensureRayTracingTransAS()
       _rtTFrameSig == _rtTBuiltSig)
     return;
   _rtTGeomDirty = false;
+  _rtTBuiltKeys = std::unordered_set<const void*>(_rtTFrameKeys.begin(), _rtTFrameKeys.end());
 
   auto xformPt = [](const Mat4& M, float x, float y, float z, float o[3]) {
     o[0] = M[0] * x + M[4] * y + M[8] * z + M[12];
@@ -3414,6 +3415,7 @@ void RendererMetal::ensureRayTracingAS()
     }
     size_t nTris = nTriFloats / 9;   // floats→triangles
     _rtGeomDirty = false;
+    _rtBuiltKeys = std::unordered_set<const void*>(_rtFrameKeys.begin(), _rtFrameKeys.end());
     if (nSph == 0 && nTris == 0) { _rtTriCount = 0; _rtReady = false; return; }
 
     // Bake the CURRENT visible pose into each caster (#427, #425). `xf` is the
@@ -8260,12 +8262,13 @@ void RendererMetal::rtDropGeometry(const void* cpuData)
     return;
   // Only geometry that made it into the frame record can invalidate the built
   // acceleration structure (see rtNoteGeometry).
+  // And only an entry the structure was actually BUILT from: freeing the
+  // buffers a rebuilt rep replaced (drained each frame, after the frame's AS
+  // was built from the replacement) must not force a second rebuild.
   if (!g->second.spheres.empty() || !g->second.tris.empty()) {
-    // An entry only ever noted by the transparent record (#532) leaves the
-    // opaque structure alone; every other entry dirties it exactly as before.
-    if (g->second.inOpaque || !g->second.inTransparent)
+    if (_rtBuiltKeys.count(key))
       _rtGeomDirty = true;
-    if (g->second.inTransparent)
+    if (_rtTBuiltKeys.count(key))
       _rtTGeomDirty = true;
   }
   _rtGeomCache.erase(g);
@@ -9600,6 +9603,9 @@ void RendererMetal::drawBezierTubes(const void* cp, size_t dataSize,
   const float ringF = 14.0f; // subdivisions around the tube
   struct QuadFactors { uint16_t edge[4]; uint16_t inside[2]; };
   if (!_bezierTessFactors || _bezierTessPatchCap < numPatches) {
+    // MRC: drop the smaller buffer before growing (an in-flight command
+    // buffer that still uses it keeps it alive through Metal's own retain).
+    [_bezierTessFactors release];
     _bezierTessFactors = [_device newBufferWithLength:numPatches * sizeof(QuadFactors)
                                               options:MTLResourceStorageModeShared];
     if (!_bezierTessFactors) return;
