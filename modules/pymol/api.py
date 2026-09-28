@@ -367,6 +367,9 @@ from .preset import \
       publication
 
 #--------------------------------------------------------------------
+from .looks import apply_look
+
+#--------------------------------------------------------------------
 from .morphing import \
     morph
 

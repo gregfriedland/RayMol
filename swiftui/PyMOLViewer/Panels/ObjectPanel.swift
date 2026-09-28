@@ -88,6 +88,14 @@ struct MaterialKnobInfo: Equatable {
     let max: Double
 }
 
+/// A layer Look (pymol.looks): a material, its knobs and a colour for ONE
+/// layer, applied with `apply_look <name>, <object>, <layer>`.
+struct MaterialLook: Equatable {
+    let name: String
+    let label: String
+    let material: String
+}
+
 /// A rep's Custom material state, from the rep payload's `material` entry.
 struct MaterialCustomState: Equatable {
     /// The material the layer DRAWS with -- 0 when it has degraded to
@@ -402,6 +410,11 @@ enum CustomMaterial {
         (["unset \(materialSetting), \(obj)"]
             + (suffixes.isEmpty ? [] : [clear(materialSetting, suffixes, on: obj)]))
             .joined(separator: "\n")
+    }
+
+    /// Apply a layer Look: that layer only -- material, knobs and colour.
+    static func applyLook(_ look: String, _ materialSetting: String, on obj: String) -> String {
+        "apply_look \(look), \(obj), \(stem(materialSetting))"
     }
 
     /// One knob's override.
@@ -4056,6 +4069,7 @@ private struct MaterialSection: View {
                     .foregroundColor(PanelTheme.textColor)
                     .frame(width: 78, alignment: .leading)
                 menu
+                if !engine.materialLooks.isEmpty { lookMenu }
                 Spacer(minLength: 0)
             }
             if showsKnobs {
@@ -4126,6 +4140,41 @@ private struct MaterialSection: View {
         .fixedSize()
         .disabled(engine.materialNames.isEmpty)
         .opacity(engine.materialNames.isEmpty ? 0.4 : 1.0)
+    }
+
+    /// The Look chip: one-click starting points for THIS layer (material,
+    /// knobs, colour). The result reads "Custom (material)" and is undone by
+    /// Reset or a material pick; the colour by the Color row's Inherit.
+    private var lookMenu: some View {
+        Menu {
+            ForEach(engine.materialLooks, id: \.name) { look in
+                Button(look.label) { applyLook(look.name) }
+            }
+        } label: {
+            HStack(spacing: 2) {
+                Image(systemName: "wand.and.stars").font(.system(size: 9))
+                Text("Look").font(.system(size: 9))
+            }
+            .padding(.horizontal, 5).frame(height: 16)
+            .background(PanelTheme.buttonBackground)
+            .foregroundColor(PanelTheme.buttonText)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Apply a look to this layer only: a material, its settings and a colour. "
+              + "Reset or picking a material undoes it.")
+    }
+
+    private func applyLook(_ name: String) {
+        customOpen = false
+        // The Look writes knobs this view cannot list; mark them all, so a pick
+        // before the next poll still clears them (unsetting an unset knob is
+        // harmless).
+        touched = Set(CustomMaterial.knobs)
+        engine.runCommand(CustomMaterial.applyLook(name, prop.setting, on: objName), naming: objName)
+        engine.refreshExpandedDetail()
     }
 
     private func sliderProp(_ k: MaterialKnobInfo) -> RepProperty {

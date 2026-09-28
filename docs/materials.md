@@ -152,6 +152,16 @@ set surface_material_rough, 0.05, myprotein      # a sharper metallic, this laye
 unset surface_material_rough, myprotein          # back to metallic's own
 ```
 
+**Looks** are one-click starting points for a layer: the **Look** chip beside
+the Material menu offers Gold, Copper, Bronze, Steel, Chrome, Marble
+(statuary) and Clay (terracotta). A Look sets that layer's material, its
+Custom knobs and the layer's colour -- no other layer, no lighting. The
+colour is a named colour, `look_gold` and so on, which the Look defines. The
+menu then reads **Custom (metallic)** (or marble, or clay), so Reset or
+picking a material undoes the tuning, and the Color row's **Inherit** takes
+the colour off. From the command line: `apply_look gold, myprotein, surface` (layers:
+`cartoon`, `surface`, `stick`, `sphere`).
+
 Some knobs only show under a condition:
 
 - **Grain frequency** changes nothing while **Grain** is 0 (matte's own grain

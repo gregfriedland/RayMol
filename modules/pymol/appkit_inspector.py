@@ -100,6 +100,12 @@ def poll_materials():
             knobs = material_knobs(mid)
             if knobs:
                 print('MATKNOBS:%d:%s' % (mid, json.dumps(knobs, separators=(',', ':'))))
+        # The layer Looks (looks.py): [[name, label, material], ...]
+        try:
+            from pymol import looks
+            print('LOOKS:' + json.dumps(looks.looks_payload(), separators=(',', ':')))
+        except Exception:
+            pass
     except Exception:
         print('MATERIALS:[]')
 
