@@ -82,8 +82,10 @@ static void metalApplyRepMaterial(CCGORenderer* I)
   // families carry reflect/tint/rough -- lives in MaterialDrawParams, so this
   // is a thin caller and the rules stay testable from Python without a Metal
   // context.
+  // A side-chain stick or sphere with no material of its own follows the
+  // object's cartoon (MaterialSourceRep), hence the object.
   MaterialParams params = MaterialDrawParamsCached(G, s1, s2, repType,
-      (I->rep && I->rep->emitsStickBalls()));
+      (I->rep && I->rep->emitsStickBalls()), I->rep ? I->rep->obj : nullptr);
   G->Renderer->setRepMaterial(params);
 }
 

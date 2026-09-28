@@ -2479,7 +2479,13 @@ static PyObject* CmdGetMaterialKnobs(PyObject*, PyObject* args)
  * object-level value instead would disagree with the picture on screen.
  * state N>0 names a state explicitly; state <0 forces the object level.
  *
- * _cmd.get_rep_material(object_name_or_empty, rep_index[, state=0])
+ * A side-chain stick or sphere with no material of its own follows the
+ * object's cartoon (MaterialSourceRep), so this reports the cartoon's id for
+ * it. With source_only=1 it reports WHICH layer instead: the rep index itself,
+ * or cRepCartoon when following.
+ *
+ * _cmd.get_rep_material(object_name_or_empty, rep_index[, state=0[,
+ *                       source_only=0]])
  */
 static PyObject* CmdGetRepMaterial(PyObject* self, PyObject* args)
 {
@@ -2487,7 +2493,9 @@ static PyObject* CmdGetRepMaterial(PyObject* self, PyObject* args)
   const char* oname = "";
   int repType = -1;
   int state = 0;
-  if (!PyArg_ParseTuple(args, "Osi|i", &self, &oname, &repType, &state)) {
+  int sourceOnly = 0;
+  if (!PyArg_ParseTuple(
+          args, "Osi|ii", &self, &oname, &repType, &state, &sourceOnly)) {
     API_HANDLE_ERROR;
     return APIAutoNone(nullptr);
   }
@@ -2498,9 +2506,11 @@ static PyObject* CmdGetRepMaterial(PyObject* self, PyObject* args)
   APIEnterBlocked(G);
   const CSetting* stateSetting = nullptr;
   const CSetting* objSetting = nullptr;
+  const pymol::CObject* found = nullptr;
   bool ok = true;
   if (oname && oname[0]) {
     pymol::CObject* obj = ExecutiveFindObjectByName(G, oname);
+    found = obj;
     if (!obj) {
       ErrMessage(G, "GetRepMaterial", "named object not found.");
       ok = false;
@@ -2519,8 +2529,13 @@ static PyObject* CmdGetRepMaterial(PyObject* self, PyObject* args)
   }
   PyObject* result = nullptr;
   if (ok) {
-    result = PyInt_FromLong(
-        MaterialResolveSettingId(G, stateSetting, objSetting, repType));
+    // `sourceOnly` asks which LAYER's setting that is instead: the rep itself,
+    // or cRepCartoon for a side chain following its cartoon.
+    int const source =
+        MaterialSourceRep(G, stateSetting, objSetting, repType, found);
+    result = PyInt_FromLong(sourceOnly ? source
+                                       : MaterialResolveSettingId(G,
+                                             stateSetting, objSetting, source));
   }
   APIExitBlocked(G);
   return APIAutoNone(result);
@@ -2579,7 +2594,7 @@ static PyObject* CmdGetMaterialDrawParams(PyObject* self, PyObject* args)
     }
     MaterialParams const p = rep
         ? MaterialDrawParamsCached(G, cs->Setting.get(), objmol->Setting.get(),
-              repType, rep->emitsStickBalls())
+              repType, rep->emitsStickBalls(), objmol)
         : MaterialDrawParams(G, cs ? cs->Setting.get() : nullptr,
               objmol->Setting.get(), repType, cs);
     /* The per-material KNOBS are part of "what this draw uses" too, and until

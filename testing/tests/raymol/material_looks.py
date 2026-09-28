@@ -1,10 +1,11 @@
 """Layer Looks (pymol.looks): one-click starting points for ONE layer.
 
 A Look sets a layer's material, that material's Custom knobs (#568) and the
-layer's colour -- and nothing else. The Looks removed in #566 rewrote all four
-layers and the scene's lighting, so a look stuck after the material changed;
-these pin that the new ones touch exactly one layer of one object, write no
-global setting, and are undone the ordinary way.
+atom colour of the layer's atoms -- and nothing else. The Looks removed in #566
+rewrote all four layers and the scene's lighting, so a look stuck after the
+material changed; these pin that the new ones touch one layer's material of one
+object, write no global setting, and are undone the ordinary way. How the
+colour lands on atoms is pinned in material_follow.py.
 
     pymol -ckqy testing/testing.py --run testing/tests/raymol/material_looks.py
 """
@@ -24,6 +25,12 @@ def params(obj, layer):
     return f, m, r, t, ro, tuple(p)
 
 
+def atom_colours(sele):
+    out = set()
+    cmd.iterate(sele, 'out.add(color)', space={'out': out})
+    return out
+
+
 def global_settings():
     out = {}
     for name in setting.get_name_list():
@@ -40,6 +47,7 @@ class TestLooks(testing.PyMOLTestCase):
         cmd.reinitialize()
         cmd.fragment('ala', 'm1')
         cmd.fragment('gly', 'm2')
+        cmd.show('sticks')
 
     def testEveryLookUsesAnImplementedMaterialAndOnlyItsKnobs(self):
         """A knob the material does not have would be silently ignored by the
@@ -58,7 +66,9 @@ class TestLooks(testing.PyMOLTestCase):
         _f, _m, _r, t, ro, _p = params('m1', 'stick')
         self.assertAlmostEqual(t, 0.55, places=4)
         self.assertAlmostEqual(ro, 0.25, places=4)
-        self.assertEqual(cmd.get('stick_color', 'm1'), 'look_gold')
+        # the atoms, not the layer: a layer colour would hide "by element"
+        self.assertEqual(atom_colours('m1'), {cmd.get_color_index('look_gold')})
+        self.assertEqual(cmd.get('stick_color', 'm1'), 'default')
         self.assertEqual([round(c * 255) for c in cmd.get_color_tuple('look_gold')],
                          [0xd4, 0xaf, 0x37])
 
@@ -69,6 +79,7 @@ class TestLooks(testing.PyMOLTestCase):
         colours_before = {n for n, _i in cmd.get_color_indices()}
         other_layers = [params('m1', l) for l in ('cartoon', 'surface', 'sphere')]
         other_object = params('m2', 'stick')
+        other_colours = atom_colours('m2')
         cmd.apply_look('chrome', 'm1', 'stick')
         self.assertEqual(global_settings(), before)
         # the one thing outside the layer: the Look's named colour
@@ -77,6 +88,7 @@ class TestLooks(testing.PyMOLTestCase):
         self.assertEqual([params('m1', l) for l in ('cartoon', 'surface', 'sphere')],
                          other_layers)
         self.assertEqual(params('m2', 'stick'), other_object)
+        self.assertEqual(atom_colours('m2'), other_colours)
         for l in ('cartoon', 'surface', 'sphere'):
             self.assertEqual(cmd.get('%s_material' % l, 'm1'), 'default', l)
 
@@ -97,20 +109,20 @@ class TestLooks(testing.PyMOLTestCase):
 
     def testItIsUndoneByPickingAMaterial(self):
         """What the Inspector sends for a pick: the material, and unset the
-        layer's overrides. The colour stays on the Color row, where Inherit
-        takes it off."""
+        layer's overrides. The colour is the atoms' now; any colouring
+        replaces it."""
         cmd.apply_look('copper', 'm1', 'surface')
         cmd.do('set surface_material, 3, m1\n' + '\n'.join(
             'unset surface_material_%s, m1' % k for k in looks.KNOBS))
         self.assertAlmostEqual(params('m1', 'surface')[3], 0.35, places=4)  # metallic's tint
-        cmd.unset('surface_color', 'm1')
-        self.assertEqual(cmd.get('surface_color', 'm1'), 'default')
+        cmd.color('red', 'm1')
+        self.assertEqual(atom_colours('m1'), {cmd.get_color_index('red')})
 
     def testTheCommandTheInspectorSendsWorks(self):
         """CustomMaterial.applyLook's form: apply_look <name>, <object>, <stem>."""
         cmd.do('apply_look statuary, m1, sphere')
         self.assertEqual(cmd.get('sphere_material', 'm1'), 'marble')
-        self.assertEqual(cmd.get('sphere_color', 'm1'), 'look_statuary')
+        self.assertEqual(atom_colours('m1'), {cmd.get_color_index('look_statuary')})
 
     def testLayerNamesAreForgiving(self):
         cmd.apply_look('bronze', 'm1', 'sticks')

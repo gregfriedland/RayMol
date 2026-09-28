@@ -132,6 +132,9 @@ final class MaterialInspectorTests: XCTestCase {
     func testCustomReadsAsCustomOfItsBase() {
         XCTAssertEqual(CustomMaterial.label(base: "metallic", isCustom: true), "Custom (metallic)")
         XCTAssertEqual(CustomMaterial.label(base: "metallic", isCustom: false), "metallic")
+        // a side chain following the cartoon says whose material it draws with
+        XCTAssertEqual(CustomMaterial.label(base: "metallic", isCustom: true, follows: true),
+                       "Cartoon's (metallic)")
     }
 
     /// The literals are the join with inspector_materials.py, which runs them.
@@ -202,6 +205,9 @@ final class MaterialInspectorTests: XCTestCase {
         XCTAssertTrue(st?.isCustom ?? false)
         XCTAssertNil(PyMOLEngine.parseMaterialCustom(["vals": [:]]))
         XCTAssertFalse(MaterialCustomState().isCustom)
+        XCTAssertFalse(st?.follows ?? true)  // absent reads as its own
+        XCTAssertTrue(PyMOLEngine.parseMaterialCustom(
+            ["material": ["drawn": 3, "follows": true]])?.follows ?? false)
     }
 
     // MARK: - layer Looks

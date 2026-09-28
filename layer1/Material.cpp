@@ -403,11 +403,45 @@ bool MaterialRepEmitsStickBalls(
   return false;
 }
 
+bool MaterialLayerHasOwnMaterial(PyMOLGlobals* G, const CSetting* set1,
+    const CSetting* set2, int repType)
+{
+  // A material of its OWN, at any level, keeps the layer independent: set on
+  // the state or the object, or a non-default global value for the layer.
+  int const own = MaterialSettingForRep(repType);
+  int id = cMaterial_default;
+  return !own || SettingGetIfDefined_i(G, set1, own, &id) ||
+         SettingGetIfDefined_i(G, set2, own, &id) ||
+         SettingGetGlobal_i(G, own) != cMaterial_default;
+}
+
+int MaterialSourceRep(PyMOLGlobals* G, const CSetting* set1,
+    const CSetting* set2, int repType, const pymol::CObject* obj)
+{
+  if (repType != cRepCyl && repType != cRepSphere) {
+    return repType; // only the side-chain layers follow
+  }
+  if (MaterialLayerHasOwnMaterial(G, set1, set2, repType)) {
+    return repType;
+  }
+  // Cheap checks first: this runs per draw op. The cast and the visibility
+  // test only happen for a stick or sphere layer with no material of its own.
+  auto const* objmol = dynamic_cast<const ObjectMolecule*>(obj);
+  if (!objmol || !objmol->showsPolymerCartoon()) {
+    return repType;
+  }
+  return cRepCartoon;
+}
+
 static MaterialParams MaterialResolveForDrawCached(PyMOLGlobals* G,
     const CSetting* set1, const CSetting* set2, int repType,
-    bool emitsStickBalls)
+    bool emitsStickBalls, const pymol::CObject* obj)
 {
-  int const id = MaterialResolveSettingId(G, set1, set2, repType);
+  // The SETTING comes from the source layer (a side chain following its
+  // cartoon reads cartoon_material); the degradations below stay keyed on the
+  // rep that actually draws -- glass on sphere impostors, stick_ball glass.
+  int const id = MaterialResolveSettingId(
+      G, set1, set2, MaterialSourceRep(G, set1, set2, repType, obj));
   MaterialParams params = MaterialResolve(id, repType);
   // stick_ball spheres are emitted by the STICK rep, so they arrive as cRepCyl
   // and take stick_material -- including clear or frosted glass, which
@@ -430,7 +464,8 @@ static MaterialParams MaterialResolveForDrawCached(PyMOLGlobals* G,
 MaterialParams MaterialResolveForDraw(PyMOLGlobals* G, const CSetting* set1,
     const CSetting* set2, int repType, const CoordSet* cs)
 {
-  int const id = MaterialResolveSettingId(G, set1, set2, repType);
+  int const id = MaterialResolveSettingId(G, set1, set2,
+      MaterialSourceRep(G, set1, set2, repType, cs ? cs->Obj : nullptr));
   MaterialParams params = MaterialResolve(id, repType);
   /* LAZY on purpose: resolve first, and walk atoms only when the answer can
      change something. Computing it eagerly for every cRepCyl call -- as this
@@ -448,18 +483,25 @@ static MaterialParams MaterialFinalizeParams(
     PyMOLGlobals* G, const CSetting* set1, const CSetting* set2, int repType,
     MaterialParams params);
 
+/* The Custom overrides come from the same layer as the material: a side chain
+   following its cartoon draws with the cartoon's tuning, not its own. */
 MaterialParams MaterialDrawParams(PyMOLGlobals* G, const CSetting* set1,
     const CSetting* set2, int repType, const CoordSet* cs)
 {
-  return MaterialFinalizeParams(G, set1, set2, repType,
+  int const source =
+      MaterialSourceRep(G, set1, set2, repType, cs ? cs->Obj : nullptr);
+  return MaterialFinalizeParams(G, set1, set2, source,
       MaterialResolveForDraw(G, set1, set2, repType, cs));
 }
 
 MaterialParams MaterialDrawParamsCached(PyMOLGlobals* G, const CSetting* set1,
-    const CSetting* set2, int repType, bool emitsStickBalls)
+    const CSetting* set2, int repType, bool emitsStickBalls,
+    const pymol::CObject* obj)
 {
-  return MaterialFinalizeParams(G, set1, set2, repType,
-      MaterialResolveForDrawCached(G, set1, set2, repType, emitsStickBalls));
+  return MaterialFinalizeParams(G, set1, set2,
+      MaterialSourceRep(G, set1, set2, repType, obj),
+      MaterialResolveForDrawCached(
+          G, set1, set2, repType, emitsStickBalls, obj));
 }
 
 /* The Custom material's per-layer overrides (#568): for each material-bearing
@@ -772,8 +814,9 @@ bool MaterialObjectWantsPeel(PyMOLGlobals* G, const CSetting* set1,
      second, and this runs once per object per FRAME. */
   bool maybeWantsPeel = false;
   for (size_t i = 0; i < sizeof(kReps) / sizeof(kReps[0]); ++i) {
-    if (MaterialResolve(
-            MaterialResolveSettingId(G, set1, set2, kReps[i]), kReps[i])
+    if (MaterialResolve(MaterialResolveSettingId(G, set1, set2,
+                            MaterialSourceRep(G, set1, set2, kReps[i], obj)),
+            kReps[i])
             .wantsPeel) {
       maybeWantsPeel = true;
       break;

@@ -80,6 +80,40 @@ struct MaterialParams {
 int MaterialSettingForRep(int repType);
 
 /**
+ * The layer whose material SETTINGS a draw of `repType` reads: its own, except
+ * that side chains follow the cartoon.
+ *
+ * A stick or sphere layer with no material of its own -- `stick_material` /
+ * `sphere_material` set on neither the state nor the object, and `default`
+ * globally -- returns cRepCartoon while the object shows a cartoon on any
+ * POLYMER atom (`show cartoon` also marks ligands, which draw none), so it
+ * draws with the cartoon's material AND its Custom knobs. Picking a
+ * material for the layer, `default` included, makes it independent again.
+ * Every other rep, and every object that is not a molecule, returns `repType`.
+ *
+ * Per object, not per atom: a ligand shown as sticks in the same object follows
+ * too. Surfaces never follow. Only the SETTING is borrowed -- the degradations
+ * of MaterialResolve stay keyed on the rep that draws (glass on sphere
+ * impostors), so pass the real rep to it.
+ *
+ * With every material at `default` this changes nothing that is drawn: the
+ * cartoon then resolves to `material_default`, which is what the layer would
+ * have resolved to itself.
+ *
+ * @param obj the object, so its shown reps can be consulted; may be null
+ */
+int MaterialSourceRep(PyMOLGlobals* G, const CSetting* set1,
+    const CSetting* set2, int repType, const pymol::CObject* obj);
+
+/**
+ * Does the layer have a material of its OWN -- the half of MaterialSourceRep
+ * that does not depend on what is shown? True for a rep that takes no
+ * material at all.
+ */
+bool MaterialLayerHasOwnMaterial(PyMOLGlobals* G, const CSetting* set1,
+    const CSetting* set2, int repType);
+
+/**
  * Resolve the material id for one draw: the rep's OBJECT-level value (or
  * object-state), then the rep's global value, then `material_default`.
  *
@@ -225,7 +259,8 @@ MaterialParams MaterialDrawParams(PyMOLGlobals* G, const CSetting* set1,
  * configuration the rule targets, glass sticks with no balls.
  */
 MaterialParams MaterialDrawParamsCached(PyMOLGlobals* G, const CSetting* set1,
-    const CSetting* set2, int repType, bool emitsStickBalls);
+    const CSetting* set2, int repType, bool emitsStickBalls,
+    const pymol::CObject* obj = nullptr);
 
 /**
  * Does this stick rep emit any `stick_ball` sphere? Atom-level, so this scans.

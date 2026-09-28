@@ -4021,6 +4021,7 @@ final class PyMOLEngine: ObservableObject {
         if let ss = m["set"] as? [Any] {
             st.set = ss.compactMap { $0 as? String }
         }
+        st.follows = (m["follows"] as? NSNumber)?.boolValue ?? false
         return st
     }
 
