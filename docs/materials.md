@@ -79,8 +79,10 @@ cartoon-plus-side-chains, the side chains match the backbone they hang from.
 `unset stick_material, myprotein` makes the sticks follow again.
 
 - The Inspector's stick or sphere Material row then reads **Cartoon's
-  (metallic)**. Picking a material there gives the layer its own; **Cartoon's**
-  in the same menu (Inherit) goes back to following.
+  (metallic)**, and its Inherit item reads **• Cartoon's**. Picking a material
+  there gives the layer its own; **Inherit** goes back to following.
+- The cartoon's colour setting (`cartoon_color`) does not follow. Colour is
+  shared through the atoms, which is what a cartoon Look colours.
 - A following layer offers no Custom sliders, because it is tuned through the
   cartoon.
 - Surfaces never follow.
@@ -183,8 +185,8 @@ A Look's colour is a base coat on the **atoms**: the named colour `look_gold`
 (and so on), which the Look defines.
 
 - It colours the atoms the layer is shown on. For a cartoon that means the
-  cartoon's whole residues, so the side chains that follow its material take
-  its colour too.
+  cartoon's whole polymer residues, so the side chains that follow its
+  material take its colour too.
 - A ligand in the same object keeps its colour. A layer shown on no atom
   colours the whole object.
 - The Look clears that layer's colour setting (`cartoon_color`, ...), and for a

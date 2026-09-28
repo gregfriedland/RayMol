@@ -10785,25 +10785,37 @@ void ObjectMolecule::update()
   /* Side chains with no material of their own follow the cartoon's while one
      is shown (MaterialSourceRep). Shading is resolved per draw, but a glass
      material's implied alpha is baked in at BUILD time -- so showing or hiding
-     the cartoon rebuilds the stick and sphere layers whenever that switches
-     them to a different material. With every material `default` the two ids
-     agree and nothing is rebuilt. */
+     the cartoon rebuilds a following layer, per state, when that changes the
+     alpha it implies. With every material `default` nothing is rebuilt. */
   {
     int const shown = (repsShownByAtoms() & cRepCartoonBit) ? 1 : 0;
     if (CartoonShownSeen >= 0 && shown != CartoonShownSeen) {
       const CSetting* set2 = Setting.get();
-      int const cartoon =
-          MaterialResolveSettingId(G, nullptr, set2, cRepCartoon);
-      if (MaterialResolveSettingId(G, nullptr, set2, cRepCyl) != cartoon) {
-        invalidate(cRepCyl, cRepInvColor, -1);
-        // line_stick_helper reads the sticks' (implied) transparency.
-        invalidate(cRepLine, cRepInvRep, -1);
-      }
-      if (MaterialResolveSettingId(G, nullptr, set2, cRepSphere) != cartoon) {
-        invalidate(cRepSphere, cRepInvColor, -1);
+      for (int a = 0; a < NCSet; ++a) {
+        if (!CSet[a])
+          continue;
+        // Per state: the draw path reads the state's settings first.
+        const CSetting* set1 = CSet[a]->Setting.get();
+        int const cartoonId =
+            MaterialResolveSettingId(G, set1, set2, cRepCartoon);
+        for (int rep : {cRepCyl, cRepSphere}) {
+          if (MaterialLayerHasOwnMaterial(G, set1, set2, rep))
+            continue;   // never follows, so the toggle changes nothing
+          int const ownId = MaterialResolveSettingId(G, set1, set2, rep);
+          if (MaterialImpliedAlpha(MaterialEffectiveId(cartoonId, rep)) ==
+              MaterialImpliedAlpha(MaterialEffectiveId(ownId, rep)))
+            continue;
+          invalidate(static_cast<cRep_t>(rep), cRepInvColor, a);
+          // line_stick_helper reads the sticks' (implied) transparency.
+          if (rep == cRepCyl)
+            invalidate(cRepLine, cRepInvRep, a);
+        }
       }
     }
     CartoonShownSeen = shown;
+    // Re-prime: the invalidations above clear the cache, and the coordinate
+    // set updates below may run on threads that all read it.
+    repsShownByAtoms();
   }
   /* if the cached representation is invalid, reset state */
   if(!I->RepVisCacheValid) {

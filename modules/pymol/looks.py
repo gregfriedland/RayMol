@@ -19,7 +19,7 @@ What a Look writes, for layer `<rep>` of the object:
   * and it UNSETS `<rep>_color` on the object and on those atoms, because a
     layer colour would hide the atom colours.
 
-The layer's atoms are the ones it is shown on; a cartoon's are its whole
+The layer's atoms are the ones it is shown on; a cartoon's are its whole polymer
 residues, so the side chains that follow the cartoon's material
 (MaterialSourceRep) take its colour too, shown yet or not. A ligand in the same
 object follows the cartoon's material but keeps its colour. A layer shown on no
@@ -79,7 +79,7 @@ DESCRIPTION
 
     "apply_look" gives one layer of one object a named look: a material, its
     Custom knobs and a colour. The colour is the atom colour look_<name> on
-    the layer's atoms (for a cartoon, its whole residues, so the side chains
+    the layer's atoms (for a cartoon, its whole polymer residues, so the side chains
     too), so "by element" can recolour the non-carbons on top; the layer's
     own colour setting is cleared. No other object changes.
 
@@ -136,10 +136,12 @@ _REP_WORD = {'cartoon': 'cartoon', 'surface': 'surface',
 
 def _layer_atoms(object, stem, _self=cmd):
     """The selection a Look on `stem` colours: the atoms the layer is shown on,
-    whole residues for a cartoon, or the whole object if it is shown on none."""
+    whole polymer residues for a cartoon, or the whole object if that is
+    none."""
     sele = '(%s) and rep %s' % (object, _REP_WORD[stem])
     if stem == 'cartoon':
-        sele = 'byres (%s)' % sele
+        # polymer: `show cartoon` sets the bit on every atom, ligands too
+        sele = 'byres (%s and polymer)' % sele
     if _self.count_atoms(sele) == 0:
         return '(%s)' % object
     return sele

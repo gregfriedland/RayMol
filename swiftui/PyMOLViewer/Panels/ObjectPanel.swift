@@ -4149,8 +4149,8 @@ private struct MaterialSection: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help(follows ? "Drawn with the cartoon's material, tuning and colour. "
-                        + "Pick a material to give this layer its own." : "")
+        .help(follows ? "Drawn with the cartoon's material and tuning; a cartoon Look "
+                        + "colours it too. Pick a material to give this layer its own." : "")
         .disabled(engine.materialNames.isEmpty)
         .opacity(engine.materialNames.isEmpty ? 0.4 : 1.0)
     }

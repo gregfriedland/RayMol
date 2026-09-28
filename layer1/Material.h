@@ -105,6 +105,14 @@ int MaterialSourceRep(PyMOLGlobals* G, const CSetting* set1,
     const CSetting* set2, int repType, const pymol::CObject* obj);
 
 /**
+ * Does the layer have a material of its OWN -- the half of MaterialSourceRep
+ * that does not depend on what is shown? True for a rep that takes no
+ * material at all.
+ */
+bool MaterialLayerHasOwnMaterial(PyMOLGlobals* G, const CSetting* set1,
+    const CSetting* set2, int repType);
+
+/**
  * Resolve the material id for one draw: the rep's OBJECT-level value (or
  * object-state), then the rep's global value, then `material_default`.
  *

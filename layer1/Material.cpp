@@ -403,19 +403,25 @@ bool MaterialRepEmitsStickBalls(
   return false;
 }
 
+bool MaterialLayerHasOwnMaterial(PyMOLGlobals* G, const CSetting* set1,
+    const CSetting* set2, int repType)
+{
+  // A material of its OWN, at any level, keeps the layer independent: set on
+  // the state or the object, or a non-default global value for the layer.
+  int const own = MaterialSettingForRep(repType);
+  int id = cMaterial_default;
+  return !own || SettingGetIfDefined_i(G, set1, own, &id) ||
+         SettingGetIfDefined_i(G, set2, own, &id) ||
+         SettingGetGlobal_i(G, own) != cMaterial_default;
+}
+
 int MaterialSourceRep(PyMOLGlobals* G, const CSetting* set1,
     const CSetting* set2, int repType, const pymol::CObject* obj)
 {
   if (repType != cRepCyl && repType != cRepSphere) {
     return repType; // only the side-chain layers follow
   }
-  int const own = MaterialSettingForRep(repType);
-  int id = cMaterial_default;
-  // A material of its OWN, at any level, keeps the layer independent: set on
-  // the state or the object, or a non-default global value for the layer.
-  if (SettingGetIfDefined_i(G, set1, own, &id) ||
-      SettingGetIfDefined_i(G, set2, own, &id) ||
-      SettingGetGlobal_i(G, own) != cMaterial_default) {
+  if (MaterialLayerHasOwnMaterial(G, set1, set2, repType)) {
     return repType;
   }
   // Cheap checks first: this runs per draw op. The cast and the visibility

@@ -146,6 +146,21 @@ class TestSideChainsFollowTheCartoon(testing.PyMOLTestCase):
         cmd.refresh()
         self.assertAlmostEqual(built_transparency('p', STICKS), 0.85, places=4)
 
+    def testAStateLevelCartoonMaterialRebuildsTheSticksOnToggle(self):
+        """The draw path reads the state's settings first, so the toggle's
+        rebuild has to as well."""
+        cmd.unset('cartoon_material', 'p')
+        cmd.hide('cartoon', 'p')
+        cmd.set('cartoon_material', 'glass', 'p', state=1)
+        cmd.refresh()
+        self.assertEqual(built_transparency('p', STICKS), 0.0)
+        cmd.show('cartoon', 'p')
+        cmd.refresh()
+        self.assertAlmostEqual(built_transparency('p', STICKS), 0.85, places=4)
+        cmd.hide('cartoon', 'p')
+        cmd.refresh()
+        self.assertEqual(built_transparency('p', STICKS), 0.0)
+
     def testFollowingGlassSticksDoNotVetoTheCartoonsPeel(self):
         """Auto-peel refuses when a transparent rep did not ask for it. Sticks
         following a glass cartoon DID -- they are glass too."""
@@ -213,6 +228,9 @@ class TestALookIsABaseCoat(testing.PyMOLTestCase):
         cmd.pseudoatom('p', name='LIG', resn='LIG', resi=900, chain='Z')
         cmd.color('red', 'p and resn LIG')
         cmd.show('sticks', 'p and resn LIG')
+        # as the Inspector's toggle does: the cartoon bit lands on the ligand
+        cmd.show('cartoon', 'p')
+        self.assertEqual(cmd.count_atoms('p and resn LIG and rep cartoon'), 1)
         cmd.apply_look('gold', 'p', 'cartoon')
         self.assertEqual(colours('p and resn LIG'), {cmd.get_color_index('red')})
 
