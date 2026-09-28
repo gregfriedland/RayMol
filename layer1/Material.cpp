@@ -427,7 +427,7 @@ int MaterialSourceRep(PyMOLGlobals* G, const CSetting* set1,
   // Cheap checks first: this runs per draw op. The cast and the visibility
   // test only happen for a stick or sphere layer with no material of its own.
   auto const* objmol = dynamic_cast<const ObjectMolecule*>(obj);
-  if (!objmol || !(objmol->repsShownByAtoms() & cRepCartoonBit)) {
+  if (!objmol || !objmol->showsPolymerCartoon()) {
     return repType;
   }
   return cRepCartoon;

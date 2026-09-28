@@ -86,7 +86,8 @@ int MaterialSettingForRep(int repType);
  * A stick or sphere layer with no material of its own -- `stick_material` /
  * `sphere_material` set on neither the state nor the object, and `default`
  * globally -- returns cRepCartoon while the object shows a cartoon on any
- * atom, so it draws with the cartoon's material AND its Custom knobs. Picking a
+ * POLYMER atom (`show cartoon` also marks ligands, which draw none), so it
+ * draws with the cartoon's material AND its Custom knobs. Picking a
  * material for the layer, `default` included, makes it independent again.
  * Every other rep, and every object that is not a molecule, returns `repType`.
  *

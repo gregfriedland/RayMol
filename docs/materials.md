@@ -87,7 +87,8 @@ cartoon-plus-side-chains, the side chains match the backbone they hang from.
   cartoon.
 - Surfaces never follow.
 - The rule is per object, not per atom. A ligand shown as sticks in the same
-  object follows too, and "shows a cartoon" means any atom has it.
+  object follows too. "Shows a cartoon" means a polymer atom has it, so an
+  object with no polymer, such as a docked ligand, never follows.
 - The layer still degrades as its own representation: spheres following a
   glass cartoon draw `default`, as glass spheres always do.
 

@@ -114,6 +114,18 @@ class TestSideChainsFollowTheCartoon(testing.PyMOLTestCase):
         cmd.hide('cartoon', 'p and not resi 3')
         self.assertEqual(source('p', STICKS), CARTOON)
 
+    def testAnObjectWithNoPolymerNeverFollows(self):
+        """`show cartoon` marks a ligand's atoms too, but draws nothing."""
+        cmd.fragment('benzene', 'lig')
+        cmd.show('sticks', 'lig')
+        cmd.show('cartoon')                      # global, as a user would
+        self.assertEqual(cmd.count_atoms('lig and rep cartoon'),
+                         cmd.count_atoms('lig'))  # precondition
+        self.assertEqual(source('lig', STICKS), STICKS)
+        cmd.set('cartoon_material', 'glass')
+        cmd.refresh()
+        self.assertEqual(built_transparency('lig', STICKS), 0.0)
+
     def testOnlyMolecules(self):
         self.assertEqual(_cmd.get_rep_material(cmd._COb, '', STICKS, -1, 1), STICKS)
 

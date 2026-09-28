@@ -10766,13 +10766,24 @@ int ObjectMolecule::repsShownByAtoms() const
 {
   if (!RepVisAtomsValid) {
     int bits = 0;
+    bool polymerCartoon = false;
     for (int a = 0; a < NAtom; ++a) {
-      bits |= AtomInfo[a].visRep;
+      auto const& ai = AtomInfo[a];
+      bits |= ai.visRep;
+      if ((ai.visRep & cRepCartoonBit) && (ai.flags & cAtomFlag_polymer))
+        polymerCartoon = true;
     }
     RepVisAtoms = bits;
+    PolymerCartoonShown = polymerCartoon;
     RepVisAtomsValid = true;
   }
   return RepVisAtoms;
+}
+
+bool ObjectMolecule::showsPolymerCartoon() const
+{
+  repsShownByAtoms();
+  return PolymerCartoonShown;
 }
 
 /*========================================================================*/
@@ -10788,7 +10799,7 @@ void ObjectMolecule::update()
      the cartoon rebuilds a following layer, per state, when that changes the
      alpha it implies. With every material `default` nothing is rebuilt. */
   {
-    int const shown = (repsShownByAtoms() & cRepCartoonBit) ? 1 : 0;
+    int const shown = showsPolymerCartoon() ? 1 : 0;
     if (CartoonShownSeen >= 0 && shown != CartoonShownSeen) {
       const CSetting* set2 = Setting.get();
       for (int a = 0; a < NCSet; ++a) {
