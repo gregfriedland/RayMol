@@ -14,6 +14,7 @@
 #include <string>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -756,11 +757,6 @@ private:
     // alpha for a stick and a sphere. Only a transparent occurrence reads it.
     std::vector<float> triAlpha;
     std::vector<float> sphereAlpha;
-    // Which frame record(s) this entry has been noted in, so dropping it
-    // dirties only the structure(s) built from it (#532): a transparent-only
-    // entry must not force a synchronous rebuild of the opaque structure.
-    bool inOpaque = false;
-    bool inTransparent = false;
     uint64_t params = 0;         // draw-call scalars the extraction used
     uint64_t gen = 0;            // bumped on every (re)extraction; 0 = never
   };
@@ -776,6 +772,12 @@ private:
                                   // _rtFrameKeys (+ gens); FNV-1a offset basis
   uint64_t _rtGeomGen = 0;        // monotonic source of RTGeom::gen
   bool _rtGeomDirty = false;      // an entry was invalidated: force a rebuild
+  // The frame record each structure was last built from. Only dropping one of
+  // THESE entries dirties it: a buffer freed after it was replaced (the usual
+  // rep rebuild) was never in the built structure, and dirtying on it forced a
+  // second, redundant synchronous rebuild.
+  std::unordered_set<const void*> _rtBuiltKeys;
+  std::unordered_set<const void*> _rtTBuiltKeys;
   size_t _rtTriCount = 0;         // triangles in the built _rtTriBuffer
   uint64_t _rtSphereHash = 0;     // signature of the built set (rebuild on change)
   size_t _rtBuiltCount = 0;
@@ -838,11 +840,9 @@ private:
     if (g.spheres.empty() && g.tris.empty())
       return;
     if (transparent) {
-      g.inTransparent = true;
       rtNoteTransparent(key, g.gen);
       return;
     }
-    g.inOpaque = true;
     _rtFrameKeys.push_back(key);
 
     // Pose delta = base^-1 · M_obj: divides the shared camera out of this draw's
