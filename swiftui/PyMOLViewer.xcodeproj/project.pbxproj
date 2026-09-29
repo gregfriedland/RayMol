@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		020822B7AD61092433C2F78E /* whatsnew-170-move.png in Resources */ = {isa = PBXBuildFile; fileRef = 4C570F9CAC877E201F237016 /* whatsnew-170-move.png */; };
+		03ADC02622D3F786B6AAC4EB /* whatsnew-1120-looks.png in Resources */ = {isa = PBXBuildFile; fileRef = EE1A5AF0A345CF00F816C5B6 /* whatsnew-1120-looks.png */; };
 		042F08F899EE19B73EFEC143 /* CommandPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B50D264C420888CBF7FDE633 /* CommandPanel.swift */; };
 		04798DF552010A1889F8FFDD /* RFD3Runtime.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECB1F4D491FA24E65DD3B011 /* RFD3Runtime.swift */; };
 		047FD10B437F95938AB4B3B0 /* WeightsFetchStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C4E3216DAFC42C515FD0C3E /* WeightsFetchStateTests.swift */; };
@@ -78,6 +79,7 @@
 		484D9DFA048A6444660199CB /* MPNNKit in Frameworks */ = {isa = PBXBuildFile; productRef = 791C3459ADD4745BE10E27AA /* MPNNKit */; };
 		4852173B3AB34D6B4FF76415 /* MCPDesktopInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 786939619F7871E32E2BB123 /* MCPDesktopInstaller.swift */; };
 		48E340346AD8FF81AF09F501 /* MPNNKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7A0C20547CE6C050BA30EDA0 /* MPNNKit */; };
+		4948AFDF734D7B66A5061B29 /* whatsnew-1120-materials.png in Resources */ = {isa = PBXBuildFile; fileRef = 9FDD0A4E4CE633BAC9148CBD /* whatsnew-1120-materials.png */; };
 		4AD1C0E0E53EC4B34CBE7400 /* MetalViewportResponderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C47FBC551127AB2D73BC6CE /* MetalViewportResponderTests.swift */; };
 		4BE37F7CA13DEB10F2AE62D6 /* RayMol.svg in Resources */ = {isa = PBXBuildFile; fileRef = F16058D96E2773BE9A24C323 /* RayMol.svg */; };
 		4E1CFC49EFB50160C3D388B2 /* DesignAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4300265954DF2B8309EDAA6C /* DesignAvailability.swift */; };
@@ -167,6 +169,7 @@
 		97F0B5805CD3B11723C7B43B /* whatsnew-152-timeline.png in Resources */ = {isa = PBXBuildFile; fileRef = 55094A33AFF9AEF5561CFD96 /* whatsnew-152-timeline.png */; };
 		983BCF8F1E0F251E82C1CF0E /* DesignController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF4FB7F151982A2927D612F0 /* DesignController.swift */; };
 		996828523DD2656E579ACE55 /* RFD3JobManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8746A760E75B98C92A547404 /* RFD3JobManager.swift */; };
+		9B6F87FDA749D05D6F77A862 /* whatsnew-1120-looks.png in Resources */ = {isa = PBXBuildFile; fileRef = EE1A5AF0A345CF00F816C5B6 /* whatsnew-1120-looks.png */; };
 		9C6CB8E2C25DB4AE13D42756 /* BinderDesignBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4B03344972863CC1362ECB /* BinderDesignBar.swift */; };
 		9E056CF2985B57F6BF968798 /* ProtenixMLX in Frameworks */ = {isa = PBXBuildFile; productRef = 90EE4E4414E8FBDC2271BEA2 /* ProtenixMLX */; };
 		9FDA615BBA4A6BBDF131EF7F /* ProtenixRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56746569540D202277F2B47F /* ProtenixRuntimeTests.swift */; };
@@ -220,6 +223,7 @@
 		D0BB5840BDEAA557F5B8F387 /* RFD3Runtime.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECB1F4D491FA24E65DD3B011 /* RFD3Runtime.swift */; };
 		D1810E28536159A86EF507F8 /* whatsnew-190-raymolrc.png in Resources */ = {isa = PBXBuildFile; fileRef = 7D10B5CB9ECF81346BD9CAE8 /* whatsnew-190-raymolrc.png */; };
 		D1A6B8D3D1B74B4D1142ADE5 /* PredictSizeGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D177C9A043AE57844A9AEB95 /* PredictSizeGuardTests.swift */; };
+		D2E63A93A4DC76DB062C8DFE /* whatsnew-1120-materials.png in Resources */ = {isa = PBXBuildFile; fileRef = 9FDD0A4E4CE633BAC9148CBD /* whatsnew-1120-materials.png */; };
 		D31F1B51A22EDBE0B05005AE /* PredictBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14E7328C4421ADC9E81417D /* PredictBar.swift */; };
 		D35B766612AA47956AB18A75 /* ThemeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC5E722722DEF7FBB1D649F /* ThemeManager.swift */; };
 		D3C5FDA51512154777B49DA2 /* whatsnew-152-timeline.png in Resources */ = {isa = PBXBuildFile; fileRef = 55094A33AFF9AEF5561CFD96 /* whatsnew-152-timeline.png */; };
@@ -376,6 +380,7 @@
 		9A2CE99D9A3C57ACBBDBF3B5 /* DesignRegionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignRegionTests.swift; sourceTree = "<group>"; };
 		9B2D0B8DEF98F905922AE2FD /* ProtenixJobManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtenixJobManager.swift; sourceTree = "<group>"; };
 		9E69AA2C12DC2D1583FBF8C8 /* DesignSizeGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSizeGuard.swift; sourceTree = "<group>"; };
+		9FDD0A4E4CE633BAC9148CBD /* whatsnew-1120-materials.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "whatsnew-1120-materials.png"; sourceTree = "<group>"; };
 		A2367C4CEE5BD2E682055D3F /* BoltzRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoltzRuntime.swift; sourceTree = "<group>"; };
 		A4857D1284B60EB0C750C02F /* ProgressTray.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressTray.swift; sourceTree = "<group>"; };
 		A4CC639810B19E8F5E637E93 /* CopyRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyRouting.swift; sourceTree = "<group>"; };
@@ -429,6 +434,7 @@
 		EC1923D25B33DEE015052221 /* RFD3SizeGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RFD3SizeGuardTests.swift; sourceTree = "<group>"; };
 		ECB1F4D491FA24E65DD3B011 /* RFD3Runtime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RFD3Runtime.swift; sourceTree = "<group>"; };
 		EDC5E722722DEF7FBB1D649F /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
+		EE1A5AF0A345CF00F816C5B6 /* whatsnew-1120-looks.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "whatsnew-1120-looks.png"; sourceTree = "<group>"; };
 		EE3CAE980896763CAAAF2034 /* DesignSizeGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSizeGuardTests.swift; sourceTree = "<group>"; };
 		EEC5AE545F97DF175BFE0462 /* DesignScoreCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignScoreCache.swift; sourceTree = "<group>"; };
 		F14E7328C4421ADC9E81417D /* PredictBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictBar.swift; sourceTree = "<group>"; };
@@ -442,7 +448,7 @@
 		FB1304C662D9011F7C4505FC /* MCPStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPStatusView.swift; sourceTree = "<group>"; };
 		FF4FB7F151982A2927D612F0 /* DesignController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignController.swift; sourceTree = "<group>"; };
 		FFD9E3092D310E443F7CD546 /* DesignTargetSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTargetSelectionTests.swift; sourceTree = "<group>"; };
-		"TEMP_007693E6-3F9E-4A8A-B07B-AF2BB9E02168" /* PyMOLBridge.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = PyMOLBridge.xcconfig; sourceTree = "<group>"; };
+		"TEMP_243E3D0E-E395-47C8-A632-54CD08CDE578" /* PyMOLBridge.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = PyMOLBridge.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -537,6 +543,8 @@
 				CC71792A917723EA5E462007 /* whatsnew-1110-colormenu.png */,
 				B402EB5834127D4E6B217EFE /* whatsnew-1110-raytrace.mp4 */,
 				BFE8C2D90AA047E31EBBC54C /* whatsnew-1110-sessions.png */,
+				EE1A5AF0A345CF00F816C5B6 /* whatsnew-1120-looks.png */,
+				9FDD0A4E4CE633BAC9148CBD /* whatsnew-1120-materials.png */,
 				689CDE512811C244D4BA931B /* WhatsNew.json */,
 			);
 			path = Resources;
@@ -719,10 +727,10 @@
 			path = Bridge;
 			sourceTree = "<group>";
 		};
-		"TEMP_70EC9E10-0E96-4C49-BD13-56FB99482B95" /* swiftui */ = {
+		"TEMP_243AFCAD-B1C3-4BE6-93A1-400C01785052" /* swiftui */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_007693E6-3F9E-4A8A-B07B-AF2BB9E02168" /* PyMOLBridge.xcconfig */,
+				"TEMP_243E3D0E-E395-47C8-A632-54CD08CDE578" /* PyMOLBridge.xcconfig */,
 			);
 			path = swiftui;
 			sourceTree = "<group>";
@@ -906,6 +914,8 @@
 				8BB63E3CB5D2F5721A15E61B /* whatsnew-1110-colormenu.png in Resources */,
 				107F92D982CDBA1632A6EEBD /* whatsnew-1110-raytrace.mp4 in Resources */,
 				F876E57F8B0806E40D15A349 /* whatsnew-1110-sessions.png in Resources */,
+				9B6F87FDA749D05D6F77A862 /* whatsnew-1120-looks.png in Resources */,
+				4948AFDF734D7B66A5061B29 /* whatsnew-1120-materials.png in Resources */,
 				EB6435B2880C450F33F0291F /* whatsnew-152-camera-dock.mp4 in Resources */,
 				D3C5FDA51512154777B49DA2 /* whatsnew-152-timeline.png in Resources */,
 				36D99340CCDDAD7C67680476 /* whatsnew-161-hover.mp4 in Resources */,
@@ -939,6 +949,8 @@
 				B751FE54B6347A0677DEA713 /* whatsnew-1110-colormenu.png in Resources */,
 				154AFFF34817365145396F33 /* whatsnew-1110-raytrace.mp4 in Resources */,
 				8E62E0244A99E106F6D57428 /* whatsnew-1110-sessions.png in Resources */,
+				03ADC02622D3F786B6AAC4EB /* whatsnew-1120-looks.png in Resources */,
+				D2E63A93A4DC76DB062C8DFE /* whatsnew-1120-materials.png in Resources */,
 				F4F8D45CBA50D16F783FBB4F /* whatsnew-152-camera-dock.mp4 in Resources */,
 				97F0B5805CD3B11723C7B43B /* whatsnew-152-timeline.png in Resources */,
 				B84291E694521C66BCB749CD /* whatsnew-161-hover.mp4 in Resources */,
@@ -1783,7 +1795,7 @@
 		};
 		76B7E9DB75E073D1E60928FA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_007693E6-3F9E-4A8A-B07B-AF2BB9E02168" /* PyMOLBridge.xcconfig */;
+			baseConfigurationReference = "TEMP_243E3D0E-E395-47C8-A632-54CD08CDE578" /* PyMOLBridge.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -1890,7 +1902,7 @@
 		};
 		D8F44FDFF036013D2F03BA83 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_007693E6-3F9E-4A8A-B07B-AF2BB9E02168" /* PyMOLBridge.xcconfig */;
+			baseConfigurationReference = "TEMP_243E3D0E-E395-47C8-A632-54CD08CDE578" /* PyMOLBridge.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
