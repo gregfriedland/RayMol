@@ -68,7 +68,7 @@ const MaterialRow kMaterialTable[] = {
             {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 0}},
 
     {cMaterial_metallic, "metallic", cMaterialFamily_reflective, true, 0.0f,
-        {cMaterialFamily_reflective, cMaterial_metallic, 0.6f, 0.35f, 0.35f,
+        {cMaterialFamily_reflective, cMaterial_metallic, 0.6f, 0.35f, 0.25f,
             {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 0}},
 
     {cMaterial_glass, "glass", cMaterialFamily_glass, true, 0.15f,
@@ -184,7 +184,7 @@ const MaterialRow kMaterialTable[] = {
 
     {cMaterial_rubber, "rubber", cMaterialFamily_procedural, true, 0.0f,
         {cMaterialFamily_procedural, cMaterial_rubber, 0.0f, 0.0f, 0.95f,
-            {0.14f, 14.0f, 0.12f, 0.10f, 0.0f, 0.0f}, 0}},
+            {0.14f, 26.5f, 0.17f, 0.37f, 0.0f, 0.0f}, 0}},
 };
 
 constexpr int kMaterialTableSize =
