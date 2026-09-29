@@ -63,9 +63,10 @@ class TestLooks(testing.PyMOLTestCase):
     def testALookSetsOneLayersMaterialKnobsAndColour(self):
         cmd.apply_look('gold', 'm1', 'stick')
         self.assertEqual(cmd.get('stick_material', 'm1'), 'metallic')
-        _f, _m, _r, t, ro, _p = params('m1', 'stick')
-        self.assertAlmostEqual(t, 0.55, places=4)
-        self.assertAlmostEqual(ro, 0.25, places=4)
+        _f, _m, r, t, ro, _p = params('m1', 'stick')
+        self.assertAlmostEqual(r, 0.60, places=4)
+        self.assertAlmostEqual(t, 0.88, places=4)
+        self.assertAlmostEqual(ro, 0.05, places=4)
         # the atoms, not the layer: a layer colour would hide "by element"
         self.assertEqual(atom_colours('m1'), {cmd.get_color_index('look_gold')})
         self.assertEqual(cmd.get('stick_color', 'm1'), 'default')
@@ -99,13 +100,13 @@ class TestLooks(testing.PyMOLTestCase):
             self.assertTrue(knobs, name)
 
     def testALookReplacesTheLastOnesKnobs(self):
-        """Chrome sets reflect; steel does not -- chrome's must not survive."""
+        """Chrome sets reflect; copper does not -- chrome's must not survive."""
         cmd.apply_look('chrome', 'm1', 'surface')
-        cmd.apply_look('steel', 'm1', 'surface')
+        cmd.apply_look('copper', 'm1', 'surface')
         _f, _m, r, t, ro, _p = params('m1', 'surface')
         self.assertAlmostEqual(r, 0.6, places=4)     # metallic's own, not chrome's 0.75
-        self.assertAlmostEqual(t, 0.15, places=4)
-        self.assertAlmostEqual(ro, 0.35, places=4)
+        self.assertAlmostEqual(t, 0.55, places=4)
+        self.assertAlmostEqual(ro, 0.30, places=4)
 
     def testItIsUndoneByPickingAMaterial(self):
         """What the Inspector sends for a pick: the material, and unset the

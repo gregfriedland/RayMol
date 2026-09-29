@@ -147,7 +147,7 @@ class TestGlass(testing.PyMOLTestCase):
             cmd._COb, 'm1', repres['surface'])
         self.assertAlmostEqual(refl, 0.6, places=4)
         self.assertAlmostEqual(tint, 0.35, places=4)
-        self.assertAlmostEqual(rough, 0.35, places=4)
+        self.assertAlmostEqual(rough, 0.25, places=4)
 
     def testEveryOtherFamilyDrawsWithNoReflectionAtAll(self):
         """`default` and the procedural family draw with reflect / tint /

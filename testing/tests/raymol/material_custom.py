@@ -62,7 +62,7 @@ class TestTheOverrides(testing.PyMOLTestCase):
         cmd.set('surface_material', 'metallic', 'm1')
         self.assertEqual(params('m1')[2:5], (0.6000000238418579,
                                              0.3499999940395355,
-                                             0.3499999940395355))
+                                             0.25))
 
     def testAReflectiveMaterialTakesReflectTintAndRough(self):
         cmd.set('surface_material', 'metallic', 'm1')
