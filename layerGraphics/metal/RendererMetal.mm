@@ -6469,7 +6469,10 @@ static float4 mat_glass_refraction(float3 N, float3 posEye, float refrPx,
 // dimmed by the highlight's share -- an approximation, but the one that keeps
 // a single colour and coverage per fragment.
 // Marked unused: this block is shared by every material library, and the
-// sphere impostors -- where glass degrades to `default` -- never call it.
+// sphere library never calls it. The sphere rep degrades clear and frosted
+// glass to `default`; the glass spheres other reps emit (cartoon rings,
+// surface dots) shade through mat_impostor_composite's additive body + hi
+// instead, so their reflection is not separated from the coverage.
 // Without the attribute that is a new -Wunused-function in the sphere library
 // (the VBO and cylinder libraries both call it).
 __attribute__((unused)) static float4 mat_glass_cover(float3 body, float3 hi, float a) {
