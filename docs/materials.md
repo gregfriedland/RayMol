@@ -211,12 +211,18 @@ Some knobs only show under a condition:
   invisible while `material_env` is the flat background colour -- unless Metal
   ray tracing traces the reflection, which the reflective Roughness also blurs.
   (Glass's **Roughness** also widens and softens its glints, so it shows either
-  way.)
+  way -- as long as glass's **Reflection** is on.)
+- Glass's **Roughness** and frosted glass's **Frost** blur the surface
+  reflection, so they change nothing while **Reflection** is off.
 
 An override belongs to the LAYER, not to the material: it stays when the
 layer's material changes and then tunes the new material's knob in the same
 slot. The Inspector clears a layer's overrides when you pick a material; from
-the command line, `unset` them when switching.
+the command line, `unset` them when switching. Since #590 that includes
+`knob1` and `knob2` on glass (Reflection and Distortion) and `knob4` on jelly
+(Distortion), slots those materials used to ignore: a `knob1` left from a Look
+or from another material now dims glass's reflection, and a scene saved
+before #590 with such a leftover renders glass or jelly differently.
 
 `default` has no knobs. A global value is not an override: only the object's
 (or state's) own value counts. Scenes capture the object-level values with the
@@ -321,14 +327,14 @@ structure is lit the same through the glass as beside it.
   glass is not. Content in front of the glass is not pulled into it,
   apart from a fringe about a pixel wide along its edges.
 - **Distortion can be turned off** per layer with the material's Distortion
-  knob (see Custom, below): a toggle in the Inspector, and an amount from 0
+  knob (see Custom, above): a toggle in the Inspector, and an amount from 0
   to 1 on the command line.
 - **Jelly bends less visibly.** It refracts the same way, but its body is
   85% opaque, so only the part of the view that passes through it is bent.
   It refracts on spheres too; glass on spheres draws `default`, which does
   not.
-- **The strength is fixed**, and deliberately below what a real refractive
-  index would give. A molecular surface is hundreds of lobes, and a real
+- **The full strength is fixed** (Distortion scales it down, never up), and
+  deliberately below what a real refractive index would give. A molecular surface is hundreds of lobes, and a real
   index turns the view through them into noise. Displacement is capped at 2%
   of the image height, content more than 16 Å behind the glass moves no
   further, and background behind glass counts as 8 Å deep.

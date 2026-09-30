@@ -777,8 +777,9 @@ void RendererMetal::setRepMaterial(const MaterialParams& params)
 
 void RendererMetal::enableOitRefraction()
 {
-  // Glass refraction's target (#588) is created the first time a clear or
-  // frosted glass rep is set up, not with the other OIT targets: it is a
+  // Glass refraction's target (#588) is created the first time a glass-family
+  // rep -- clear, frosted or jelly -- is set up with its Distortion knob on
+  // (glassDistortion, #590), not with the other OIT targets: it is a
   // full-resolution 8 B/px texture that a session without glass would carry,
   // and clear every transparent frame, for nothing.
   if (_oitRefractEnabled || !_device || !_oitAccum || !_oitPassDesc ||
@@ -6428,10 +6429,11 @@ static float3 mat_glass_shade(float3 base, float3 N, float3 V, float rough,
 constant float kMatGlassIor = 1.33;
 constant float kMatGlassRefractStrength = 0.2;
 constant float kOitRefractFar = 60000.0;   // RendererMetal::kOitRefractFar
-// Unused in the sphere library, where glass degrades to `default`; see
-// mat_glass_cover.
-__attribute__((unused)) static float4 mat_glass_refraction(float3 N,
-    float3 posEye, float refrPx, int refrOrtho) {
+// Called from every lit library: the VBO and cylinder ones for the whole
+// glass family, the sphere one for jelly (clear and frosted glass draw
+// `default` on spheres).
+static float4 mat_glass_refraction(float3 N, float3 posEye, float refrPx,
+    int refrOrtho) {
   if (refrPx <= 0.0)
     return float4(0.0, 0.0, 0.0, kOitRefractFar);
   // The view ray through this fragment, into the scene: along -z under an

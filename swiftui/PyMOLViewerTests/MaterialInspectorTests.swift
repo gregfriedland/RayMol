@@ -205,14 +205,15 @@ final class MaterialInspectorTests: XCTestCase {
                        MaterialKnobInfo(suffix: "knob1", label: "Reflection", min: 0, max: 1, toggle: true))
     }
 
-    /// The switch is on past the knob's midpoint, and on before the first poll
-    /// (every toggle is on in the table).
-    func testAToggleReadsOnPastItsMidpoint() {
+    /// The switch is on for any amount above the knob's minimum -- every one
+    /// has a visible effect, the documented 0.5 included -- and on before the
+    /// first poll (every toggle is on in the table).
+    func testAToggleReadsOnForAnyAmount() {
         let k = MaterialKnobInfo(suffix: "knob2", label: "Distortion", min: 0, max: 1, toggle: true)
         XCTAssertEqual(CustomMaterial.toggleValue(1, k), 1)
         XCTAssertEqual(CustomMaterial.toggleValue(0, k), 0)
-        XCTAssertEqual(CustomMaterial.toggleValue(0.4, k), 0)
-        XCTAssertEqual(CustomMaterial.toggleValue(0.6, k), 1)
+        XCTAssertEqual(CustomMaterial.toggleValue(0.5, k), 1)
+        XCTAssertEqual(CustomMaterial.toggleValue(0.16, k), 1)
         XCTAssertEqual(CustomMaterial.toggleValue(nil, k), 1)
     }
 

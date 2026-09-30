@@ -366,11 +366,13 @@ enum CustomMaterial {
                         "knob4", "knob5", "knob6"]
 
     /// A toggle knob's switch position as ToggleSetting reads it (on above
-    /// 0.5): on when the value is past the knob's midpoint. An unknown value
-    /// reads as on, the table's default for every toggle.
+    /// 0.5): on whenever the value is above the knob's `min`, because any
+    /// amount above it has a visible effect -- a distortion of 0.5 set from the
+    /// command line bends the view, so its switch must not read off. An unknown
+    /// value reads as on, the table's default for every toggle.
     static func toggleValue(_ value: Double?, _ knob: MaterialKnobInfo) -> Double {
         guard let value else { return 1 }
-        return value > (knob.min + knob.max) / 2 ? 1 : 0
+        return value > knob.min ? 1 : 0
     }
 
     /// `cartoon_material` -> `cartoon`, `stick_material` -> `stick`.
@@ -4099,8 +4101,7 @@ private struct MaterialSection: View {
                             .frame(width: 78, alignment: .leading)
                         if k.toggle {
                             // On/off (#590): `max` on, `min` off. A value set
-                            // in between from the command line reads as on
-                            // past the midpoint.
+                            // in between from the command line reads as on.
                             ToggleSetting(value: CustomMaterial.toggleValue(
                                               custom?.knobs[k.suffix], k),
                                           onToggle: { setKnob(k.suffix, $0 ? k.max : k.min) })

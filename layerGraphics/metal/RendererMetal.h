@@ -526,8 +526,8 @@ private:
   bool _oitHasContent = false;  // true if any transparent fragments drew
   bool _oitHasRefraction = false;  // a refracting glass draw wrote _oitRefract
   // _oitRefract exists and the OIT pipelines declare it. Off until the first
-  // clear or frosted glass rep is set up (enableOitRefraction), then on for
-  // the session.
+  // glass-family rep (clear, frosted or jelly) is set up with its Distortion
+  // knob on (enableOitRefraction), then on for the session.
   bool _oitRefractEnabled = false;
   // Glass asked for it inside a peeled object's OIT pass, which cannot be
   // reopened (its depth is not stored); the next pass start turns it on.

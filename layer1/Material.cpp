@@ -38,14 +38,18 @@ constexpr int kP_edge = 2;     /* procedural: grazing-angle darkening */
 constexpr int kP_sheen = 3;    /* procedural: velvet sheen (rubber) */
 constexpr int kP_vein = 4;     /* marble: vein contrast */
 constexpr int kP_sharp = 5;    /* marble: vein sharpness */
-/* Glass family. The slots are reused per family -- p[0] is grain for a
-   procedural material and absorption for a glass one -- which is why they are
-   named here rather than carried as one flat list. p[5] is NOT a table knob:
+/* Glass family. The slots are reused per family, and within it per material
+   -- p[0] is grain for a procedural material, absorption for jelly and
+   reflection for clear and frosted glass -- which is why they are named here
+   rather than carried as one flat list. p[5] is NOT a table knob:
    setRepMaterial overwrites it for the whole glass family with the frost tap
    count the current target can afford, so nothing put here would survive. */
 constexpr int kP_absorb = 0;   /* jelly: Beer-Lambert strength through the body */
 constexpr int kP_scatter = 1;  /* jelly: density of the scattered inner glow */
 constexpr int kP_wet = 2;      /* jelly: sharp wet-skin highlight strength */
+constexpr int kP_jellyDistort = 3;  /* jelly: refraction amount (#590) */
+constexpr int kP_reflect = 0;  /* clear/frosted glass: surface reflection (#590) */
+constexpr int kP_distort = 1;  /* clear/frosted glass: refraction amount (#590) */
 
 /* Index is the material id; the order must match the enum in Material.h.
  *
@@ -554,18 +558,18 @@ const MaterialKnob kReflective[] = {
 // environment rim and the glints, mat_glass_shade), p[1] the refraction
 // (#588, bindRepMaterial). Both are 1 in the table and toggles in the
 // Inspector (#590). `rough` is the glints' and reflection's blur.
-const MaterialKnob kGlass[] = {{kKnob_p0, "Reflection", 0.0f, 1.0f, true},
-    {kKnob_p1, "Distortion", 0.0f, 1.0f, true},
+const MaterialKnob kGlass[] = {{kKnob_p0 + kP_reflect, "Reflection", 0.0f, 1.0f, true},
+    {kKnob_p0 + kP_distort, "Distortion", 0.0f, 1.0f, true},
     {kKnob_rough, "Roughness", 0.0f, 1.0f}};
-const MaterialKnob kFrostedGlass[] = {{kKnob_p0, "Reflection", 0.0f, 1.0f, true},
-    {kKnob_p1, "Distortion", 0.0f, 1.0f, true},
+const MaterialKnob kFrostedGlass[] = {{kKnob_p0 + kP_reflect, "Reflection", 0.0f, 1.0f, true},
+    {kKnob_p0 + kP_distort, "Distortion", 0.0f, 1.0f, true},
     {kKnob_rough, "Frost", 0.0f, 1.0f}};
 // Jelly's p[3] scales its refraction (#590); p[0..2] are its body.
 const MaterialKnob kJelly[] = {{kKnob_rough, "Skin reflection blur", 0.0f, 1.0f},
     {kKnob_p0, "Absorption", 0.0f, 6.0f},
     {kKnob_p1, "Inner glow", 0.0f, 1.0f},
     {kKnob_p2, "Wet highlight", 0.0f, 3.0f},
-    {kKnob_p3, "Distortion", 0.0f, 1.0f, true}};
+    {kKnob_p0 + kP_jellyDistort, "Distortion", 0.0f, 1.0f, true}};
 const MaterialKnob kMatte[] = {{kKnob_p0, "Grain", 0.0f, 0.5f},
     {kKnob_p1, "Grain frequency", 0.0f, 40.0f}};
 const MaterialKnob kClay[] = {{kKnob_p0, "Grain", 0.0f, 0.5f},
