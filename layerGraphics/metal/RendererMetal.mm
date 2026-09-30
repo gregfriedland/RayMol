@@ -6429,9 +6429,10 @@ static float3 mat_glass_shade(float3 base, float3 N, float3 V, float rough,
 constant float kMatGlassIor = 1.33;
 constant float kMatGlassRefractStrength = 0.2;
 constant float kOitRefractFar = 60000.0;   // RendererMetal::kOitRefractFar
-// Called from every lit library: the VBO and cylinder ones for the whole
-// glass family, the sphere one for jelly (clear and frosted glass draw
-// `default` on spheres).
+// Called from every lit library, for the whole glass family. The sphere rep
+// never draws clear or frosted glass (they degrade to `default` there), but
+// sphere impostors other reps emit -- cartoon ring spheres, surface dots --
+// can, and refract like the rest.
 static float4 mat_glass_refraction(float3 N, float3 posEye, float refrPx,
     int refrOrtho) {
   if (refrPx <= 0.0)
@@ -8852,9 +8853,10 @@ fragment SphereOITOut sphere_impostor_fragment_oit(SphereVOut in [[stage_in]],
   float3 rgb; float a; float depth;
   float4 refr = float4(0.0, 0.0, 0.0, kOitRefractFar);
   if (kMatGlass) {
-    // On spheres the glass family is jelly alone (clear and frosted glass
-    // draw `default` there), and jelly refracts (#590): sphere_shade_material,
-    // unrolled for the hit point and normal.
+    // The glass family on sphere impostors: jelly spheres (#590), and the
+    // clear or frosted glass of spheres another rep emits (cartoon rings,
+    // surface dots; the sphere rep itself degrades those to `default`). All
+    // refract: sphere_shade_material, unrolled for the hit point and normal.
     float3 n = float3(0.0), pt = float3(0.0);
     float intensity = 0.0, specular = 0.0;
     bool lit = true;

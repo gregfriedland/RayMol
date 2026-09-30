@@ -141,7 +141,7 @@ def _custom_prefix(rep_name):
 
 
 def _custom_state(rep_name, obj, explicit):
-    """What the Inspector's Custom sliders need for one rep (#569):
+    """What the Inspector's Custom controls need for one rep (#569):
     {'drawn': the material id the layer DRAWS with, 'knobs': {suffix: value
     the draw uses}, 'custom': [overridden suffixes that material has],
     'set': [every override the object carries for the layer], 'follows':

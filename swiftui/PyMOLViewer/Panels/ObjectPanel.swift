@@ -80,7 +80,8 @@ struct RepState: Equatable {
 }
 
 /// One knob a material has (#568): the override setting's suffix, what it does,
-/// and a slider range. From `_cmd.get_material_knobs` via one `MATKNOBS:` line per material.
+/// and its range: a slider's, or a toggle's off and on values (#590). From
+/// `_cmd.get_material_knobs` via one `MATKNOBS:` line per material.
 struct MaterialKnobInfo: Equatable {
     let suffix: String
     let label: String
@@ -4042,8 +4043,9 @@ private struct ObjectMaterialRows: View {
 ///
 /// The menu offers the materials, then **Custom…** when the current material
 /// has knobs. Custom keeps the current material as the base and shows its
-/// knobs as sliders at the values the draw uses; moving one writes that
-/// layer's override (#568), and the menu then reads "Custom (base)". Picking a
+/// knobs at the values the draw uses, as sliders or on/off toggles (#590);
+/// changing one writes that layer's override (#568), and the menu then reads
+/// "Custom (base)". Picking a
 /// named material clears the overrides; Inherit clears both.
 private struct MaterialSection: View {
     let objName: String
@@ -4051,7 +4053,7 @@ private struct MaterialSection: View {
     let value: Double
     let custom: MaterialCustomState?
     @EnvironmentObject var engine: PyMOLEngine
-    /// Custom chosen but nothing moved yet: the sliders show, nothing is
+    /// Custom chosen but nothing changed yet: the controls show, nothing is
     /// written. Overrides in the payload keep the section open by themselves.
     @State private var customOpen = false
     /// Knobs this view has written since the last pick, Inherit or Reset.
@@ -4298,7 +4300,7 @@ private struct RepPropertyGrid: View {
             }
             ForEach(spec.properties) { p in
                 if p.kind == .menu && p.optionSource == .materials {
-                    // The material row owns its Custom sliders (#569).
+                    // The material row owns its Custom controls (#569).
                     MaterialSection(objName: objName, prop: p,
                                     value: state.values[p.setting] ?? 0,
                                     custom: state.material)

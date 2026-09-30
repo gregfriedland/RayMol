@@ -540,13 +540,14 @@ const CustomOverrideSet* MaterialCustomOverridesForRep(int repType)
 }
 
 /* Which knobs each material HAS: the slots its shader actually reads, with
-   the name and a sensible slider range. One table, because the meaning of a
+   the name and a sensible range. One table, because the meaning of a
    p[] slot differs per material, not per family -- marble reads p[1] as vein
    scale and never reads p[0], rubber reads p[2] as its highlight where clay
    reads it as grazing darkening, and matte reads only p[0..1]. An override
    of a slot that is not listed for the layer's material is ignored, so the
    settings cannot promise a change the shader does not make. Ranges are for
-   the Inspector's sliders; the core clamps nothing. Checked against
+   the Inspector's sliders (a toggle writes its min or max); the core clamps
+   nothing. Checked against
    RendererMetal.mm: mat_body_shade / mat_shade_procedural (matte, clay,
    rubber), mat_marble_albedo, mat_jelly_shade, mat_glass_shade and the
    frosted tap spread, mat_env_specular (reflective). */
