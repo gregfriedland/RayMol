@@ -1,5 +1,30 @@
 [
   {
+    "version": "1.12.0",
+    "pages": [
+      {
+        "title": "Materials",
+        "body": "RayMol can now mimic real surfaces: polished gold and chrome that reflect their surroundings, veined marble, clay, rubber and glass. Give each cartoon, surface, stick or sphere layer its own material in the Inspector.",
+        "videoName": "whatsnew-1120-materials"
+      },
+      {
+        "title": "One-click Looks",
+        "body": "Gold, Copper, Bronze, Steel, Chrome, Marble or Clay in a single click. A Look sets a layer's material and colour together, ready to fine-tune from there.",
+        "imageName": "whatsnew-1120-looks"
+      },
+      {
+        "title": "Side chains match their cartoon",
+        "body": "Show side chains on a cartoon and they take on its material automatically, so a gold backbone gets gold side chains with no extra setup.",
+        "imageName": "whatsnew-1120-sidechains"
+      },
+      {
+        "title": "Glass that bends light",
+        "body": "Glass, frosted glass and jelly refract what's behind them through the shape of the surface, so a ligand seen through a glass surface really looks like it's inside.",
+        "imageName": "whatsnew-1120-glass"
+      }
+    ]
+  },
+  {
     "version": "1.11.0",
     "pages": [
       {
