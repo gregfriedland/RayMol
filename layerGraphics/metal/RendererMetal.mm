@@ -6390,6 +6390,9 @@ static float3 mat_glass_shade(float3 base, float3 N, float3 V, float rough,
   // 2, so faint glint tails come out about twice as bright as added raw, and
   // frosted glass's broad glints (peak 0.52 * 2.1 = 1.09) top out near 0.89
   // instead of clipping to white -- a softer bloom, which is the point.
+  // (Those figures are the curve itself, before the scale below: at the
+  // default Reflection the peaks land near 0.49 for clear glass and 0.45 for
+  // frosted.)
   //
   // Both are then scaled by kMatGlassReflection and by `reflection`, the
   // material's Reflection knob (p[0], 1 = on, 0 = off; #590).
@@ -6475,8 +6478,10 @@ __attribute__((unused)) static float4 mat_glass_cover(float3 body, float3 hi, fl
   // The soft knee (#494) is for the BODY only. It exists to keep a coloured
   // highlight from clipping toward white and taking the hue with it; a glint
   // on glass IS white, and the knee would squeeze it toward the 0.85 light
-  // background, which is where clear glass most needs one: a unit glint lands
-  // at ~0.83, and the knee only approaches 1.0 asymptotically.
+  // background, which is where clear glass most needs one: under the knee a
+  // unit glint would land at ~0.83, and it only approaches 1.0 asymptotically
+  // (since #590 glass's glints peak near 0.49, so the knee would dim them
+  // further still).
   float3 rgb = (mat_soft_knee(body) * a + hi) / max(cover, 1e-4);
   return float4(saturate(rgb), cover);
 }
@@ -8731,7 +8736,8 @@ vertex SphereVOut sphere_impostor_vertex(SphereIn in [[stage_in]],
 struct SphereOITOut {
   float4 accum  [[color(0)]];
   float  reveal [[color(1)]];
-  float4 refr   [[color(2)]];   // jelly refraction (#590); masked off elsewhere
+  float4 refr   [[color(2)]];   // glass-family refraction (#588, #590): jelly spheres and the clear or
+                                // frosted glass spheres other reps emit; masked off elsewhere
   float  depth  [[depth(any)]];
 };
 static float sph_oit_weight(float a, float z) {
