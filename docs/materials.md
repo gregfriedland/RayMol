@@ -314,7 +314,8 @@ deeper inside moves. What is bent is the shaded image of the opaque scene
 structure is lit the same through the glass as beside it.
 
 - **Only opaque content is bent.** Another transparent object seen through the
-  glass is not. Content in front of the glass is never pulled into it.
+  glass is not. Content in front of the glass is not pulled into it,
+  apart from a fringe about a pixel wide along its edges.
 - **Jelly does not refract**; it is a body you look into, not through. Glass
   on spheres draws `default`, so it does not refract either.
 - **The strength is fixed**, and deliberately below what a real refractive

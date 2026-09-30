@@ -517,6 +517,13 @@ private:
   bool _oitActive = false;      // true while the transparent pass is rendering
   bool _oitHasContent = false;  // true if any transparent fragments drew
   bool _oitHasRefraction = false;  // a refracting glass draw wrote _oitRefract
+  // A refracting glass rep has been set up this session; the next
+  // ensurePostTargets creates _oitRefract and turns _oitRefractEnabled on.
+  bool _oitRefractWanted = false;
+  bool _oitRefractEnabled = false;
+  // Release and rebuild every pipeline whose shape depends on the render
+  // targets: the sample count, or whether the OIT passes carry _oitRefract.
+  void rebuildDrawPipelines();
 
   // --- Per-object transparent depth peel (#488) ---
   // _peelDepth is a single-sample copy of the opaque depth that ONE object's
