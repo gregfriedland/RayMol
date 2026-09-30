@@ -491,6 +491,7 @@ RendererMetal::~RendererMetal()
   [_batchPipeline release];
   [_oitResolvePipeline release];
   [_oitResolveRefractPipeline release];
+  [_exportAlphaRefractPipeline release];
   [_vboShadowPipelineUByte release];  [_vboShadowPipelineFloat release];
   [_vboPeelPipelineUByte release];    [_vboPeelPipelineFloat release];
   [_sphereShadowPipeline release];    [_spherePeelPipeline release];
@@ -753,14 +754,54 @@ void RendererMetal::setRepMaterial(const MaterialParams& params)
   // viewport, and an export can afford what an interactive orbit cannot.
   if (_repMatParams.family == cMaterialFamily_glass) {
     _repMatParams.p[5] = _offscreen ? kFrostTaps : kFrostTapsLive;
-    // Clear and frosted glass refract: ask for the target (#588).
-    if (_repMatParams.mode != cMaterial_jelly)
-      _oitRefractWanted = true;
+    // Clear and frosted glass refract (#588): set up the target the first
+    // time, before this rep draws.
+    if (_repMatParams.mode != cMaterial_jelly && !_oitRefractEnabled)
+      enableOitRefraction();
   }
   // The ray tracer's per-occurrence table reads the same three fields.
   _repMat[0] = _repMatParams.reflect;
   _repMat[1] = _repMatParams.tint;
   _repMat[2] = _repMatParams.rough;
+}
+
+void RendererMetal::enableOitRefraction()
+{
+  // Glass refraction's target (#588) is created the first time a clear or
+  // frosted glass rep is set up, not with the other OIT targets: it is a
+  // full-resolution 8 B/px texture that a session without glass would carry,
+  // and clear every transparent frame, for nothing.
+  if (_oitRefractEnabled || !_device || !_oitAccum || !_oitPassDesc ||
+      !_oitPeelPassDesc)
+    return;
+  // A peeled object's OIT pass cannot be reopened: its depth attachment is not
+  // stored. beginTransparentOIT finishes the job when the next pass opens.
+  if (_oitActive && _oitPeelTest) {
+    _oitRefractPending = true;
+    return;
+  }
+  _oitRefractPending = false;
+  MTLTextureDescriptor* ad = [MTLTextureDescriptor
+      texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
+                                   width:_oitAccum.width
+                                  height:_oitAccum.height
+                               mipmapped:NO];
+  ad.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+  ad.storageMode = MTLStorageModePrivate;
+  _oitRefract = [_device newTextureWithDescriptor:ad];
+  if (!_oitRefract) return;
+  _oitRefractEnabled = true;
+  _oitPassDesc.colorAttachments[2].texture = _oitRefract;
+  _oitPeelPassDesc.colorAttachments[2].texture = _oitRefract;
+  // Every OIT pipeline must now declare the attachment. The pipelines already
+  // encoded this frame are retained by the command buffer, and every draw
+  // picks its pipeline after its material is set, so this rep and all that
+  // follow draw with the rebuilt ones.
+  rebuildDrawPipelines();
+  // The shared OIT pass stores all its targets, so it can be ended here and
+  // reopened carrying the new one; the pass picks up where it left off.
+  if (_oitActive)
+    beginTransparentOIT(false);
 }
 
 void RendererMetal::bindRepMaterial()
@@ -927,6 +968,7 @@ void RendererMetal::beginFrame()
   // grows without bound, and the composite turns the whole frame black after a
   // few frames. Which is exactly what it did.
   _oitCleared = false;
+  _oitRefractCleared = false;
   // Start this frame's geometry record. Only the LIST of contributing cache
   // entries is re-accumulated during the opaque pass; the geometry itself stays
   // in _rtGeomCache and is touched again only when that list changes.
@@ -1337,12 +1379,54 @@ struct ExportAlphaU {
   float projA, projB, invW, invH;
   float focusDist, focusRange, maxRadiusPx, dofOn;
 };
-fragment float4 post_export_alpha(PostVOut in [[stage_in]],
-    texture2d<float> src [[texture(0)]],
-    depth2d<float> depthTex [[texture(1)]],
-    texture2d<float> revealTex [[texture(2)]], sampler s [[sampler(0)]],
-    constant ExportAlphaU& u [[buffer(0)]]) {
-  float d = depthTex.sample(s, in.uv);
+
+// Glass refraction (#588): where the opaque image behind glass is seen. See
+// mat_glass_refraction for what refrTex holds. Shared by oit_resolve_refract,
+// which fetches the colour there, and post_export_alpha_refract, whose matte
+// must test the same pixel or it would not line up with the bent image.
+struct RefractU {
+  float projA, projB, ortho;  // linear eye depth, as post_linear_depth
+  float maxPx;                // longest displacement, pixels
+  float bgGap;                // eye units assumed behind glass over background
+  float maxGap;               // longest depth gap that still adds displacement
+  float _pad0, _pad1;
+};
+static float2 refract_pick_uv(float2 uv, texture2d<float> refrTex,
+    depth2d<float> depthTex, sampler s, constant RefractU& u) {
+  float4 r = refrTex.sample(s, uv);
+  if (r.b <= 0.5)                        // no refracting layer here
+    return uv;
+  float glassZ = r.a;                    // the nearest layer's eye distance
+  float d = depthTex.sample(s, uv);
+  // Over the background there is no depth to measure; bgGap stands in, so
+  // the background is displaced like content a fixed distance behind.
+  float z = (d < 0.99995) ? post_linear_depth(d, u.projA, u.projB, u.ortho)
+                          : glassZ + u.bgGap;
+  float gap = clamp(z - glassZ, 0.0, u.maxGap);
+  // Averaged over layers: two overlapping glass objects bend the view like
+  // one, not twice. Perspective foreshortens the lateral travel by depth.
+  float2 offPx = (r.rg / r.b) * gap / ((u.ortho > 0.5) ? 1.0 : max(z, 1e-3));
+  float len = length(offPx);
+  if (len > u.maxPx) offPx *= u.maxPx / len;
+  // Eye +y is up, texture v is down.
+  float2 size = float2(refrTex.get_width(), refrTex.get_height());
+  float2 uv2 = clamp(uv + float2(offPx.x, -offPx.y) / size,
+                     float2(0.0), float2(1.0));
+  // Only content BEHIND the glass may be seen through it: a displaced sample
+  // that lands on geometry in front of the glass (an opaque stick crossing
+  // it) keeps the straight-through view.
+  float d2 = depthTex.sample(s, uv2);
+  float z2 = (d2 < 0.99995) ? post_linear_depth(d2, u.projA, u.projB, u.ortho)
+                            : 1e30;
+  return (z2 >= glassZ) ? uv2 : uv;
+}
+
+// dUV is where the opaque depth is tested: in.uv, or with glass refraction
+// the pixel the bent view landed on.
+static float4 export_alpha(PostVOut in, float2 dUV, texture2d<float> src,
+    depth2d<float> depthTex, texture2d<float> revealTex, sampler s,
+    constant ExportAlphaU& u) {
+  float d = depthTex.sample(s, dUV);
   // Opaque geometry (depth < far) stays fully opaque; the far-plane background is
   // cut out. BUT transparent reps (the molecular surface) render via weighted-
   // blended OIT and do NOT write depth, so a depth-only cutout erases them from
@@ -1385,6 +1469,23 @@ fragment float4 post_export_alpha(PostVOut in [[stage_in]],
   }
   return float4(src.sample(s, in.uv).rgb, a);
 }
+fragment float4 post_export_alpha(PostVOut in [[stage_in]],
+    texture2d<float> src [[texture(0)]],
+    depth2d<float> depthTex [[texture(1)]],
+    texture2d<float> revealTex [[texture(2)]], sampler s [[sampler(0)]],
+    constant ExportAlphaU& u [[buffer(0)]]) {
+  return export_alpha(in, in.uv, src, depthTex, revealTex, s, u);
+}
+fragment float4 post_export_alpha_refract(PostVOut in [[stage_in]],
+    texture2d<float> src [[texture(0)]],
+    depth2d<float> depthTex [[texture(1)]],
+    texture2d<float> revealTex [[texture(2)]],
+    texture2d<float> refrTex [[texture(3)]], sampler s [[sampler(0)]],
+    constant ExportAlphaU& u [[buffer(0)]],
+    constant RefractU& ru [[buffer(1)]]) {
+  return export_alpha(in, refract_pick_uv(in.uv, refrTex, depthTex, s, ru),
+                      src, depthTex, revealTex, s, u);
+}
 
 // Weighted-blended OIT resolve: composite accumulated transparent color over
 // the (already post-processed) opaque color. reveal = Π(1-α) = transmittance.
@@ -1402,19 +1503,12 @@ fragment float4 oit_resolve(PostVOut in [[stage_in]],
 }
 
 // oit_resolve for a frame in which refracting glass drew (#588): the opaque
-// image behind the glass is sampled where the bent view ray lands instead of
-// straight through. See mat_glass_refraction for what refrTex holds.
+// image behind the glass is sampled where the bent view ray lands
+// (refract_pick_uv) instead of straight through.
 //
 // The opaque colour is the post-processed one (SSAO, fog, and with Metal ray
 // tracing the traced shadows and AO), so what is seen through the glass is
 // shaded exactly as it is outside it.
-struct RefractU {
-  float projA, projB, ortho;  // linear eye depth, as post_linear_depth
-  float maxPx;                // longest displacement, pixels
-  float bgGap;                // eye units assumed behind glass over background
-  float maxGap;               // longest depth gap that still adds displacement
-  float _pad0, _pad1;
-};
 fragment float4 oit_resolve_refract(PostVOut in [[stage_in]],
     texture2d<float> opaqueTex [[texture(0)]],
     texture2d<float> accumTex [[texture(1)]],
@@ -1423,33 +1517,7 @@ fragment float4 oit_resolve_refract(PostVOut in [[stage_in]],
     texture2d<float> refrTex [[texture(4)]],
     sampler s [[sampler(0)]],
     constant RefractU& u [[buffer(0)]]) {
-  float2 uv = in.uv;
-  float4 r = refrTex.sample(s, in.uv);
-  if (r.b > 0.5) {                       // at least one refracting layer
-    float glassZ = r.a;                  // the nearest one's eye distance
-    float d = depthTex.sample(s, in.uv);
-    // Over the background there is no depth to measure; bgGap stands in, so
-    // the background is displaced like content a fixed distance behind.
-    float z = (d < 0.99995) ? post_linear_depth(d, u.projA, u.projB, u.ortho)
-                            : glassZ + u.bgGap;
-    float gap = clamp(z - glassZ, 0.0, u.maxGap);
-    // Averaged over layers: two overlapping glass objects bend the view like
-    // one, not twice. Perspective foreshortens the lateral travel by depth.
-    float2 offPx = (r.rg / r.b) * gap / ((u.ortho > 0.5) ? 1.0 : max(z, 1e-3));
-    float len = length(offPx);
-    if (len > u.maxPx) offPx *= u.maxPx / len;
-    // Eye +y is up, texture v is down.
-    float2 size = float2(opaqueTex.get_width(), opaqueTex.get_height());
-    float2 uv2 = clamp(in.uv + float2(offPx.x, -offPx.y) / size,
-                       float2(0.0), float2(1.0));
-    // Only content BEHIND the glass may be seen through it: a displaced sample
-    // that lands on geometry in front of the glass (an opaque stick crossing
-    // it) keeps the straight-through view.
-    float d2 = depthTex.sample(s, uv2);
-    float z2 = (d2 < 0.99995) ? post_linear_depth(d2, u.projA, u.projB, u.ortho)
-                              : 1e30;
-    if (z2 >= glassZ) uv = uv2;
-  }
+  float2 uv = refract_pick_uv(in.uv, refrTex, depthTex, s, u);
   float3 opaque = opaqueTex.sample(s, uv).rgb;
   float reveal = revealTex.sample(s, in.uv).r;
   float4 accum = accumTex.sample(s, in.uv);
@@ -1887,20 +1955,6 @@ void RendererMetal::ensurePostTargets(NSUInteger w, NSUInteger h)
 {
   if (w == 0 || h == 0) return;
   buildPostPipelines();
-  // Glass refraction's target is created the first time a refracting glass
-  // rep is set up (#588), not up front: it is a full-resolution 8 B/px
-  // texture, and a session without glass would carry it for nothing. The OIT
-  // pipelines declare it only once it exists, so they are rebuilt, and the
-  // targets are forced to rebuild with it. Once on, it stays on. The frame
-  // that first set glass up draws it unbent; needsAnotherFrame() makes sure a
-  // next one is drawn (a redisplay in the live view, a warm-up frame in an
-  // export), and that one bends it.
-  if (_oitRefractWanted && !_oitRefractEnabled) {
-    _oitRefractEnabled = true;
-    rebuildDrawPipelines();
-    _rtW = 0;
-    _rtH = 0;
-  }
   if (_sceneColor && _rtW == w && _rtH == h) return;
   _rtW = w; _rtH = h;
 
@@ -2027,7 +2081,7 @@ void RendererMetal::ensurePostTargets(NSUInteger w, NSUInteger h)
   _oitReveal = [_device newTextureWithDescriptor:rd];
   // Same format as the accumulation target (#588); cleared to "no refracting
   // layer": zero slope, zero count, and a far eye distance for the min. Only
-  // once glass has asked for it (see the top of this function).
+  // once glass has asked for it (enableOitRefraction); a resize keeps it.
   _oitRefract = _oitRefractEnabled ? [_device newTextureWithDescriptor:ad] : nil;
 
   if (!_oitPassDesc)
@@ -2175,6 +2229,7 @@ void RendererMetal::buildPostPipelines()
   _blitPipeline = mkpipe(@"post_blit");
   _tonemapPipeline = mkpipe(@"post_tonemap");
   _exportAlphaPipeline = mkpipe(@"post_export_alpha");
+  _exportAlphaRefractPipeline = mkpipe(@"post_export_alpha_refract");
   _fxaaPipeline = mkpipe(@"post_fxaa");
   _ssaoPipeline = mkpipe(@"post_ssao_fog");
   _oitResolvePipeline = mkpipe(@"oit_resolve");
@@ -3929,6 +3984,12 @@ void RendererMetal::buildRTPipelines(bool transparent,
 static const float kRefractMaxFrac = 0.02f;
 static const float kRefractBgGap = 8.0f;
 static const float kRefractMaxGap = 16.0f;
+
+RendererMetal::RefractParams RendererMetal::refractParams() const
+{
+  return {_projA, _projB, _projOrtho, (float)_rtH * kRefractMaxFrac,
+          kRefractBgGap, kRefractMaxGap, 0.0f, 0.0f};
+}
 static const float kSSAOIntensity = 0.8f;
 static const float kSSAORadiusFrac = 0.015f;   // ~1.5% of height
 
@@ -4267,10 +4328,7 @@ void RendererMetal::runPostChain()
     [e2 setFragmentTexture:_oitReveal atIndex:2];
     [e2 setFragmentSamplerState:_postSampler atIndex:0];
     if (refract) {
-      struct {
-        float projA, projB, ortho, maxPx, bgGap, maxGap, _pad0, _pad1;
-      } ru = {_projA, _projB, _projOrtho, (float)_rtH * kRefractMaxFrac,
-              kRefractBgGap, kRefractMaxGap, 0.0f, 0.0f};
+      const RefractParams ru = refractParams();
       [e2 setFragmentTexture:_sceneDepth atIndex:3];
       [e2 setFragmentTexture:_oitRefract atIndex:4];
       [e2 setFragmentBytes:&ru length:sizeof(ru) atIndex:0];
@@ -4528,10 +4586,20 @@ void RendererMetal::runPostChain()
     pd.colorAttachments[0].storeAction = MTLStoreActionStore;
     id<MTLRenderCommandEncoder> ea =
         [_cmdBuffer renderCommandEncoderWithDescriptor:pd];
-    [ea setRenderPipelineState:_exportAlphaPipeline];
+    // With glass refraction the matte tests the pixel the bent view landed on,
+    // as the resolve fetched the colour from (#588), or the two disagree.
+    const bool refractMatte = _oitHasRefraction && _oitRefract &&
+                              _exportAlphaRefractPipeline;
+    [ea setRenderPipelineState:refractMatte ? _exportAlphaRefractPipeline
+                                            : _exportAlphaPipeline];
     [ea setFragmentTexture:sceneSrc atIndex:0];
     [ea setFragmentTexture:_sceneDepth atIndex:1];
     [ea setFragmentTexture:_oitReveal atIndex:2];  // recover transparent (surface) coverage
+    if (refractMatte) {
+      const RefractParams ru = refractParams();
+      [ea setFragmentTexture:_oitRefract atIndex:3];
+      [ea setFragmentBytes:&ru length:sizeof(ru) atIndex:1];
+    }
     [ea setFragmentSamplerState:_postSampler atIndex:0];
     // DOF params so the matte keeps out-of-focus bokeh halos semi-transparent
     // (must match the DOF pass's focus/range/aperture, incl. pixelRadiusScale).
@@ -4867,6 +4935,11 @@ void RendererMetal::beginTransparentOIT(bool peel)
     return;
   if (peel && (!peelSupported() || !_peelDepth)) peel = false;
   if (_encoder) { [_encoder endEncoding]; _encoder = nil; }
+  // Nothing is open now, so a deferred refraction target can join (#588).
+  if (_oitRefractPending) {
+    _oitActive = false;
+    enableOitRefraction();
+  }
 
   MTLRenderPassDescriptor* desc = peel ? _oitPeelPassDesc : _oitPassDesc;
   // Only the frame's FIRST transparent encoder clears the accumulation and
@@ -4875,7 +4948,11 @@ void RendererMetal::beginTransparentOIT(bool peel)
   MTLLoadAction load = _oitCleared ? MTLLoadActionLoad : MTLLoadActionClear;
   desc.colorAttachments[0].loadAction = load;
   desc.colorAttachments[1].loadAction = load;
-  desc.colorAttachments[2].loadAction = load;
+  // The refraction target keeps its own flag: it can join mid-frame, after
+  // encoders that did not carry it.
+  desc.colorAttachments[2].loadAction =
+      _oitRefractCleared ? MTLLoadActionLoad : MTLLoadActionClear;
+  if (_oitRefract) _oitRefractCleared = true;
 
   _passDesc = desc;
   _encoder = [_cmdBuffer renderCommandEncoderWithDescriptor:desc];
@@ -6343,9 +6420,12 @@ __attribute__((unused)) static float4 mat_glass_refraction(float3 N,
   if (dot(N, I) > 0.0) N = -N;
   float3 T = refract(I, N, 1.0 / kMatGlassIor);
   // The bend is the bent ray's slope MINUS the straight ray's, so glass that
-  // faces its view ray head-on bends nothing wherever it is in the image. At
-  // IOR 1.33 -T.z never drops below about 0.75, so the floors only guard a
-  // future index.
+  // faces its view ray head-on bends nothing wherever it is in the image. The
+  // floors keep a near-grazing ray from a runaway slope: at IOR 1.33 -T.z
+  // stays above about 0.75 in an orthographic view, but in perspective the
+  // view ray is already off axis, and at a wide field_of_view a grazing wall
+  // in a corner reaches the 0.25 floor. The resolve's displacement cap
+  // bounds the result either way.
   float2 slope = T.xy / max(-T.z, 0.25) - I.xy / max(-I.z, 0.25);
   return float4(slope * (refrPx * kMatGlassRefractStrength), 1.0,
                 -posEye.z);

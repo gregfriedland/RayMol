@@ -696,13 +696,7 @@ void PyMOLBridge_RenderHiResPNG(PyMOLHandle h, const char* path,
     // grid_mode the per-cell caster masks and cell rects (#478) must come from a
     // frame with THIS export's aspect. One extra offscreen frame per RT export is
     // cheap next to the trace itself, and makes the export WYSIWYG for RT.
-    //
-    // Glass refraction (#588) needs the same: its target is created at the
-    // start of the frame AFTER the first one that draws glass, so until this
-    // session has refracted once, a warm-up frame is what lets glass in the
-    // export bend. A session with no glass pays that frame on every non-RT
-    // export, as RT exports already do.
-    if (desiredRT == 1 || !renderer->refractionReady())
+    if (desiredRT == 1)
         renderOneOffscreen(h, G, renderer, width, height, std::string());
 
     renderOneOffscreen(h, G, renderer, width, height, std::string(path));

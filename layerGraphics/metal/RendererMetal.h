@@ -147,11 +147,6 @@ public:
   // Render readiness
   bool isRenderReady() const override;
   bool hasActiveEncoder() const override;
-  bool needsAnotherFrame() const override
-  {
-    return _oitRefractWanted && !_oitRefractEnabled;
-  }
-  bool refractionReady() const override { return _oitRefractEnabled; }
 
   // Queries
   void getIntegerv(int pname, int* params) override;
@@ -482,6 +477,14 @@ private:
   // The resolve for a frame in which refracting glass drew (#588). Frames
   // without it keep _oitResolvePipeline, so they render exactly as before.
   id<MTLRenderPipelineState> _oitResolveRefractPipeline = nil;
+  // The transparent-background export matte for such a frame: it tests the
+  // pixel the bent view landed on, as the resolve does.
+  id<MTLRenderPipelineState> _exportAlphaRefractPipeline = nil;
+  // The resolve's refraction parameters; matches the MSL RefractU.
+  struct RefractParams {
+    float projA, projB, ortho, maxPx, bgGap, maxGap, _pad0, _pad1;
+  };
+  RefractParams refractParams() const;
   // Bind this rep's MaterialU for the draw about to be issued, and note when
   // the draw is refracting glass inside the transparent pass.
   void bindRepMaterial();
@@ -522,10 +525,19 @@ private:
   bool _oitActive = false;      // true while the transparent pass is rendering
   bool _oitHasContent = false;  // true if any transparent fragments drew
   bool _oitHasRefraction = false;  // a refracting glass draw wrote _oitRefract
-  // A refracting glass rep has been set up this session; the next
-  // ensurePostTargets creates _oitRefract and turns _oitRefractEnabled on.
-  bool _oitRefractWanted = false;
+  // _oitRefract exists and the OIT pipelines declare it. Off until the first
+  // clear or frosted glass rep is set up (enableOitRefraction), then on for
+  // the session.
   bool _oitRefractEnabled = false;
+  // Glass asked for it inside a peeled object's OIT pass, which cannot be
+  // reopened (its depth is not stored); the next pass start turns it on.
+  bool _oitRefractPending = false;
+  // The frame's first encoder carrying _oitRefract cleared it.
+  bool _oitRefractCleared = false;
+  // Create _oitRefract, rebuild the pipelines to declare it, and reopen an
+  // open OIT pass so it carries it -- mid-frame, the first time glass is set
+  // up, so that frame already bends.
+  void enableOitRefraction();
   // Release and rebuild every pipeline whose shape depends on the render
   // targets: the sample count, or whether the OIT passes carry _oitRefract.
   void rebuildDrawPipelines();
