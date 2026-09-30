@@ -147,6 +147,11 @@ public:
   // Render readiness
   bool isRenderReady() const override;
   bool hasActiveEncoder() const override;
+  bool needsAnotherFrame() const override
+  {
+    return _oitRefractWanted && !_oitRefractEnabled;
+  }
+  bool refractionReady() const override { return _oitRefractEnabled; }
 
   // Queries
   void getIntegerv(int pname, int* params) override;

@@ -2565,6 +2565,12 @@ void SceneRenderMetal(PyMOLGlobals* G)
   // SceneRenderAll (which may have ended/restarted it).
   if (G->Renderer && G->Renderer->hasActiveEncoder())
     SceneRenderMetalSelections(G);
+
+  // This frame asked for something that only exists from the next frame on
+  // (glass refraction's target, #588). The live view renders on demand, so
+  // request that frame, or a static scene would keep the unfinished one.
+  if (G->Renderer && G->Renderer->needsAnotherFrame())
+    OrthoDirty(G);
 }
 
 // Draw a batch of selection-indicator points (overlay, no depth test) at the

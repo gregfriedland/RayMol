@@ -1892,7 +1892,9 @@ void RendererMetal::ensurePostTargets(NSUInteger w, NSUInteger h)
   // texture, and a session without glass would carry it for nothing. The OIT
   // pipelines declare it only once it exists, so they are rebuilt, and the
   // targets are forced to rebuild with it. Once on, it stays on. The frame
-  // that first set glass up draws it unbent; the next one bends it.
+  // that first set glass up draws it unbent; needsAnotherFrame() makes sure a
+  // next one is drawn (a redisplay in the live view, a warm-up frame in an
+  // export), and that one bends it.
   if (_oitRefractWanted && !_oitRefractEnabled) {
     _oitRefractEnabled = true;
     rebuildDrawPipelines();

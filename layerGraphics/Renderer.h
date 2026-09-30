@@ -85,6 +85,15 @@ public:
   // drew it, so cell A's rays never hit cell B's objects (#478). Default: no-op
   // (the GL path only ever filters draw calls per cell).
   virtual void setGridSlot(int slot) {}
+  // True when the frame just drawn found something it can only render
+  // correctly from the NEXT frame on (the Metal renderer's glass refraction
+  // target, created on first use, #588). SceneRenderMetal then requests a
+  // redisplay, and an export renders a warm-up frame, so an on-demand view or
+  // a one-frame export does not stop on the unfinished frame. Default: never.
+  virtual bool needsAnotherFrame() const { return false; }
+  // True once glass refraction is set up, so an export needs no warm-up frame
+  // for it. Default: nothing to set up.
+  virtual bool refractionReady() const { return true; }
   virtual void clear(bool color, bool depth, bool stencil) = 0;
   virtual void clearColor(float r, float g, float b, float a) = 0;
   virtual void scissor(int x, int y, int w, int h) = 0;
