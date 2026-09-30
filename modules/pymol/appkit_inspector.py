@@ -75,12 +75,14 @@ def material_names():
 
 
 def material_knobs(mid):
-    """Material `mid`'s Custom knobs (#569), [[suffix, label, min, max], ...]:
-    only the ones its shader reads, so the Custom sliders come from the core."""
+    """Material `mid`'s Custom knobs (#569), [[suffix, label, min, max,
+    control], ...]: only the ones its shader reads, so the Custom controls come
+    from the core. `control` is 'slider', or 'toggle' for an on/off knob
+    (min off, max on; #590)."""
     try:
         from pymol import _cmd
-        return [[str(k), str(l), float(lo), float(hi)]
-                for (k, l, lo, hi) in _cmd.get_material_knobs(int(mid))]
+        return [[str(k), str(l), float(lo), float(hi), str(c)]
+                for (k, l, lo, hi, c) in _cmd.get_material_knobs(int(mid))]
     except Exception:
         return []
 
@@ -139,7 +141,7 @@ def _custom_prefix(rep_name):
 
 
 def _custom_state(rep_name, obj, explicit):
-    """What the Inspector's Custom sliders need for one rep (#569):
+    """What the Inspector's Custom controls need for one rep (#569):
     {'drawn': the material id the layer DRAWS with, 'knobs': {suffix: value
     the draw uses}, 'custom': [overridden suffixes that material has],
     'set': [every override the object carries for the layer], 'follows':

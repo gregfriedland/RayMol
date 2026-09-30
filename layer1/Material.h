@@ -228,7 +228,13 @@ enum MaterialKnobSlot {
 struct MaterialKnob {
   int slot;            // MaterialKnobSlot
   const char* label;   // what it does, for the Inspector
-  float min, max;      // a sensible slider range (the core clamps nothing)
+  // A sensible slider range (the core clamps nothing); for a toggle, the off
+  // and on values the Inspector writes.
+  float min, max;
+  // Shown as an on/off switch (min off, max on) rather than a slider. The
+  // value is still an amount: the shader scales by it, so the command line
+  // can set anything between.
+  bool toggle = false;
 };
 
 /**

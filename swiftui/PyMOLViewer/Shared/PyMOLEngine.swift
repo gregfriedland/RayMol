@@ -3973,7 +3973,8 @@ final class PyMOLEngine: ObservableObject {
         DispatchQueue.main.async { self.materialKnobs[id] = knobs }
     }
 
-    /// `MATKNOBS:<id>:[[suffix, label, min, max], ...]` -> (id, knobs). One
+    /// `MATKNOBS:<id>:[[suffix, label, min, max, control], ...]` -> (id, knobs),
+    /// `control` being "slider" or "toggle" (#590; absent reads as a slider). One
     /// line per material: the whole table in one line is over PyMOL's ~1024-
     /// char feedback cap, and a split line would not parse.
     static func parseMaterialKnobs(_ line: String) -> (Int, [MaterialKnobInfo])? {
@@ -3988,7 +3989,8 @@ final class PyMOLEngine: ObservableObject {
             guard k.count >= 4, let s = k[0] as? String, let l = k[1] as? String,
                   let lo = (k[2] as? NSNumber)?.doubleValue,
                   let hi = (k[3] as? NSNumber)?.doubleValue, lo < hi else { return nil }
-            return MaterialKnobInfo(suffix: s, label: l, min: lo, max: hi)
+            let toggle = k.count >= 5 && (k[4] as? String) == "toggle"
+            return MaterialKnobInfo(suffix: s, label: l, min: lo, max: hi, toggle: toggle)
         }
         return (id, knobs)
     }

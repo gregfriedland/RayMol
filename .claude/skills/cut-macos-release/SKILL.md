@@ -205,4 +205,4 @@ gh pr merge chore/appcast-X.Y.Z -R javierbq/RayMol --merge
 
 Report: the release URL, that the DMG is notarized/stapled and stamped `X.Y.Z`/`N`, that the live feed serves it, that the Homebrew cask was bumped to a matching version + sha256, and the PR links. Installed apps will offer the update on their next check.
 
-**Other channels this skill does NOT cover:** the Mac App Store (a separate build + submission — use `cut-mas-release`) and iOS TestFlight (automatic via Xcode Cloud on master pushes — nothing to do, but confirm a new build appeared rather than assuming).
+**Other channels this skill does NOT cover:** the Mac App Store (a separate build + submission — use `cut-mas-release`), the iOS App Store (a hand-made archive of the same tag — use `cut-ios-release`, and compile iOS during this skill's Step 2 RC, since no CI does), and iOS TestFlight (automatic via Xcode Cloud on master pushes — nothing to do, but confirm a new build appeared rather than assuming).

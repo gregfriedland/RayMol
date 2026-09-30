@@ -49,10 +49,12 @@ KNOBS = ('reflect', 'tint', 'rough', 'knob1', 'knob2', 'knob3',
 #: (name, label, material, colour 0xRRGGBB, {knob: value}). The metals keep the
 #: colours, tints and roughnesses of the Looks they replace; bronze is new.
 LOOKS = (
-    ('gold', 'Gold', 'metallic', 0xd4af37, {'tint': 0.55, 'rough': 0.25}),
+    ('gold', 'Gold', 'metallic', 0xd4af37,
+     {'reflect': 0.60, 'tint': 0.88, 'rough': 0.05}),
     ('copper', 'Copper', 'metallic', 0xb87333, {'tint': 0.55, 'rough': 0.30}),
     ('bronze', 'Bronze', 'metallic', 0xb08d57, {'tint': 0.60, 'rough': 0.45}),
-    ('steel', 'Steel', 'metallic', 0x8c9299, {'tint': 0.15, 'rough': 0.35}),
+    ('steel', 'Steel', 'metallic', 0x8c9299,
+     {'reflect': 0.59, 'tint': 0.26, 'rough': 0.14}),
     # the mirror end: barely tinted, almost perfectly smooth
     ('chrome', 'Chrome', 'metallic', 0xdbe2e9,
      {'reflect': 0.75, 'tint': 0.10, 'rough': 0.05}),

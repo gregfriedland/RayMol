@@ -62,7 +62,7 @@ class TestTheOverrides(testing.PyMOLTestCase):
         cmd.set('surface_material', 'metallic', 'm1')
         self.assertEqual(params('m1')[2:5], (0.6000000238418579,
                                              0.3499999940395355,
-                                             0.3499999940395355))
+                                             0.25))
 
     def testAReflectiveMaterialTakesReflectTintAndRough(self):
         cmd.set('surface_material', 'metallic', 'm1')
@@ -78,20 +78,21 @@ class TestTheOverrides(testing.PyMOLTestCase):
         # the shading model is still the base's
         self.assertEqual((f, m), base[:2])
 
-    def testJellyTakesItsFourKnobsOnly(self):
+    def testJellyTakesItsFiveKnobsOnly(self):
+        # rough, knob1..3 (its body) and knob4 (Distortion, #590)
         cmd.set('surface_material', 'jelly', 'm1')
         base = params('m1')
         cmd.set('surface_material_rough', 0.5, 'm1')
-        for k in (1, 2, 3):
+        for k in (1, 2, 3, 4):
             cmd.set('surface_material_knob%d' % k, 0.1 * k, 'm1')
-        for k in (4, 5, 6):                                # not jelly's
+        for k in (5, 6):                                   # not jelly's
             cmd.set('surface_material_knob%d' % k, 9.0, 'm1')
         cmd.set('surface_material_reflect', 0.7, 'm1')    # not jelly's
         _f, _m, r, _t, ro, p = params('m1')
         self.assertAlmostEqual(ro, 0.5, places=5)
-        for k in (1, 2, 3):
+        for k in (1, 2, 3, 4):
             self.assertAlmostEqual(p[k - 1], 0.1 * k, places=5)
-        self.assertEqual(p[3:], base[5][3:])
+        self.assertEqual(p[4:], base[5][4:])
         self.assertEqual(r, base[2])
 
     def testMarbleTakesVeinScaleContrastAndSharpnessOnly(self):
@@ -147,17 +148,18 @@ class TestTheOverrides(testing.PyMOLTestCase):
         self.assertEqual(knobs('default'), [])
         self.assertEqual(knobs('metallic'), ['reflect', 'tint', 'rough'])
         self.assertEqual(knobs('plastic'), ['reflect', 'tint', 'rough'])
-        self.assertEqual(knobs('glass'), ['rough'])
-        self.assertEqual(knobs('frosted_glass'), ['rough'])
-        self.assertEqual(knobs('jelly'), ['rough', 'knob1', 'knob2', 'knob3'])
+        self.assertEqual(knobs('glass'), ['knob1', 'knob2', 'rough'])
+        self.assertEqual(knobs('frosted_glass'), ['knob1', 'knob2', 'rough'])
+        self.assertEqual(knobs('jelly'), ['rough', 'knob1', 'knob2', 'knob3', 'knob4'])
         self.assertEqual(knobs('matte'), ['knob1', 'knob2'])
         self.assertEqual(knobs('clay'), ['knob1', 'knob2', 'knob3'])
         self.assertEqual(knobs('rubber'), ['knob1', 'knob2', 'knob3', 'knob4'])
         self.assertEqual(knobs('marble'), ['knob2', 'knob5', 'knob6'])
         for mid, _n in setting.get_material_names(1):
-            for _suffix, label, lo, hi in _cmd.get_material_knobs(mid):
+            for _suffix, label, lo, hi, control in _cmd.get_material_knobs(mid):
                 self.assertTrue(label)
                 self.assertLess(lo, hi)
+                self.assertIn(control, ('slider', 'toggle'))
 
     def testDefaultHasNoKnobs(self):
         base = params('m1')

@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		020822B7AD61092433C2F78E /* whatsnew-170-move.png in Resources */ = {isa = PBXBuildFile; fileRef = 4C570F9CAC877E201F237016 /* whatsnew-170-move.png */; };
-		03ADC02622D3F786B6AAC4EB /* whatsnew-1120-looks.png in Resources */ = {isa = PBXBuildFile; fileRef = EE1A5AF0A345CF00F816C5B6 /* whatsnew-1120-looks.png */; };
 		042F08F899EE19B73EFEC143 /* CommandPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B50D264C420888CBF7FDE633 /* CommandPanel.swift */; };
 		04798DF552010A1889F8FFDD /* RFD3Runtime.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECB1F4D491FA24E65DD3B011 /* RFD3Runtime.swift */; };
 		047FD10B437F95938AB4B3B0 /* WeightsFetchStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C4E3216DAFC42C515FD0C3E /* WeightsFetchStateTests.swift */; };
@@ -19,6 +18,7 @@
 		09A0D4D2ABB5138809537A02 /* whatsnew-1110-boxselect.png in Resources */ = {isa = PBXBuildFile; fileRef = 6316D26C663083E0E595CE15 /* whatsnew-1110-boxselect.png */; };
 		0C0E67D9436CC6DF29DE983C /* DesignEditingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E6ECE945556A6D1FAE98F9 /* DesignEditingTests.swift */; };
 		0C7AFC549798A22C0FE22112 /* PredictCompactPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2C2F36B9B6E660DD0256EC2 /* PredictCompactPanel.swift */; };
+		0D7CDD9E16A9A064CE8C3414 /* whatsnew-1120-inspector.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = E3B941EE9F1C7855A8447162 /* whatsnew-1120-inspector.mp4 */; };
 		0DDA865CB0C8ACAC1BFD0FE9 /* NotesInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35DC456EDC3E55F84506C8B7 /* NotesInspectorView.swift */; };
 		0F6C6BD0DB9B077E51D1EFAF /* WhatsNewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F5377EE69A856479317FD61 /* WhatsNewModel.swift */; };
 		0FFCBEB460CD541E932326AB /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D3E805AC2D63B01AB7EE29C /* Theme.swift */; };
@@ -35,6 +35,7 @@
 		154E7F765059977CA80711DA /* RFD3Kit in Frameworks */ = {isa = PBXBuildFile; productRef = C723443B5003DD836EF6A008 /* RFD3Kit */; };
 		1624BC38CDD73398C68FC135 /* MPNNGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56BE219EF1CF1EB2B05E44AD /* MPNNGate.swift */; };
 		174EA423F2E0ED999474C506 /* DesignInferenceSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B45634C95AE991CC91CFBA75 /* DesignInferenceSmokeTests.swift */; };
+		17D4129435A0B8E793A5B687 /* whatsnew-1120-looks.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 00A00E2879DD065A94A31D21 /* whatsnew-1120-looks.jpg */; };
 		1A580F6792CD440D91FA9F45 /* DesignSizeGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E69AA2C12DC2D1583FBF8C8 /* DesignSizeGuard.swift */; };
 		1BB834E64B2DFAF59645C1EB /* whatsnew-170-homebrew.png in Resources */ = {isa = PBXBuildFile; fileRef = 0C3FB5B53174F8E55104705A /* whatsnew-170-homebrew.png */; };
 		1BD51D786A5D6DFD98F3E6FA /* MPNNRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2D0BB6A1E7959881767F049 /* MPNNRuntime.swift */; };
@@ -79,9 +80,11 @@
 		484D9DFA048A6444660199CB /* MPNNKit in Frameworks */ = {isa = PBXBuildFile; productRef = 791C3459ADD4745BE10E27AA /* MPNNKit */; };
 		4852173B3AB34D6B4FF76415 /* MCPDesktopInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 786939619F7871E32E2BB123 /* MCPDesktopInstaller.swift */; };
 		48E340346AD8FF81AF09F501 /* MPNNKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7A0C20547CE6C050BA30EDA0 /* MPNNKit */; };
-		4948AFDF734D7B66A5061B29 /* whatsnew-1120-materials.png in Resources */ = {isa = PBXBuildFile; fileRef = 9FDD0A4E4CE633BAC9148CBD /* whatsnew-1120-materials.png */; };
 		4AD1C0E0E53EC4B34CBE7400 /* MetalViewportResponderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C47FBC551127AB2D73BC6CE /* MetalViewportResponderTests.swift */; };
+		4AD72F5AB664B380A16768DB /* whatsnew-1120-glass.jpg in Resources */ = {isa = PBXBuildFile; fileRef = CDB31EB1A97256BC7A5615E7 /* whatsnew-1120-glass.jpg */; };
+		4B84574727FB18090A30B32D /* whatsnew-1120-materials.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 8342C6A3FDF28A858D7E1AA4 /* whatsnew-1120-materials.mp4 */; };
 		4BE37F7CA13DEB10F2AE62D6 /* RayMol.svg in Resources */ = {isa = PBXBuildFile; fileRef = F16058D96E2773BE9A24C323 /* RayMol.svg */; };
+		4C175FC1BC1E83D7C66EC414 /* whatsnew-1120-sidechains.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 1926971439F96C03DB81AA8E /* whatsnew-1120-sidechains.jpg */; };
 		4E1CFC49EFB50160C3D388B2 /* DesignAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4300265954DF2B8309EDAA6C /* DesignAvailability.swift */; };
 		4FF61FB384E2C1B9388BA273 /* whatsnew-170-homebrew.png in Resources */ = {isa = PBXBuildFile; fileRef = 0C3FB5B53174F8E55104705A /* whatsnew-170-homebrew.png */; };
 		506C87D1E2B2026BFFC9C607 /* whatsnew-1110-boxselect.png in Resources */ = {isa = PBXBuildFile; fileRef = 6316D26C663083E0E595CE15 /* whatsnew-1110-boxselect.png */; };
@@ -169,18 +172,19 @@
 		97F0B5805CD3B11723C7B43B /* whatsnew-152-timeline.png in Resources */ = {isa = PBXBuildFile; fileRef = 55094A33AFF9AEF5561CFD96 /* whatsnew-152-timeline.png */; };
 		983BCF8F1E0F251E82C1CF0E /* DesignController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF4FB7F151982A2927D612F0 /* DesignController.swift */; };
 		996828523DD2656E579ACE55 /* RFD3JobManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8746A760E75B98C92A547404 /* RFD3JobManager.swift */; };
-		9B6F87FDA749D05D6F77A862 /* whatsnew-1120-looks.png in Resources */ = {isa = PBXBuildFile; fileRef = EE1A5AF0A345CF00F816C5B6 /* whatsnew-1120-looks.png */; };
 		9C6CB8E2C25DB4AE13D42756 /* BinderDesignBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4B03344972863CC1362ECB /* BinderDesignBar.swift */; };
 		9E056CF2985B57F6BF968798 /* ProtenixMLX in Frameworks */ = {isa = PBXBuildFile; productRef = 90EE4E4414E8FBDC2271BEA2 /* ProtenixMLX */; };
 		9FDA615BBA4A6BBDF131EF7F /* ProtenixRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56746569540D202277F2B47F /* ProtenixRuntimeTests.swift */; };
 		9FE703EF6FD7C97884C299DF /* RayMol.icon in Resources */ = {isa = PBXBuildFile; fileRef = BB5ABD1A8C45E5BC97AB0B80 /* RayMol.icon */; };
 		A06FDF7F7F66614128096DDF /* RenderGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFFF22FEEF0B50EA77E9A577 /* RenderGateTests.swift */; };
 		A27A8FF0359176C013760922 /* whatsnew-1100-interface.png in Resources */ = {isa = PBXBuildFile; fileRef = 283BC19B58F7146F72950E97 /* whatsnew-1100-interface.png */; };
+		A353F0375A1BC88B2AF38DEC /* whatsnew-1120-looks.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 00A00E2879DD065A94A31D21 /* whatsnew-1120-looks.jpg */; };
 		A39EA05FAD0B4D18957DA517 /* PredictAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E5AA1A4BFA5787E1B83D100 /* PredictAvailability.swift */; };
 		A49F8811F64CD501FF007ECD /* MaterialDropdownTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB57918069BC56804621C327 /* MaterialDropdownTests.swift */; };
 		A4E8C9619C9B7F0C169BFAFF /* BoltzMLX in Frameworks */ = {isa = PBXBuildFile; productRef = B20D95BF3CA7BA300F0AF09F /* BoltzMLX */; };
 		A653B70A6B824D1F48549503 /* BoltzMLX in Frameworks */ = {isa = PBXBuildFile; productRef = 0BD76B8E1C781556992E4D28 /* BoltzMLX */; };
 		A76B8F620DCFED6F7AD69FEE /* ProtenixRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7845A3EB6A6BF8A14F090062 /* ProtenixRuntime.swift */; };
+		A874BBD4EC51E65F61ECD5D2 /* whatsnew-1120-sidechains.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 1926971439F96C03DB81AA8E /* whatsnew-1120-sidechains.jpg */; };
 		AA00B9355E30A51B8F4C207B /* AppBuildInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 525F338CAB2EE18987CD1701 /* AppBuildInfo.swift */; };
 		AA36D034CEC68207CFC82340 /* WhatsNewModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4D170B35BCCF683A6B3D655 /* WhatsNewModal.swift */; };
 		AC4CB915ECB531A4406CF387 /* InferenceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71574A2074A14803B91ED695 /* InferenceRouter.swift */; };
@@ -223,7 +227,6 @@
 		D0BB5840BDEAA557F5B8F387 /* RFD3Runtime.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECB1F4D491FA24E65DD3B011 /* RFD3Runtime.swift */; };
 		D1810E28536159A86EF507F8 /* whatsnew-190-raymolrc.png in Resources */ = {isa = PBXBuildFile; fileRef = 7D10B5CB9ECF81346BD9CAE8 /* whatsnew-190-raymolrc.png */; };
 		D1A6B8D3D1B74B4D1142ADE5 /* PredictSizeGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D177C9A043AE57844A9AEB95 /* PredictSizeGuardTests.swift */; };
-		D2E63A93A4DC76DB062C8DFE /* whatsnew-1120-materials.png in Resources */ = {isa = PBXBuildFile; fileRef = 9FDD0A4E4CE633BAC9148CBD /* whatsnew-1120-materials.png */; };
 		D31F1B51A22EDBE0B05005AE /* PredictBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14E7328C4421ADC9E81417D /* PredictBar.swift */; };
 		D35B766612AA47956AB18A75 /* ThemeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC5E722722DEF7FBB1D649F /* ThemeManager.swift */; };
 		D3C5FDA51512154777B49DA2 /* whatsnew-152-timeline.png in Resources */ = {isa = PBXBuildFile; fileRef = 55094A33AFF9AEF5561CFD96 /* whatsnew-152-timeline.png */; };
@@ -238,6 +241,7 @@
 		DE3272F59E33056229F1BD13 /* ColorMenuUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20707C5C930150928BB85C05 /* ColorMenuUITests.swift */; };
 		E08AF23E9A696D29B94CA999 /* dylib-Info-template.plist in Resources */ = {isa = PBXBuildFile; fileRef = 57E9E81F5C4757D03AAF7ABD /* dylib-Info-template.plist */; };
 		E1A1B102C1E6B06ACB270F5E /* RFD3ResultWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FC150B0707033AB3B186189 /* RFD3ResultWriter.swift */; };
+		E260BED24CBA34D49088686D /* whatsnew-1120-materials.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 8342C6A3FDF28A858D7E1AA4 /* whatsnew-1120-materials.mp4 */; };
 		E51EFBE3A58396C4934721ED /* PredictScreenAwake.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4847B7F5C09AD3E9412C3EB /* PredictScreenAwake.swift */; };
 		E777A44381A854B382874738 /* MCPConnectSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE692F1547C53D28B5F9A9AD /* MCPConnectSheet.swift */; };
 		E7A7CA409C1DB4D1A78AD5B9 /* DesignController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF4FB7F151982A2927D612F0 /* DesignController.swift */; };
@@ -247,6 +251,7 @@
 		EC4EF850FC58B240AD02346F /* RayMolMain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9371B6FFB30D6166234C678B /* RayMolMain.swift */; };
 		EE156FFB12BEFB4FC132D610 /* whatsnew-170-move.png in Resources */ = {isa = PBXBuildFile; fileRef = 4C570F9CAC877E201F237016 /* whatsnew-170-move.png */; };
 		EF5E8D2D6A7BA6B77D164707 /* AnalysisNotesStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC011374F5FD9F008437F037 /* AnalysisNotesStoreTests.swift */; };
+		EF7D368B12E647AE6DF704AD /* whatsnew-1120-inspector.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = E3B941EE9F1C7855A8447162 /* whatsnew-1120-inspector.mp4 */; };
 		EF9A088B19E39220CC72469D /* KeyRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F61B9A042E88CAE1E21BC506 /* KeyRoutingTests.swift */; };
 		F03621597BA93F7EADDEF676 /* MPNNRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2D0BB6A1E7959881767F049 /* MPNNRuntime.swift */; };
 		F143E36E786A3B7B29A47F3E /* RFD3ResultWriterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B049A83EEE87CC41BA09889D /* RFD3ResultWriterTests.swift */; };
@@ -263,6 +268,7 @@
 		F9F1B10E40B13DDF27C0ACC1 /* PanelLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B47211EDB3E34DF3B0CFE8BB /* PanelLayout.swift */; };
 		FA5250EB01CB7F86C4158D2C /* BinderDesignController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F340621635D0C4E9159141A /* BinderDesignController.swift */; };
 		FAB7D942A53C88BEA4D2FFE4 /* whatsnew-1100-predict-progress.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = C5D633C399E993EE52877C82 /* whatsnew-1100-predict-progress.mp4 */; };
+		FBBEFD0D559EF5CBFD898E40 /* whatsnew-1120-glass.jpg in Resources */ = {isa = PBXBuildFile; fileRef = CDB31EB1A97256BC7A5615E7 /* whatsnew-1120-glass.jpg */; };
 		FC8808FCB845C7543244AC94 /* MovieExportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE79EC8844C681A41A1E54A /* MovieExportSheet.swift */; };
 		FCB5A40892C6D7239E49791A /* DesignControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7E41DCBB427678A8F018B0E /* DesignControllerTests.swift */; };
 		FCE3C0AD3EC5319F8F2E144E /* DesignEditInferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D6A959CC1590FC60333582B /* DesignEditInferenceTests.swift */; };
@@ -288,6 +294,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		00A00E2879DD065A94A31D21 /* whatsnew-1120-looks.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "whatsnew-1120-looks.jpg"; sourceTree = "<group>"; };
 		02F1DF5E9689EFF422BE279A /* RayMolIOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RayMolIOS.entitlements; sourceTree = "<group>"; };
 		0524B98BE939981AFC5DBFDA /* ColorMenuTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorMenuTests.swift; sourceTree = "<group>"; };
 		05C388F2E8B5A99F3CBFFC7E /* PyMOLViewer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PyMOLViewer.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -302,6 +309,7 @@
 		10CCAA289EA2934B267C337A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		137F4EFE6CA3B90DE4765559 /* whatsnew-190-redesign.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "whatsnew-190-redesign.png"; sourceTree = "<group>"; };
 		14F3D56C490BC7C6166DD79F /* MCPServerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerManager.swift; sourceTree = "<group>"; };
+		1926971439F96C03DB81AA8E /* whatsnew-1120-sidechains.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "whatsnew-1120-sidechains.jpg"; sourceTree = "<group>"; };
 		193D4D739151970412BB6EDF /* BoltzJobManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoltzJobManagerTests.swift; sourceTree = "<group>"; };
 		1A18D8A6B0FB56FCD3C31211 /* MCPBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPBridge.swift; sourceTree = "<group>"; };
 		1A55383922D69D691CA1BAB1 /* 1ubq.cif */ = {isa = PBXFileReference; path = 1ubq.cif; sourceTree = "<group>"; };
@@ -368,6 +376,7 @@
 		7E9067EC240F21BA7F691088 /* ObjectPanelCopyExtractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectPanelCopyExtractTests.swift; sourceTree = "<group>"; };
 		80137B4E6E0FA24F011D7E87 /* HoverReadout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverReadout.swift; sourceTree = "<group>"; };
 		82BCB731F0C74F642D78D450 /* PyMOLBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PyMOLBridge.h; sourceTree = "<group>"; };
+		8342C6A3FDF28A858D7E1AA4 /* whatsnew-1120-materials.mp4 */ = {isa = PBXFileReference; path = "whatsnew-1120-materials.mp4"; sourceTree = "<group>"; };
 		85B66833BF167209A47B9C15 /* ThemeStudioPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeStudioPanel.swift; sourceTree = "<group>"; };
 		86E93358875495F499780A00 /* MLXRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLXRuntime.swift; sourceTree = "<group>"; };
 		8746A760E75B98C92A547404 /* RFD3JobManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RFD3JobManager.swift; sourceTree = "<group>"; };
@@ -380,7 +389,6 @@
 		9A2CE99D9A3C57ACBBDBF3B5 /* DesignRegionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignRegionTests.swift; sourceTree = "<group>"; };
 		9B2D0B8DEF98F905922AE2FD /* ProtenixJobManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtenixJobManager.swift; sourceTree = "<group>"; };
 		9E69AA2C12DC2D1583FBF8C8 /* DesignSizeGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSizeGuard.swift; sourceTree = "<group>"; };
-		9FDD0A4E4CE633BAC9148CBD /* whatsnew-1120-materials.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "whatsnew-1120-materials.png"; sourceTree = "<group>"; };
 		A2367C4CEE5BD2E682055D3F /* BoltzRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoltzRuntime.swift; sourceTree = "<group>"; };
 		A4857D1284B60EB0C750C02F /* ProgressTray.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressTray.swift; sourceTree = "<group>"; };
 		A4CC639810B19E8F5E637E93 /* CopyRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyRouting.swift; sourceTree = "<group>"; };
@@ -414,6 +422,7 @@
 		CB0108E0FA1F204BE0E41F0D /* openssl-PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = "openssl-PrivacyInfo.xcprivacy"; sourceTree = "<group>"; };
 		CC011374F5FD9F008437F037 /* AnalysisNotesStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisNotesStoreTests.swift; sourceTree = "<group>"; };
 		CC71792A917723EA5E462007 /* whatsnew-1110-colormenu.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "whatsnew-1110-colormenu.png"; sourceTree = "<group>"; };
+		CDB31EB1A97256BC7A5615E7 /* whatsnew-1120-glass.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "whatsnew-1120-glass.jpg"; sourceTree = "<group>"; };
 		CE692F1547C53D28B5F9A9AD /* MCPConnectSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPConnectSheet.swift; sourceTree = "<group>"; };
 		CFE9998F68625C92B8BCD710 /* DesignResidues.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignResidues.swift; sourceTree = "<group>"; };
 		CFFF22FEEF0B50EA77E9A577 /* RenderGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderGateTests.swift; sourceTree = "<group>"; };
@@ -427,6 +436,7 @@
 		DA4A62DDBB48F5166D118F32 /* PredictSizeGuardIOSTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictSizeGuardIOSTests.swift; sourceTree = "<group>"; };
 		DB57918069BC56804621C327 /* MaterialDropdownTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialDropdownTests.swift; sourceTree = "<group>"; };
 		E2D0BB6A1E7959881767F049 /* MPNNRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MPNNRuntime.swift; sourceTree = "<group>"; };
+		E3B941EE9F1C7855A8447162 /* whatsnew-1120-inspector.mp4 */ = {isa = PBXFileReference; path = "whatsnew-1120-inspector.mp4"; sourceTree = "<group>"; };
 		E47D8905CF71AF7BDF4BE074 /* DesignModeStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignModeStateTests.swift; sourceTree = "<group>"; };
 		E8EE6573045A81CF52A9CDF5 /* PyMOLGestureUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PyMOLGestureUITests.swift; sourceTree = "<group>"; };
 		E92551FEC4351D9D44AE620B /* TempChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TempChannel.swift; sourceTree = "<group>"; };
@@ -434,7 +444,6 @@
 		EC1923D25B33DEE015052221 /* RFD3SizeGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RFD3SizeGuardTests.swift; sourceTree = "<group>"; };
 		ECB1F4D491FA24E65DD3B011 /* RFD3Runtime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RFD3Runtime.swift; sourceTree = "<group>"; };
 		EDC5E722722DEF7FBB1D649F /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
-		EE1A5AF0A345CF00F816C5B6 /* whatsnew-1120-looks.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "whatsnew-1120-looks.png"; sourceTree = "<group>"; };
 		EE3CAE980896763CAAAF2034 /* DesignSizeGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSizeGuardTests.swift; sourceTree = "<group>"; };
 		EEC5AE545F97DF175BFE0462 /* DesignScoreCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignScoreCache.swift; sourceTree = "<group>"; };
 		F14E7328C4421ADC9E81417D /* PredictBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictBar.swift; sourceTree = "<group>"; };
@@ -448,7 +457,7 @@
 		FB1304C662D9011F7C4505FC /* MCPStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPStatusView.swift; sourceTree = "<group>"; };
 		FF4FB7F151982A2927D612F0 /* DesignController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignController.swift; sourceTree = "<group>"; };
 		FFD9E3092D310E443F7CD546 /* DesignTargetSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTargetSelectionTests.swift; sourceTree = "<group>"; };
-		"TEMP_243E3D0E-E395-47C8-A632-54CD08CDE578" /* PyMOLBridge.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = PyMOLBridge.xcconfig; sourceTree = "<group>"; };
+		"TEMP_F2E10BE9-D284-43A5-8B6A-9463FFAABBE7" /* PyMOLBridge.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = PyMOLBridge.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -509,13 +518,6 @@
 			path = Panels;
 			sourceTree = "<group>";
 		};
-		1E03DEB9ED916777B2DA1EDF /* .claude */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = .claude;
-			sourceTree = "<group>";
-		};
 		213C644D6AEEA6FB9B7C3B5E /* Resources */ = {
 			isa = PBXGroup;
 			children = (
@@ -543,8 +545,11 @@
 				CC71792A917723EA5E462007 /* whatsnew-1110-colormenu.png */,
 				B402EB5834127D4E6B217EFE /* whatsnew-1110-raytrace.mp4 */,
 				BFE8C2D90AA047E31EBBC54C /* whatsnew-1110-sessions.png */,
-				EE1A5AF0A345CF00F816C5B6 /* whatsnew-1120-looks.png */,
-				9FDD0A4E4CE633BAC9148CBD /* whatsnew-1120-materials.png */,
+				CDB31EB1A97256BC7A5615E7 /* whatsnew-1120-glass.jpg */,
+				E3B941EE9F1C7855A8447162 /* whatsnew-1120-inspector.mp4 */,
+				00A00E2879DD065A94A31D21 /* whatsnew-1120-looks.jpg */,
+				8342C6A3FDF28A858D7E1AA4 /* whatsnew-1120-materials.mp4 */,
+				1926971439F96C03DB81AA8E /* whatsnew-1120-sidechains.jpg */,
 				689CDE512811C244D4BA931B /* WhatsNew.json */,
 			);
 			path = Resources;
@@ -581,7 +586,6 @@
 				F2078076B68D28457409F7A5 /* RayMol.entitlements */,
 				02F1DF5E9689EFF422BE279A /* RayMolIOS.entitlements */,
 				A63406B360384F3C62E511E1 /* RayMolPython.entitlements */,
-				1E03DEB9ED916777B2DA1EDF /* .claude */,
 				F5456D006DB0002CB809CACF /* Bridge */,
 				1A65998EE1F4B509B9B62F00 /* Panels */,
 				213C644D6AEEA6FB9B7C3B5E /* Resources */,
@@ -727,10 +731,10 @@
 			path = Bridge;
 			sourceTree = "<group>";
 		};
-		"TEMP_243AFCAD-B1C3-4BE6-93A1-400C01785052" /* swiftui */ = {
+		"TEMP_016F1FAC-5D02-49F7-BBEE-C35295651B73" /* swiftui */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_243E3D0E-E395-47C8-A632-54CD08CDE578" /* PyMOLBridge.xcconfig */,
+				"TEMP_F2E10BE9-D284-43A5-8B6A-9463FFAABBE7" /* PyMOLBridge.xcconfig */,
 			);
 			path = swiftui;
 			sourceTree = "<group>";
@@ -914,8 +918,11 @@
 				8BB63E3CB5D2F5721A15E61B /* whatsnew-1110-colormenu.png in Resources */,
 				107F92D982CDBA1632A6EEBD /* whatsnew-1110-raytrace.mp4 in Resources */,
 				F876E57F8B0806E40D15A349 /* whatsnew-1110-sessions.png in Resources */,
-				9B6F87FDA749D05D6F77A862 /* whatsnew-1120-looks.png in Resources */,
-				4948AFDF734D7B66A5061B29 /* whatsnew-1120-materials.png in Resources */,
+				FBBEFD0D559EF5CBFD898E40 /* whatsnew-1120-glass.jpg in Resources */,
+				EF7D368B12E647AE6DF704AD /* whatsnew-1120-inspector.mp4 in Resources */,
+				A353F0375A1BC88B2AF38DEC /* whatsnew-1120-looks.jpg in Resources */,
+				4B84574727FB18090A30B32D /* whatsnew-1120-materials.mp4 in Resources */,
+				A874BBD4EC51E65F61ECD5D2 /* whatsnew-1120-sidechains.jpg in Resources */,
 				EB6435B2880C450F33F0291F /* whatsnew-152-camera-dock.mp4 in Resources */,
 				D3C5FDA51512154777B49DA2 /* whatsnew-152-timeline.png in Resources */,
 				36D99340CCDDAD7C67680476 /* whatsnew-161-hover.mp4 in Resources */,
@@ -949,8 +956,11 @@
 				B751FE54B6347A0677DEA713 /* whatsnew-1110-colormenu.png in Resources */,
 				154AFFF34817365145396F33 /* whatsnew-1110-raytrace.mp4 in Resources */,
 				8E62E0244A99E106F6D57428 /* whatsnew-1110-sessions.png in Resources */,
-				03ADC02622D3F786B6AAC4EB /* whatsnew-1120-looks.png in Resources */,
-				D2E63A93A4DC76DB062C8DFE /* whatsnew-1120-materials.png in Resources */,
+				4AD72F5AB664B380A16768DB /* whatsnew-1120-glass.jpg in Resources */,
+				0D7CDD9E16A9A064CE8C3414 /* whatsnew-1120-inspector.mp4 in Resources */,
+				17D4129435A0B8E793A5B687 /* whatsnew-1120-looks.jpg in Resources */,
+				E260BED24CBA34D49088686D /* whatsnew-1120-materials.mp4 in Resources */,
+				4C175FC1BC1E83D7C66EC414 /* whatsnew-1120-sidechains.jpg in Resources */,
 				F4F8D45CBA50D16F783FBB4F /* whatsnew-152-camera-dock.mp4 in Resources */,
 				97F0B5805CD3B11723C7B43B /* whatsnew-152-timeline.png in Resources */,
 				B84291E694521C66BCB749CD /* whatsnew-161-hover.mp4 in Resources */,
@@ -1795,7 +1805,7 @@
 		};
 		76B7E9DB75E073D1E60928FA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_243E3D0E-E395-47C8-A632-54CD08CDE578" /* PyMOLBridge.xcconfig */;
+			baseConfigurationReference = "TEMP_F2E10BE9-D284-43A5-8B6A-9463FFAABBE7" /* PyMOLBridge.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -1902,7 +1912,7 @@
 		};
 		D8F44FDFF036013D2F03BA83 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_243E3D0E-E395-47C8-A632-54CD08CDE578" /* PyMOLBridge.xcconfig */;
+			baseConfigurationReference = "TEMP_F2E10BE9-D284-43A5-8B6A-9463FFAABBE7" /* PyMOLBridge.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;

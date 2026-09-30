@@ -4,23 +4,28 @@
     "pages": [
       {
         "title": "Materials",
-        "body": "Every cartoon, surface, stick and sphere layer can be matte, plastic, metallic, glass, jelly, marble, clay or rubber — pick one from the Inspector’s Material menu. Your colors stay as they are.",
-        "imageName": "whatsnew-1120-materials"
+        "body": "RayMol can now mimic real surfaces: polished gold and chrome that reflect their surroundings, veined marble, clay, rubber and glass. Every cartoon, surface, stick or sphere layer can have its own.",
+        "videoName": "whatsnew-1120-materials"
+      },
+      {
+        "title": "Find it in the Inspector",
+        "body": "Open an object in the Inspector and each layer — Cartoon, Surface, Sticks, Spheres — has a Material menu. The Look button beside it applies a ready-made finish.",
+        "videoName": "whatsnew-1120-inspector"
       },
       {
         "title": "One-click Looks",
-        "body": "Gold, copper, chrome, marble and more set a layer’s material in one click, then fine-tune it with Custom. Side chains follow the cartoon’s material, so a pocket reads as one piece.",
+        "body": "Gold, Copper, Bronze, Steel, Chrome, Marble or Clay in a single click. A Look sets a layer's material and colour together, ready to fine-tune from there.",
         "imageName": "whatsnew-1120-looks"
       },
       {
-        "title": "Smoother movies",
-        "body": "A Roll spins at a constant speed instead of pulsing, and a camera move holds the model you were on instead of sweeping every state from model 1.",
-        "systemImage": "film"
+        "title": "Side chains match their cartoon",
+        "body": "Show side chains on a cartoon and they take on its material automatically, so a gold backbone gets gold side chains with no extra setup.",
+        "imageName": "whatsnew-1120-sidechains"
       },
       {
-        "title": "Steadier on iPhone and iPad",
-        "body": "Freed GPU memory is now released every frame, fixing out-of-memory quits during long sessions. Cold launches show your last scene from the very first frame.",
-        "systemImage": "memorychip"
+        "title": "Glass that bends light",
+        "body": "Glass, frosted glass and jelly refract what's behind them through the shape of the surface, so a ligand seen through a glass surface really looks like it's inside.",
+        "imageName": "whatsnew-1120-glass"
       }
     ]
   },

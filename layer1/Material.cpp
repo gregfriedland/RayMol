@@ -38,14 +38,18 @@ constexpr int kP_edge = 2;     /* procedural: grazing-angle darkening */
 constexpr int kP_sheen = 3;    /* procedural: velvet sheen (rubber) */
 constexpr int kP_vein = 4;     /* marble: vein contrast */
 constexpr int kP_sharp = 5;    /* marble: vein sharpness */
-/* Glass family. The slots are reused per family -- p[0] is grain for a
-   procedural material and absorption for a glass one -- which is why they are
-   named here rather than carried as one flat list. p[5] is NOT a table knob:
+/* Glass family. The slots are reused per family, and within it per material
+   -- p[0] is grain for a procedural material, absorption for jelly and
+   reflection for clear and frosted glass -- which is why they are named here
+   rather than carried as one flat list. p[5] is NOT a table knob:
    setRepMaterial overwrites it for the whole glass family with the frost tap
    count the current target can afford, so nothing put here would survive. */
 constexpr int kP_absorb = 0;   /* jelly: Beer-Lambert strength through the body */
 constexpr int kP_scatter = 1;  /* jelly: density of the scattered inner glow */
 constexpr int kP_wet = 2;      /* jelly: sharp wet-skin highlight strength */
+constexpr int kP_jellyDistort = 3;  /* jelly: refraction amount (#590) */
+constexpr int kP_reflect = 0;  /* clear/frosted glass: surface reflection (#590) */
+constexpr int kP_distort = 1;  /* clear/frosted glass: refraction amount (#590) */
 
 /* Index is the material id; the order must match the enum in Material.h.
  *
@@ -68,17 +72,18 @@ const MaterialRow kMaterialTable[] = {
             {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 0}},
 
     {cMaterial_metallic, "metallic", cMaterialFamily_reflective, true, 0.0f,
-        {cMaterialFamily_reflective, cMaterial_metallic, 0.6f, 0.35f, 0.35f,
+        {cMaterialFamily_reflective, cMaterial_metallic, 0.6f, 0.35f, 0.25f,
             {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 0}},
 
+    /* Glass p[0] = reflection, p[1] = distortion (#590): both on. */
     {cMaterial_glass, "glass", cMaterialFamily_glass, true, 0.15f,
         {cMaterialFamily_glass, cMaterial_glass, 0.0f, 0.0f, 0.0f,
-            {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 1}},
+            {1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 1}},
 
     {cMaterial_frosted_glass, "frosted_glass", cMaterialFamily_glass, true,
         0.2f,
         {cMaterialFamily_glass, cMaterial_frosted_glass, 0.0f, 0.0f, 0.6f,
-            {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 1}},
+            {1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 1}},
 
     /* Jelly is in the glass family but is the opposite material: a dense
        scattering BODY under a smooth skin, where glass is a clear body under a
@@ -160,7 +165,7 @@ const MaterialRow kMaterialTable[] = {
        this ticket; the table declared it in advance. */
     {cMaterial_jelly, "jelly", cMaterialFamily_glass, true, 0.85f,
         {cMaterialFamily_glass, cMaterial_jelly, 0.0f, 0.0f, 0.03f,
-            {2.2f, 0.35f, 1.1f, 0.0f, 0.0f, 0.0f}, 1}},
+            {2.2f, 0.35f, 1.1f, 1.0f, 0.0f, 0.0f}, 1}},  // p[3] distortion (#590)
 
     {cMaterial_marble, "marble", cMaterialFamily_procedural, true, 0.0f,
         {cMaterialFamily_procedural, cMaterial_marble, 0.0f, 0.0f, 0.9f,
@@ -184,7 +189,7 @@ const MaterialRow kMaterialTable[] = {
 
     {cMaterial_rubber, "rubber", cMaterialFamily_procedural, true, 0.0f,
         {cMaterialFamily_procedural, cMaterial_rubber, 0.0f, 0.0f, 0.95f,
-            {0.14f, 14.0f, 0.12f, 0.10f, 0.0f, 0.0f}, 0}},
+            {0.14f, 26.5f, 0.17f, 0.37f, 0.0f, 0.0f}, 0}},
 };
 
 constexpr int kMaterialTableSize =
@@ -535,13 +540,14 @@ const CustomOverrideSet* MaterialCustomOverridesForRep(int repType)
 }
 
 /* Which knobs each material HAS: the slots its shader actually reads, with
-   the name and a sensible slider range. One table, because the meaning of a
+   the name and a sensible range. One table, because the meaning of a
    p[] slot differs per material, not per family -- marble reads p[1] as vein
    scale and never reads p[0], rubber reads p[2] as its highlight where clay
    reads it as grazing darkening, and matte reads only p[0..1]. An override
    of a slot that is not listed for the layer's material is ignored, so the
    settings cannot promise a change the shader does not make. Ranges are for
-   the Inspector's sliders; the core clamps nothing. Checked against
+   the Inspector's sliders (a toggle writes its min or max); the core clamps
+   nothing. Checked against
    RendererMetal.mm: mat_body_shade / mat_shade_procedural (matte, clay,
    rubber), mat_marble_albedo, mat_jelly_shade, mat_glass_shade and the
    frosted tap spread, mat_env_specular (reflective). */
@@ -549,12 +555,22 @@ const MaterialKnob kReflective[] = {
     {kKnob_reflect, "Reflection", 0.0f, 1.0f},
     {kKnob_tint, "Reflection tint", 0.0f, 1.0f},
     {kKnob_rough, "Roughness", 0.0f, 1.0f}};
-const MaterialKnob kGlass[] = {{kKnob_rough, "Roughness", 0.0f, 1.0f}};  // glints + reflection blur
-const MaterialKnob kFrostedGlass[] = {{kKnob_rough, "Frost", 0.0f, 1.0f}};
+// Clear and frosted glass: p[0] scales the surface reflection (the Fresnel
+// environment rim and the glints, mat_glass_shade), p[1] the refraction
+// (#588, bindRepMaterial). Both are 1 in the table and toggles in the
+// Inspector (#590). `rough` is the glints' and reflection's blur.
+const MaterialKnob kGlass[] = {{kKnob_p0 + kP_reflect, "Reflection", 0.0f, 1.0f, true},
+    {kKnob_p0 + kP_distort, "Distortion", 0.0f, 1.0f, true},
+    {kKnob_rough, "Roughness", 0.0f, 1.0f}};
+const MaterialKnob kFrostedGlass[] = {{kKnob_p0 + kP_reflect, "Reflection", 0.0f, 1.0f, true},
+    {kKnob_p0 + kP_distort, "Distortion", 0.0f, 1.0f, true},
+    {kKnob_rough, "Frost", 0.0f, 1.0f}};
+// Jelly's p[3] scales its refraction (#590); p[0..2] are its body.
 const MaterialKnob kJelly[] = {{kKnob_rough, "Skin reflection blur", 0.0f, 1.0f},
     {kKnob_p0, "Absorption", 0.0f, 6.0f},
     {kKnob_p1, "Inner glow", 0.0f, 1.0f},
-    {kKnob_p2, "Wet highlight", 0.0f, 3.0f}};
+    {kKnob_p2, "Wet highlight", 0.0f, 3.0f},
+    {kKnob_p0 + kP_jellyDistort, "Distortion", 0.0f, 1.0f, true}};
 const MaterialKnob kMatte[] = {{kKnob_p0, "Grain", 0.0f, 0.5f},
     {kKnob_p1, "Grain frequency", 0.0f, 40.0f}};
 const MaterialKnob kClay[] = {{kKnob_p0, "Grain", 0.0f, 0.5f},
