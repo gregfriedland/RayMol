@@ -80,12 +80,15 @@ struct RepState: Equatable {
 }
 
 /// One knob a material has (#568): the override setting's suffix, what it does,
-/// and a slider range. From `_cmd.get_material_knobs` via one `MATKNOBS:` line per material.
+/// and its range: a slider's, or a toggle's off and on values (#590). From
+/// `_cmd.get_material_knobs` via one `MATKNOBS:` line per material.
 struct MaterialKnobInfo: Equatable {
     let suffix: String
     let label: String
     let min: Double
     let max: Double
+    /// An on/off knob (#590): a switch, `min` off and `max` on, not a slider.
+    var toggle: Bool = false
 }
 
 /// A layer Look (pymol.looks): a material and its knobs for ONE layer, and a
@@ -362,6 +365,16 @@ enum CustomMaterial {
     /// Every knob suffix, in the core's slot order.
     static let knobs = ["reflect", "tint", "rough", "knob1", "knob2", "knob3",
                         "knob4", "knob5", "knob6"]
+
+    /// A toggle knob's switch position as ToggleSetting reads it (on above
+    /// 0.5): on whenever the value is above the knob's `min`, because any
+    /// amount above it has a visible effect -- a distortion of 0.5 set from the
+    /// command line bends the view, so its switch must not read off. An unknown
+    /// value reads as on, the table's default for every toggle.
+    static func toggleValue(_ value: Double?, _ knob: MaterialKnobInfo) -> Double {
+        guard let value else { return 1 }
+        return value > knob.min ? 1 : 0
+    }
 
     /// `cartoon_material` -> `cartoon`, `stick_material` -> `stick`.
     static func stem(_ materialSetting: String) -> String {
@@ -4030,8 +4043,9 @@ private struct ObjectMaterialRows: View {
 ///
 /// The menu offers the materials, then **Custom…** when the current material
 /// has knobs. Custom keeps the current material as the base and shows its
-/// knobs as sliders at the values the draw uses; moving one writes that
-/// layer's override (#568), and the menu then reads "Custom (base)". Picking a
+/// knobs at the values the draw uses, as sliders or on/off toggles (#590);
+/// changing one writes that layer's override (#568), and the menu then reads
+/// "Custom (base)". Picking a
 /// named material clears the overrides; Inherit clears both.
 private struct MaterialSection: View {
     let objName: String
@@ -4039,7 +4053,7 @@ private struct MaterialSection: View {
     let value: Double
     let custom: MaterialCustomState?
     @EnvironmentObject var engine: PyMOLEngine
-    /// Custom chosen but nothing moved yet: the sliders show, nothing is
+    /// Custom chosen but nothing changed yet: the controls show, nothing is
     /// written. Overrides in the payload keep the section open by themselves.
     @State private var customOpen = false
     /// Knobs this view has written since the last pick, Inherit or Reset.
@@ -4087,14 +4101,23 @@ private struct MaterialSection: View {
                             .font(.system(size: 10))
                             .foregroundColor(PanelTheme.textColor)
                             .frame(width: 78, alignment: .leading)
-                        LabeledSlider(prop: sliderProp(k),
-                                      value: custom?.knobs[k.suffix] ?? k.min,
-                                      onLive: { setKnob(k.suffix, $0) },
-                                      onCommit: { setKnob(k.suffix, $0) })
+                        if k.toggle {
+                            // On/off (#590): `max` on, `min` off. A value set
+                            // in between from the command line reads as on.
+                            ToggleSetting(value: CustomMaterial.toggleValue(
+                                              custom?.knobs[k.suffix], k),
+                                          onToggle: { setKnob(k.suffix, $0 ? k.max : k.min) })
+                            Spacer(minLength: 0)
+                        } else {
+                            LabeledSlider(prop: sliderProp(k),
+                                          value: custom?.knobs[k.suffix] ?? k.min,
+                                          onLive: { setKnob(k.suffix, $0) },
+                                          onCommit: { setKnob(k.suffix, $0) })
+                        }
                     }
                 }
                 HStack(spacing: 6) {
-                    Text(isCustom ? "Tuned from \(baseName)" : "Move a slider to tune \(baseName)")
+                    Text(isCustom ? "Tuned from \(baseName)" : "Change a setting to tune \(baseName)")
                         .font(.system(size: 9))
                         .foregroundColor(PanelTheme.disabledColor)
                     Spacer(minLength: 4)
@@ -4277,7 +4300,7 @@ private struct RepPropertyGrid: View {
             }
             ForEach(spec.properties) { p in
                 if p.kind == .menu && p.optionSource == .materials {
-                    // The material row owns its Custom sliders (#569).
+                    // The material row owns its Custom controls (#569).
                     MaterialSection(objName: objName, prop: p,
                                     value: state.values[p.setting] ?? 0,
                                     custom: state.material)
