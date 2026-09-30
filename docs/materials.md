@@ -117,8 +117,8 @@ reach them.
 | `matte` | procedural | all | Lambert only: no highlight at all. |
 | `plastic` | reflective | all | Glossy clear coat: a white environment reflection over the base colour. Traced reflections when ray tracing is on. |
 | `metallic` | reflective | all | A stronger, rougher environment reflection, tinted by the base colour. The body and the light highlight are `default`'s, so the difference is all in what it reflects (under `ray`, see below, the body is darker and the highlight tinted). |
-| `glass` | glass | cartoon, surface, sticks | Clear body (implied alpha 0.15) under a Fresnel rim, with key-light and headlight glints. |
-| `frosted_glass` | glass | cartoon, surface, sticks | Glass with a blurred environment and soft, broad glints (implied alpha 0.2). |
+| `glass` | glass | cartoon, surface, sticks | Clear body (implied alpha 0.15) under a Fresnel rim, with key-light and headlight glints. Bends what is seen through it (see below). |
+| `frosted_glass` | glass | cartoon, surface, sticks | Glass with a blurred environment and soft, broad glints (implied alpha 0.2). Bends what is seen through it like `glass`. |
 | `jelly` | glass | all | A dense gummy body (implied alpha 0.85) with an inner glow and a wet highlight. |
 | `marble` | procedural | all | Veined stone with a waxy light wrap. |
 | `clay` | procedural | all | Unglazed ceramic: fine grain, darkened at grazing angles. |
@@ -304,8 +304,31 @@ or closed surface shows a flat cap instead, and the cap is never reflective;
 cartoon gets no cap. Making it reflect would mean mirroring
 geometry you just clipped away.
 
-**Glass does not refract.** It is a Fresnel rim and glints over a see-through
-body. What is behind it is seen straight through, not bent.
+**Glass refracts** (#588). What is seen through `glass` and `frosted_glass` is
+bent by the surface's shape: each lobe of a glass molecular surface works as a
+small lens, strongest toward its edges where the surface turns away from you.
+The bend also grows with how far behind the glass the content lies, so a side
+chain that touches the surface stays joined to it there and only the part
+deeper inside moves. What is bent is the finished image of the opaque scene,
+shading included (with ray tracing on, its traced shadows and ambient
+occlusion too), so the structure looks the same through the glass as beside
+it.
+
+- **Only opaque content is bent.** Another transparent object seen through the
+  glass is not. Content in front of the glass is never pulled into it.
+- **Jelly does not refract**; it is a body you look into, not through. Glass
+  on spheres draws `default`, so it does not refract either.
+- **The strength is fixed**, and deliberately below what a real refractive
+  index would give. A molecular surface is hundreds of lobes, and a real
+  index turns the view through them into noise. Displacement is capped at 2%
+  of the image height, content more than 16 Å behind the glass moves no
+  further, and background behind glass counts as 8 Å deep.
+- **Frosted glass bends as sharply as clear glass**; the view through it is not
+  blurred.
+- **Limits.** It is a screen-space effect: nothing outside the image can be
+  seen through the glass, and at the image's edge the displaced view is
+  clamped. In `grid_mode`, near a cell's edge the displaced view can land in
+  the neighbouring cell. The CPU `ray` command does not refract.
 
 ### The CPU `ray` command
 

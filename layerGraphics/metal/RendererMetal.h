@@ -444,6 +444,15 @@ private:
   // pass composites over the opaque color during runPostChain.
   id<MTLTexture> _oitAccum = nil;    // RGBA16Float, additive
   id<MTLTexture> _oitReveal = nil;   // R16Float, revealage (multiplicative)
+  // Glass refraction (#588): rg = sum of the refracted view ray's lateral
+  // slope in pixels, b = number of refracting layers (both additive), a = the
+  // nearest refracting layer's eye distance (min). Only the glass family's
+  // pipelines write it; oit_resolve_refract turns it into a displacement of
+  // the opaque image behind the glass.
+  id<MTLTexture> _oitRefract = nil;  // RGBA16Float
+  // Its clear alpha: an eye distance beyond any scene, and within half range.
+  // The shader's kOitRefractFar must match.
+  static constexpr double kOitRefractFar = 60000.0;
   MTLRenderPassDescriptor* _oitPassDesc = nil;
   id<MTLRenderPipelineState> _vboOitPipelineUByte[cMaterialFamily_count] = {};
   id<MTLRenderPipelineState> _vboOitPipelineFloat[cMaterialFamily_count] = {};
@@ -465,6 +474,12 @@ private:
   id<MTLRenderPipelineState> _cylinderOitPipeline = nil; // alias, not owned
   NSUInteger _cylinderOitStride = 0;
   id<MTLRenderPipelineState> _oitResolvePipeline = nil;
+  // The resolve for a frame in which refracting glass drew (#588). Frames
+  // without it keep _oitResolvePipeline, so they render exactly as before.
+  id<MTLRenderPipelineState> _oitResolveRefractPipeline = nil;
+  // Bind this rep's MaterialU for the draw about to be issued, and note when
+  // the draw is refracting glass inside the transparent pass.
+  void bindRepMaterial();
   // --- Environment cubemap for the reflective materials (#493) ---
   // Six 128px RGBA16F faces with mipmaps, rebuilt only when material_env or
   // the background colour changes. Mipmaps are the roughness axis: a rough
@@ -501,6 +516,7 @@ private:
 
   bool _oitActive = false;      // true while the transparent pass is rendering
   bool _oitHasContent = false;  // true if any transparent fragments drew
+  bool _oitHasRefraction = false;  // a refracting glass draw wrote _oitRefract
 
   // --- Per-object transparent depth peel (#488) ---
   // _peelDepth is a single-sample copy of the opaque depth that ONE object's
