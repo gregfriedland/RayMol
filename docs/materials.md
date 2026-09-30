@@ -309,10 +309,9 @@ bent by the surface's shape: each lobe of a glass molecular surface works as a
 small lens, strongest toward its edges where the surface turns away from you.
 The bend also grows with how far behind the glass the content lies, so a side
 chain that touches the surface stays joined to it there and only the part
-deeper inside moves. What is bent is the finished image of the opaque scene,
-shading included (with ray tracing on, its traced shadows and ambient
-occlusion too), so the structure looks the same through the glass as beside
-it.
+deeper inside moves. What is bent is the shaded image of the opaque scene
+(with ray tracing on, its traced shadows and ambient occlusion too), so the
+structure is lit the same through the glass as beside it.
 
 - **Only opaque content is bent.** Another transparent object seen through the
   glass is not. Content in front of the glass is never pulled into it.
@@ -327,7 +326,9 @@ it.
   blurred.
 - **Limits.** It is a screen-space effect: nothing outside the image can be
   seen through the glass, and at the image's edge the displaced view is
-  clamped. In `grid_mode`, near a cell's edge the displaced view can land in
+  clamped. Outlines (`metal_outline`) and depth of field (`metal_dof`) are
+  drawn afterwards from the unbent depth, so behind glass an outline follows
+  where the content would be seen straight through, not where it is bent to. In `grid_mode`, near a cell's edge the displaced view can land in
   the neighbouring cell. The CPU `ray` command does not refract.
 
 ### The CPU `ray` command

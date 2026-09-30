@@ -753,10 +753,10 @@ void RendererMetal::setRepMaterial(const MaterialParams& params)
 
 void RendererMetal::bindRepMaterial()
 {
-  // Clear and frosted glass refract (#588) where they are drawn as transparent
-  // colour, i.e. in the OIT pass. Jelly shares the family and its pipeline but
-  // is a dense scattering body: it does not refract. Glass drawn opaque
-  // (transparency 0) shows nothing behind it to bend.
+  // Clear and frosted glass refract (#588) in the OIT pass, which they always
+  // reach: their implied alpha makes them transparent even at transparency 0.
+  // Jelly shares the family and its pipeline but is a dense scattering body:
+  // it does not refract.
   const bool refracts = _oitActive && !_shadowMode && !_peelMode &&
                         _oitRefract &&
                         _repMatParams.family == cMaterialFamily_glass &&
@@ -6282,7 +6282,9 @@ static float3 mat_glass_shade(float3 base, float3 N, float3 V, float rough,
 // slope is carried in pixels (times `refrPx`, per draw) so the resolve needs
 // no projection of its own beyond linearising depth.
 //
-// The glass is treated as a SOLID: one interface, entered and never left. That
+// The glass is treated as a SOLID: one interface, entered and never left, so
+// only the wall facing the viewer is recorded (an unpeeled object also draws
+// its far wall; the callers skip it). That
 // is the right model for content inside a closed glass surface (a cartoon in a
 // glass molecular surface), which is the case that matters; glass in front of
 // content it does not enclose bends it too, as a thick lens would.
@@ -7040,6 +7042,9 @@ fragment OITFragOut vbo_fragment_oit(VBOVertexOut in [[stage_in]],
     // Jelly is dense enough (0.85) that its highlights survive the coverage
     // as they are, so it keeps the shared path.
     float3 N = normalize(in.normalEye);
+    // Before the flip: a wall whose outward normal faces away is the far side
+    // of the glass, which only an unpeeled object draws (#588).
+    const bool farWall = N.z < 0.0;
     if (N.z < 0.0) N = -N;
     int taps = (mat.mode == kMatMode_frosted_glass)
                  ? int(max(1.0, mat.p[5])) : 1;
@@ -7049,7 +7054,11 @@ fragment OITFragOut vbo_fragment_oit(VBOVertexOut in [[stage_in]],
                                   float3(lt.klx, lt.kly, lt.klz), envMap,
                                   envSmp, hi);
     c = mat_glass_cover(body, hi, in.color.a);
-    refr = mat_glass_refraction(N, in.eyeDist, mat.refrPx);
+    // The far wall is not recorded. Flipped to face the viewer, its slope is
+    // the exact opposite of the near wall's, and averaged with it the bend
+    // would cancel wherever the whole object lies in front of what is seen.
+    if (!farWall)
+      refr = mat_glass_refraction(N, in.eyeDist, mat.refrPx);
   } else {
     c = float4(vbo_material_shade(in.color.rgb, in.normalEye, in.posModel, lt, mat, envMap, envSmp),
                in.color.a);
@@ -9272,8 +9281,10 @@ fragment CylOITOut cyl_impostor_fragment_oit(CylVOut in [[stage_in]],
       float4 g = mat_glass_cover(body, hi, a);
       rgb = g.rgb;
       a = g.a;
-      // The ray-cast hit's outward normal, turned to face the viewer as the
-      // lit-mesh path does; pt is the hit in eye space.
+      // The ray-cast hit is the stick's near wall, so it always refracts; its
+      // outward normal can tip past the silhouette under perspective, and is
+      // turned to face the viewer as the lit-mesh path does. pt is the hit in
+      // eye space.
       refr = mat_glass_refraction(n.z < 0.0 ? -n : n, -pt.z, mat.refrPx);
     }
   } else {
