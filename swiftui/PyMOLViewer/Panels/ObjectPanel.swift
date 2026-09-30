@@ -86,6 +86,8 @@ struct MaterialKnobInfo: Equatable {
     let label: String
     let min: Double
     let max: Double
+    /// An on/off knob (#590): a switch, `min` off and `max` on, not a slider.
+    var toggle: Bool = false
 }
 
 /// A layer Look (pymol.looks): a material and its knobs for ONE layer, and a
@@ -362,6 +364,14 @@ enum CustomMaterial {
     /// Every knob suffix, in the core's slot order.
     static let knobs = ["reflect", "tint", "rough", "knob1", "knob2", "knob3",
                         "knob4", "knob5", "knob6"]
+
+    /// A toggle knob's switch position as ToggleSetting reads it (on above
+    /// 0.5): on when the value is past the knob's midpoint. An unknown value
+    /// reads as on, the table's default for every toggle.
+    static func toggleValue(_ value: Double?, _ knob: MaterialKnobInfo) -> Double {
+        guard let value else { return 1 }
+        return value > (knob.min + knob.max) / 2 ? 1 : 0
+    }
 
     /// `cartoon_material` -> `cartoon`, `stick_material` -> `stick`.
     static func stem(_ materialSetting: String) -> String {
@@ -4087,14 +4097,24 @@ private struct MaterialSection: View {
                             .font(.system(size: 10))
                             .foregroundColor(PanelTheme.textColor)
                             .frame(width: 78, alignment: .leading)
-                        LabeledSlider(prop: sliderProp(k),
-                                      value: custom?.knobs[k.suffix] ?? k.min,
-                                      onLive: { setKnob(k.suffix, $0) },
-                                      onCommit: { setKnob(k.suffix, $0) })
+                        if k.toggle {
+                            // On/off (#590): `max` on, `min` off. A value set
+                            // in between from the command line reads as on
+                            // past the midpoint.
+                            ToggleSetting(value: CustomMaterial.toggleValue(
+                                              custom?.knobs[k.suffix], k),
+                                          onToggle: { setKnob(k.suffix, $0 ? k.max : k.min) })
+                            Spacer(minLength: 0)
+                        } else {
+                            LabeledSlider(prop: sliderProp(k),
+                                          value: custom?.knobs[k.suffix] ?? k.min,
+                                          onLive: { setKnob(k.suffix, $0) },
+                                          onCommit: { setKnob(k.suffix, $0) })
+                        }
                     }
                 }
                 HStack(spacing: 6) {
-                    Text(isCustom ? "Tuned from \(baseName)" : "Move a slider to tune \(baseName)")
+                    Text(isCustom ? "Tuned from \(baseName)" : "Change a setting to tune \(baseName)")
                         .font(.system(size: 9))
                         .foregroundColor(PanelTheme.disabledColor)
                     Spacer(minLength: 4)

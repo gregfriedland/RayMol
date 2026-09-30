@@ -741,6 +741,16 @@ void RendererMetal::setRepClip(float front, float back, float fracFront,
   _repClipFracBack = fracBack;
 }
 
+// How much a draw refracts: its material's Distortion knob (#590) -- p[1] for
+// clear and frosted glass, p[3] for jelly -- and 0 for every other material.
+static float glassDistortion(const MaterialParams& mp)
+{
+  if (mp.family != cMaterialFamily_glass)
+    return 0.0f;
+  const float d = (mp.mode == cMaterial_jelly) ? mp.p[3] : mp.p[1];
+  return d < 0.0f ? 0.0f : (d > 1.0f ? 1.0f : d);
+}
+
 void RendererMetal::setRepMaterial(const MaterialParams& params)
 {
   _repMatParams = params;
@@ -754,9 +764,9 @@ void RendererMetal::setRepMaterial(const MaterialParams& params)
   // viewport, and an export can afford what an interactive orbit cannot.
   if (_repMatParams.family == cMaterialFamily_glass) {
     _repMatParams.p[5] = _offscreen ? kFrostTaps : kFrostTapsLive;
-    // Clear and frosted glass refract (#588): set up the target the first
-    // time, before this rep draws.
-    if (_repMatParams.mode != cMaterial_jelly && !_oitRefractEnabled)
+    // The glass family refracts (#588, jelly #590) unless its Distortion
+    // knob is off: set up the target the first time, before this rep draws.
+    if (glassDistortion(_repMatParams) > 0.0f && !_oitRefractEnabled)
       enableOitRefraction();
   }
   // The ray tracer's per-occurrence table reads the same three fields.
@@ -806,16 +816,17 @@ void RendererMetal::enableOitRefraction()
 
 void RendererMetal::bindRepMaterial()
 {
-  // Clear and frosted glass refract (#588) in the OIT pass, which they always
-  // reach: their implied alpha makes them transparent even at transparency 0.
-  // Jelly shares the family and its pipeline but is a dense scattering body:
-  // it does not refract.
+  // The glass family -- clear and frosted glass (#588) and jelly (#590) --
+  // refracts in the OIT pass, which it always reaches: its implied alpha makes
+  // it transparent even at transparency 0.
+  const float distortion = glassDistortion(_repMatParams);
   const bool refracts = _oitActive && !_shadowMode && !_peelMode &&
-                        _oitRefract &&
-                        _repMatParams.family == cMaterialFamily_glass &&
-                        _repMatParams.mode != cMaterial_jelly;
-  const float refrPx =
-      refracts ? 0.5f * (float)_viewport.height * _projectionMatrix[5] : 0.0f;
+                        _oitRefract && distortion > 0.0f;
+  // The Distortion knob scales the bend: 1 on, 0 off, anything between from
+  // the command line (#590).
+  const float refrPx = refracts ? distortion * 0.5f * (float)_viewport.height *
+                                      _projectionMatrix[5]
+                                : 0.0f;
   // An orthographic projection has w = 1 everywhere: its last row is 0,0,0,1.
   const int ortho = _projectionMatrix[15] != 0.0f ? 1 : 0;
   bindMaterialU(_encoder, _repMatParams, _modelviewInv.data(), refrPx, ortho);
@@ -6254,6 +6265,11 @@ constant float kMatGlassBaseAttenuation = 0.82;
 constant float kMatGlassKeyGlint = 1.2;
 constant float kMatGlassHeadGlint = 0.9;
 constant float kMatGlassGlintExp = 60.0;
+// How much of that surface reflection -- the Fresnel rim and the glints
+// together -- glass shows (#590). Refraction (#588) made the body read as
+// glass on its own, and at full strength the glints crowded the view through
+// it.
+constant float kMatGlassReflection = 0.5;
 
 // Marble's light wrap: the waxy translucent diffusion of real stone. Applied on
 // BOTH the lit VBO path and the impostors so one object's cartoon and spheres
@@ -6309,8 +6325,8 @@ static float3 mat_fresnel(float3 f0, float vdoth) {
 // fixed offsets rather than a real cone: at this sample count a proper
 // distribution would alias worse than the offsets do.
 static float3 mat_glass_shade(float3 base, float3 N, float3 V, float rough,
-    int taps, float3 keyDir, texturecube<float> envMap, sampler envSmp,
-    thread float3& hi) {
+    float reflection, int taps, float3 keyDir, texturecube<float> envMap,
+    sampler envSmp, thread float3& hi) {
   float3 R = reflect(-V, N);
   float lod = sqrt(saturate(rough)) * 7.0;
   float3 room = float3(0.0);
@@ -6373,7 +6389,11 @@ static float3 mat_glass_shade(float3 base, float3 N, float3 V, float rough,
   // 2, so faint glint tails come out about twice as bright as added raw, and
   // frosted glass's broad glints (peak 0.52 * 2.1 = 1.09) top out near 0.89
   // instead of clipping to white -- a softer bloom, which is the point.
-  hi = room * F + float3(1.0 - exp(-2.0 * glint));
+  //
+  // Both are then scaled by kMatGlassReflection and by `reflection`, the
+  // material's Reflection knob (p[0], 1 = on, 0 = off; #590).
+  hi = (room * F + float3(1.0 - exp(-2.0 * glint))) *
+       (kMatGlassReflection * saturate(reflection));
   return base * kMatGlassBaseAttenuation;
 }
 
@@ -6402,7 +6422,8 @@ static float3 mat_glass_shade(float3 base, float3 N, float3 V, float rough,
 // pixel hit the displacement cap and the interior read as noise; at 0.2 the
 // side chains visibly bend and break at the lobes and the fold stays readable.
 //
-// `refrPx` 0 means this draw does not refract (jelly, or no target): it writes
+// `refrPx` 0 means this draw does not refract (its Distortion knob is off, or
+// there is no target): it writes
 // the target's clear value, which the additive and min blends leave unchanged.
 constant float kMatGlassIor = 1.33;
 constant float kMatGlassRefractStrength = 0.2;
@@ -6517,9 +6538,10 @@ struct MaterialU {
 // The prototype got here by REFRACTING the resolved opaque scene through a
 // 12-tap frosted disc and filtering it Beer-Lambert toward the base colour.
 // None of that survives the move into the OIT pass -- the fragment has no
-// opaque texture to sample (see mat_glass_shade), and jelly deliberately does
-// not take glass's deferred refraction (#588): it is a body you look into, not
-// through. What replaces it is coverage: jelly's implied alpha is 0.85, roughly six times
+// opaque texture to sample (see mat_glass_shade). Jelly does take glass's
+// deferred refraction (#588, #590), but at its coverage only the 15% of the
+// view that passes through the body is bent. What replaces the prototype's
+// look is coverage: jelly's implied alpha is 0.85, roughly six times
 // clear glass's 0.15, so this fragment dominates the blend and the body is
 // something you look INTO rather than through. See layer1/Material.cpp for why
 // that number is 0.85 and not the 0.45 the ticket specifies. So the port keeps
@@ -6794,8 +6816,8 @@ static float3 mat_impostor_composite(float3 base, float3 N, float3 pEye,
     // Outside the OIT pass there is no coverage to separate the reflection
     // from, so it is simply added; the OIT fragment uses mat_glass_cover.
     float3 hi;
-    float3 body = mat_glass_shade(base, N, V, m.rough, taps, keyDir, envMap,
-                                  envSmp, hi);
+    float3 body = mat_glass_shade(base, N, V, m.rough, m.p[0], taps, keyDir,
+                                  envMap, envSmp, hi);
     return mat_soft_knee(body + hi);
   }
   if (kMatReflective) {
@@ -6946,7 +6968,7 @@ static float3 vbo_material_shade(float3 baseColor, float3 nEye, float3 pModel,
     // Outside the OIT pass the reflection is simply added; vbo_fragment_oit
     // composites it over the body with mat_glass_cover instead.
     float3 hi;
-    float3 body = mat_glass_shade(baseColor, N, V, mat.rough, taps,
+    float3 body = mat_glass_shade(baseColor, N, V, mat.rough, mat.p[0], taps,
                                   float3(lt.klx, lt.kly, lt.klz), envMap,
                                   envSmp, hi);
     return mat_soft_knee(body + hi);
@@ -7174,7 +7196,7 @@ fragment OITFragOut vbo_fragment_oit(VBOVertexOut in [[stage_in]],
                  ? int(max(1.0, mat.p[5])) : 1;
     float3 hi;
     float3 body = mat_glass_shade(in.color.rgb, N, float3(0.0, 0.0, 1.0),
-                                  mat.rough, taps,
+                                  mat.rough, mat.p[0], taps,
                                   float3(lt.klx, lt.kly, lt.klz), envMap,
                                   envSmp, hi);
     c = mat_glass_cover(body, hi, in.color.a);
@@ -7187,6 +7209,16 @@ fragment OITFragOut vbo_fragment_oit(VBOVertexOut in [[stage_in]],
   } else {
     c = float4(vbo_material_shade(in.color.rgb, in.normalEye, in.posModel, lt, mat, envMap, envSmp),
                in.color.a);
+    if (kMatGlass) {
+      // Jelly bends the view through it too (#590), with the same near-wall
+      // rule as glass.
+      const float3 Nraw = normalize(in.normalEye);
+      const float3 viewRay = (mat.refrOrtho != 0) ? float3(0.0, 0.0, -1.0)
+                                                  : normalize(in.posEye);
+      if (dot(Nraw, viewRay) <= 0.0)
+        refr = mat_glass_refraction(Nraw, in.posEye, mat.refrPx,
+                                    mat.refrOrtho);
+    }
   }
   float w = oit_weight(c.a, in.position.z);
   OITFragOut o;
@@ -8696,6 +8728,7 @@ vertex SphereVOut sphere_impostor_vertex(SphereIn in [[stage_in]],
 struct SphereOITOut {
   float4 accum  [[color(0)]];
   float  reveal [[color(1)]];
+  float4 refr   [[color(2)]];   // jelly refraction (#590); masked off elsewhere
   float  depth  [[depth(any)]];
 };
 static float sph_oit_weight(float a, float z) {
@@ -8815,11 +8848,30 @@ fragment SphereOITOut sphere_impostor_fragment_oit(SphereVOut in [[stage_in]],
     constant SphereU& u [[buffer(1)]],
     constant MaterialU& mat [[buffer(2)]]) {
   float3 rgb; float a; float depth;
-  sphere_shade_material(in, u, mat, envMap, envSmp, rgb, a, depth);
+  float4 refr = float4(0.0, 0.0, 0.0, kOitRefractFar);
+  if (kMatGlass) {
+    // On spheres the glass family is jelly alone (clear and frosted glass
+    // draw `default` there), and jelly refracts (#590): sphere_shade_material,
+    // unrolled for the hit point and normal.
+    float3 n = float3(0.0), pt = float3(0.0);
+    float intensity = 0.0, specular = 0.0;
+    bool lit = true;
+    sphere_shade(in, u, rgb, a, depth, n, pt, intensity, specular, lit);
+    if (lit) {
+      rgb = mat_impostor_composite(in.color.rgb, n, pt, u.lAmbient, u.lDirect,
+                                   u.lReflect, float3(u.klx, u.kly, u.klz),
+                                   mat, intensity, specular, u.lSSSWrap,
+                                   envMap, envSmp);
+      refr = mat_glass_refraction(n, pt, mat.refrPx, mat.refrOrtho);
+    }
+  } else {
+    sphere_shade_material(in, u, mat, envMap, envSmp, rgb, a, depth);
+  }
   float w = sph_oit_weight(a, depth);
   SphereOITOut out;
   out.accum = float4(rgb * a, a) * w;
   out.reveal = a;
+  out.refr = refr;
   out.depth = depth;
   return out;
 }
@@ -8906,8 +8958,8 @@ void RendererMetal::buildImpostorPipelines()
     op.colorAttachments[1].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceColor;
     op.colorAttachments[1].sourceAlphaBlendFactor = MTLBlendFactorZero;
     op.colorAttachments[1].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceColor;
-    // Glass on spheres draws `default`, so no sphere pipeline refracts.
-    setOitRefractAttachment(op.colorAttachments[2], _oitRefractEnabled, false);
+    // The per-family loop below sets the attachment: on spheres only jelly
+    // is drawn in the glass family, and it refracts (#590).
     op.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
     op.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
     for (int f = 0; f < cMaterialFamily_count; ++f) {
@@ -8915,6 +8967,8 @@ void RendererMetal::buildImpostorPipelines()
           materialFragmentFunction(lib, @"sphere_impostor_fragment_oit", f);
       if (!fn) continue;
       op.fragmentFunction = fn;
+      setOitRefractAttachment(op.colorAttachments[2], _oitRefractEnabled,
+                              f == cMaterialFamily_glass);
       _sphereOitPipeline[f] = [_device newRenderPipelineStateWithDescriptor:op error:&err];
       [fn release];
       if (!_sphereOitPipeline[f])
@@ -9404,13 +9458,27 @@ fragment CylOITOut cyl_impostor_fragment_oit(CylVOut in [[stage_in]],
                    ? int(max(1.0, mat.p[5])) : 1;
       float3 hi;
       float3 body = mat_glass_shade(base, n, float3(0.0, 0.0, 1.0), mat.rough,
-                                    taps, float3(u.klx, u.kly, u.klz), envMap,
-                                    envSmp, hi);
+                                    mat.p[0], taps, float3(u.klx, u.kly, u.klz),
+                                    envMap, envSmp, hi);
       float4 g = mat_glass_cover(body, hi, a);
       rgb = g.rgb;
       a = g.a;
       // The ray-cast hit is the stick's near wall, so it always refracts. pt
       // is the hit in eye space.
+      refr = mat_glass_refraction(n, pt, mat.refrPx, mat.refrOrtho);
+    }
+  } else if (kMatGlass) {
+    // Jelly sticks (#590): cyl_shade_material, unrolled for the hit point and
+    // normal that refraction needs.
+    float3 n = float3(0.0), pt = float3(0.0), base = float3(0.0);
+    float intensity = 0.0, specular = 0.0;
+    bool lit = true;
+    cyl_shade(in, u, rgb, a, depth, n, pt, base, intensity, specular, lit);
+    if (lit) {
+      rgb = mat_impostor_composite(base, n, pt, u.lAmbient, u.lDirect,
+                                   u.lReflect, float3(u.klx, u.kly, u.klz),
+                                   mat, intensity, specular, u.lSSSWrap,
+                                   envMap, envSmp);
       refr = mat_glass_refraction(n, pt, mat.refrPx, mat.refrOrtho);
     }
   } else {

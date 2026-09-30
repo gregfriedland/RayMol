@@ -71,14 +71,15 @@ const MaterialRow kMaterialTable[] = {
         {cMaterialFamily_reflective, cMaterial_metallic, 0.6f, 0.35f, 0.25f,
             {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 0}},
 
+    /* Glass p[0] = reflection, p[1] = distortion (#590): both on. */
     {cMaterial_glass, "glass", cMaterialFamily_glass, true, 0.15f,
         {cMaterialFamily_glass, cMaterial_glass, 0.0f, 0.0f, 0.0f,
-            {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 1}},
+            {1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 1}},
 
     {cMaterial_frosted_glass, "frosted_glass", cMaterialFamily_glass, true,
         0.2f,
         {cMaterialFamily_glass, cMaterial_frosted_glass, 0.0f, 0.0f, 0.6f,
-            {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 1}},
+            {1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f}, 1}},
 
     /* Jelly is in the glass family but is the opposite material: a dense
        scattering BODY under a smooth skin, where glass is a clear body under a
@@ -160,7 +161,7 @@ const MaterialRow kMaterialTable[] = {
        this ticket; the table declared it in advance. */
     {cMaterial_jelly, "jelly", cMaterialFamily_glass, true, 0.85f,
         {cMaterialFamily_glass, cMaterial_jelly, 0.0f, 0.0f, 0.03f,
-            {2.2f, 0.35f, 1.1f, 0.0f, 0.0f, 0.0f}, 1}},
+            {2.2f, 0.35f, 1.1f, 1.0f, 0.0f, 0.0f}, 1}},  // p[3] distortion (#590)
 
     {cMaterial_marble, "marble", cMaterialFamily_procedural, true, 0.0f,
         {cMaterialFamily_procedural, cMaterial_marble, 0.0f, 0.0f, 0.9f,
@@ -549,12 +550,22 @@ const MaterialKnob kReflective[] = {
     {kKnob_reflect, "Reflection", 0.0f, 1.0f},
     {kKnob_tint, "Reflection tint", 0.0f, 1.0f},
     {kKnob_rough, "Roughness", 0.0f, 1.0f}};
-const MaterialKnob kGlass[] = {{kKnob_rough, "Roughness", 0.0f, 1.0f}};  // glints + reflection blur
-const MaterialKnob kFrostedGlass[] = {{kKnob_rough, "Frost", 0.0f, 1.0f}};
+// Clear and frosted glass: p[0] scales the surface reflection (the Fresnel
+// environment rim and the glints, mat_glass_shade), p[1] the refraction
+// (#588, bindRepMaterial). Both are 1 in the table and toggles in the
+// Inspector (#590). `rough` is the glints' and reflection's blur.
+const MaterialKnob kGlass[] = {{kKnob_p0, "Reflection", 0.0f, 1.0f, true},
+    {kKnob_p1, "Distortion", 0.0f, 1.0f, true},
+    {kKnob_rough, "Roughness", 0.0f, 1.0f}};
+const MaterialKnob kFrostedGlass[] = {{kKnob_p0, "Reflection", 0.0f, 1.0f, true},
+    {kKnob_p1, "Distortion", 0.0f, 1.0f, true},
+    {kKnob_rough, "Frost", 0.0f, 1.0f}};
+// Jelly's p[3] scales its refraction (#590); p[0..2] are its body.
 const MaterialKnob kJelly[] = {{kKnob_rough, "Skin reflection blur", 0.0f, 1.0f},
     {kKnob_p0, "Absorption", 0.0f, 6.0f},
     {kKnob_p1, "Inner glow", 0.0f, 1.0f},
-    {kKnob_p2, "Wet highlight", 0.0f, 3.0f}};
+    {kKnob_p2, "Wet highlight", 0.0f, 3.0f},
+    {kKnob_p3, "Distortion", 0.0f, 1.0f, true}};
 const MaterialKnob kMatte[] = {{kKnob_p0, "Grain", 0.0f, 0.5f},
     {kKnob_p1, "Grain frequency", 0.0f, 40.0f}};
 const MaterialKnob kClay[] = {{kKnob_p0, "Grain", 0.0f, 0.5f},

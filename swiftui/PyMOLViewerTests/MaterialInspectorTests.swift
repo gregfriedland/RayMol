@@ -194,6 +194,28 @@ final class MaterialInspectorTests: XCTestCase {
         XCTAssertNil(PyMOLEngine.parseMaterialKnobs("MATERIALS:[[0,\"default\"]]"))
     }
 
+    /// The fifth field says which control a knob gets (#590); a four-field row,
+    /// from an older core, is a slider.
+    func testAToggleKnobArrivesAsAToggle() {
+        let parsed = PyMOLEngine.parseMaterialKnobs(
+            "MATKNOBS:4:[[\"knob1\",\"Reflection\",0,1,\"toggle\"],"
+            + "[\"rough\",\"Roughness\",0,1,\"slider\"],[\"knob3\",\"Old\",0,1]]")
+        XCTAssertEqual(parsed?.1.map { $0.toggle }, [true, false, false])
+        XCTAssertEqual(parsed?.1.first,
+                       MaterialKnobInfo(suffix: "knob1", label: "Reflection", min: 0, max: 1, toggle: true))
+    }
+
+    /// The switch is on past the knob's midpoint, and on before the first poll
+    /// (every toggle is on in the table).
+    func testAToggleReadsOnPastItsMidpoint() {
+        let k = MaterialKnobInfo(suffix: "knob2", label: "Distortion", min: 0, max: 1, toggle: true)
+        XCTAssertEqual(CustomMaterial.toggleValue(1, k), 1)
+        XCTAssertEqual(CustomMaterial.toggleValue(0, k), 0)
+        XCTAssertEqual(CustomMaterial.toggleValue(0.4, k), 0)
+        XCTAssertEqual(CustomMaterial.toggleValue(0.6, k), 1)
+        XCTAssertEqual(CustomMaterial.toggleValue(nil, k), 1)
+    }
+
     func testTheRepPayloadCarriesTheCustomState() {
         let st = PyMOLEngine.parseMaterialCustom(
             ["material": ["drawn": 3, "knobs": ["reflect": 0.6, "rough": 0.05], "custom": ["rough"],

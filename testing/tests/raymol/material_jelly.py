@@ -219,14 +219,16 @@ class TestJelly(testing.PyMOLTestCase):
         self.assertAlmostEqual(p[1], 0.35, places=4)   # scattered inner glow
         self.assertAlmostEqual(p[2], 1.1, places=4)    # sharp wet highlight
 
-    def testTheOtherGlassMaterialsCarryNoKnobs(self):
+    def testTheOtherGlassMaterialsCarryNotJellysKnobs(self):
         """The mirror, so the test above cannot pass on a table that hands the
         same knobs to every glass row -- which would put an absorption term on
-        clear glass and stop it being clear."""
+        clear glass and stop it being clear. Clear and frosted glass carry
+        their own p[0..1] instead, Reflection and Distortion, both on (#590),
+        and nothing in p[2]."""
         for name in ('glass', 'frosted_glass'):
             cmd.set('surface_material', name, 'm1')
             _f, _m, _r, _t, _ro, p = draw_params('m1', repres['surface'])
-            self.assertEqual(tuple(p[:3]), (0.0, 0.0, 0.0), name)
+            self.assertEqual(tuple(p[:3]), (1.0, 1.0, 0.0), name)
 
     # -- peel -----------------------------------------------------------------
 

@@ -2425,10 +2425,12 @@ static PyObject* CmdGetMaterialNames(PyObject*, PyObject* args)
 
 /**
  * Custom material (#568): the knobs material `id` has, as
- * [(suffix, label, min, max), ...] in display order. `suffix` completes the
- * per-layer override setting: `<rep>_material_<suffix>`. Empty for `default`
- * and for an id with no knobs. The Inspector builds its Custom sliders from
- * this, so it can only offer knobs the material's shader reads.
+ * [(suffix, label, min, max, control), ...] in display order. `suffix`
+ * completes the per-layer override setting: `<rep>_material_<suffix>`.
+ * `control` is "slider", or "toggle" for an on/off knob (min off, max on;
+ * #590). Empty for `default` and for an id with no knobs. The Inspector
+ * builds its Custom controls from this, so it can only offer knobs the
+ * material's shader reads.
  *
  * _cmd.get_material_knobs(id)
  */
@@ -2448,8 +2450,10 @@ static PyObject* CmdGetMaterialKnobs(PyObject*, PyObject* args)
     return APIAutoNone(nullptr);
   }
   for (int i = 0; i < n; ++i) {
-    PyObject* item = Py_BuildValue("ssff", kSuffix[knobs[i].slot],
-        knobs[i].label, knobs[i].min, knobs[i].max);
+    // The fifth field is the Inspector's control: "toggle" or "slider".
+    PyObject* item = Py_BuildValue("ssffs", kSuffix[knobs[i].slot],
+        knobs[i].label, knobs[i].min, knobs[i].max,
+        knobs[i].toggle ? "toggle" : "slider");
     if (!item) {
       Py_DECREF(list);
       return APIAutoNone(nullptr);
