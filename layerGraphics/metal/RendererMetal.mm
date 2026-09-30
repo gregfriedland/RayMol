@@ -8962,8 +8962,10 @@ void RendererMetal::buildImpostorPipelines()
     op.colorAttachments[1].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceColor;
     op.colorAttachments[1].sourceAlphaBlendFactor = MTLBlendFactorZero;
     op.colorAttachments[1].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceColor;
-    // The per-family loop below sets the attachment: on spheres only jelly
-    // is drawn in the glass family, and it refracts (#590).
+    // The per-family loop below sets the attachment: the glass family's
+    // sphere pipeline writes it -- jelly spheres, and the clear or frosted
+    // glass of the sphere impostors other reps emit (the sphere rep itself
+    // degrades those to `default`) (#590).
     op.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
     op.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
     for (int f = 0; f < cMaterialFamily_count; ++f) {
