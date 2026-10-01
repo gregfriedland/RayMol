@@ -209,6 +209,9 @@ final class PredictController: ObservableObject {
         resolveError = nil
         phase = .idle
         pendingSizeWarning = nil
+        // Drop a server edit that was never committed, so the payload below shows the
+        // server actually saved -- and a later Run cannot commit a stale edit.
+        server = committedServer
         refreshTrigger("")          // emit('') → predictors only
     }
 

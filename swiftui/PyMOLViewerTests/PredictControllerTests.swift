@@ -420,6 +420,22 @@ final class PredictControllerRunTests: XCTestCase {
         XCTAssertEqual(c.server, "https://msa.internal")
     }
 
+    func testReEnteringTheModeDropsAnUncommittedEdit() {
+        // Found driving the app: a field cleared but never committed survived leaving
+        // and re-entering Predict mode, so the bar showed no server while one was saved
+        // -- and the next Run would have committed the stale edit and forgotten it.
+        let cmds = NSMutableArray()
+        let c = makeController(captured: cmds)
+        c.loadFormPayload(payload(server: savedServer))
+        c.server = ""
+        c.refresh()                                       // the mode is re-entered
+        c.loadFormPayload(payload(server: savedServer))
+        XCTAssertEqual(c.server, "https://msa.internal")
+        c.inputText = "MKTAY"; c.predictor = "boltz2"
+        c.run()
+        XCTAssertFalse((cmds as? [String] ?? []).contains { $0.contains("msa_server") })
+    }
+
     func testRunSavesAServerTypedButNotYetCommitted() {
         // On macOS clicking Run does not take focus from the field, so run() commits.
         let cmds = NSMutableArray()
