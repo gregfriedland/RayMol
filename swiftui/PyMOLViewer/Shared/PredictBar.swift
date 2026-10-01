@@ -9,6 +9,7 @@ struct PredictBar: View {
     @ObservedObject var theme: ThemeManager
 
     @State private var showAdvanced = false
+    @FocusState private var serverFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -153,14 +154,20 @@ struct PredictBar: View {
                     .toggleStyle(.button).controlSize(.small)
             }
             Spacer(minLength: 0)
-            Text("Sequences are sent to \(serverLabel).")
-                .font(.system(size: 10)).foregroundColor(.orange.opacity(0.9))
+            if let problem = controller.msaServer?.error {
+                // msa_search refuses to search past an unusable saved server rather than
+                // fall back to the public one; say so here, not only in the console.
+                Label("The saved MSA server cannot be used, so searches are stopped.",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 10)).foregroundColor(.red).lineLimit(1)
+                    .help(problem)
+            } else {
+                Text("Sequences are sent to "
+                     + "\(PredictController.serverLabel(controller.msaServer)).")
+                    .font(.system(size: 10)).foregroundColor(.orange.opacity(0.9))
+            }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
-    }
-
-    private var serverLabel: String {
-        controller.server.isEmpty ? "the ColabFold MSA server" : controller.server
     }
 
     // Row 4 (Advanced): recycling / diffusion / seed / msa_depth / msa_mode / server / name.
@@ -183,7 +190,14 @@ struct PredictBar: View {
                 .labelsHidden().frame(width: 110)
             }
             labeled("server") { TextField("default", text: $controller.server)
-                .frame(width: 90).textFieldStyle(.roundedBorder) }
+                .focused($serverFocused)
+                .onSubmit { controller.commitServer() }
+                .onChange(of: serverFocused) {
+                    if !serverFocused { controller.commitServer() }
+                }
+                .help("Saved MSA server, used in every session. Clear it to go back "
+                      + "to the default.")
+                .frame(width: 150).textFieldStyle(.roundedBorder) }
             labeled("name") { TextField("auto", text: $controller.resultName)
                 .frame(width: 90).textFieldStyle(.roundedBorder) }
             Spacer(minLength: 0)

@@ -89,6 +89,51 @@ final class PredictControllerTests: XCTestCase {
         XCTAssertEqual(payload.chains.first?.length, 129)
         XCTAssertTrue(payload.chains.first!.isFromObject)
         XCTAssertNil(payload.error)
+        XCTAssertNil(payload.msaServer)   // an older payload without the key still decodes
+    }
+
+    // MARK: MSA server (#598)
+
+    func testFormPayloadDecodesTheMSAServer() throws {
+        let json = """
+        {"predictors":[],"chains":[],"error":null,
+         "msa_server":{"url":"https://msa.internal:8080","origin":"saved",
+                       "public":false,"error":null}}
+        """.data(using: .utf8)!
+        let payload = try JSONDecoder().decode(PredictFormPayload.self, from: json)
+        XCTAssertEqual(payload.msaServer,
+                       MSAServerInfo(url: "https://msa.internal:8080", origin: "saved",
+                                     isPublic: false, error: nil))
+    }
+
+    func testMsaServerPythonSaves() {
+        XCTAssertEqual(PredictController.msaServerPython(" https://msa.internal "),
+                       "from pymol import cmd as _c\n"
+                       + "_c.msa_server('https://msa.internal', quiet=0)")
+    }
+
+    func testMsaServerPythonResetsWhenEmpty() {
+        for blank in ["", "   "] {
+            XCTAssertEqual(PredictController.msaServerPython(blank),
+                           "from pymol import cmd as _c\n_c.msa_server('reset', quiet=0)")
+        }
+    }
+
+    func testServerLabelNamesThePrivateHost() {
+        let info = MSAServerInfo(url: "https://msa.internal:8080", origin: "saved",
+                                 isPublic: false, error: nil)
+        XCTAssertEqual(PredictController.serverLabel(info), "msa.internal:8080")
+    }
+
+    func testServerLabelSaysThePublicDefaultIsPublic() {
+        let info = MSAServerInfo(url: "https://api.colabfold.com", origin: "default",
+                                 isPublic: true, error: nil)
+        XCTAssertEqual(PredictController.serverLabel(info),
+                       "api.colabfold.com, a public server")
+    }
+
+    func testServerLabelBeforeThePayloadArrives() {
+        XCTAssertEqual(PredictController.serverLabel(nil), "the ColabFold MSA server")
     }
 
     // MARK: Task 2 deferred — direct coverage of pure statics
@@ -296,6 +341,95 @@ final class PredictControllerRunTests: XCTestCase {
                          PredictorInfo(id: "protenix", msa: false)],
             chains: [], error: nil))
         XCTAssertEqual(c.predictor, "boltz2")
+    }
+
+    // MARK: MSA server field (#598)
+
+    private let savedServer = MSAServerInfo(url: "https://msa.internal", origin: "saved",
+                                            isPublic: false, error: nil)
+    private let publicDefault = MSAServerInfo(url: "https://api.colabfold.com",
+                                              origin: "default", isPublic: true,
+                                              error: nil)
+
+    private func payload(server: MSAServerInfo?) -> PredictFormPayload {
+        PredictFormPayload(predictors: [PredictorInfo(id: "boltz2", msa: true)],
+                           chains: [chain("A", 30)], error: nil, msaServer: server)
+    }
+
+    func testTheFieldShowsTheSavedServer() {
+        let c = PredictController()
+        c.loadFormPayload(payload(server: savedServer))
+        XCTAssertEqual(c.server, "https://msa.internal")
+    }
+
+    func testTheFieldStaysEmptyForTheDefault() {
+        // Empty means "not configured": the label line says where that goes.
+        let c = PredictController()
+        c.loadFormPayload(payload(server: publicDefault))
+        XCTAssertEqual(c.server, "")
+    }
+
+    func testCommittingAnEditSavesItAndReResolves() {
+        let cmds = NSMutableArray()
+        let c = makeController(captured: cmds)
+        var refreshed: [String] = []
+        c.refreshTrigger = { refreshed.append($0) }
+        c.loadFormPayload(payload(server: publicDefault))
+        c.inputText = "MKTAY"
+        c.server = "https://msa.new"
+        c.commitServer()
+        XCTAssertEqual(cmds as? [String],
+                       ["from pymol import cmd as _c\n_c.msa_server('https://msa.new', quiet=0)"])
+        XCTAssertEqual(refreshed, ["MKTAY"])
+    }
+
+    func testCommittingAnUnchangedFieldSendsNothing() {
+        // Focus moving in and out of the field must not re-save on every blur.
+        let cmds = NSMutableArray()
+        let c = makeController(captured: cmds)
+        c.loadFormPayload(payload(server: savedServer))
+        c.commitServer()
+        XCTAssertEqual(cmds.count, 0)
+    }
+
+    func testClearingTheFieldForgetsTheSavedServer() {
+        let cmds = NSMutableArray()
+        let c = makeController(captured: cmds)
+        c.loadFormPayload(payload(server: savedServer))
+        c.server = ""
+        c.commitServer()
+        XCTAssertEqual(cmds as? [String],
+                       ["from pymol import cmd as _c\n_c.msa_server('reset', quiet=0)"])
+    }
+
+    func testAPayloadDoesNotOverwriteAServerBeingTyped() {
+        let c = PredictController()
+        c.loadFormPayload(payload(server: savedServer))
+        c.server = "https://msa.half-typ"
+        c.loadFormPayload(payload(server: savedServer))   // e.g. the input was edited
+        XCTAssertEqual(c.server, "https://msa.half-typ")
+    }
+
+    func testAPayloadAfterACommitShowsTheServerPythonSettledOn() {
+        // Python normalises (trailing '/') or refuses a bad URL; the field follows it.
+        let c = makeController(captured: NSMutableArray())
+        c.loadFormPayload(payload(server: publicDefault))
+        c.server = "https://msa.internal/"
+        c.commitServer()
+        c.loadFormPayload(payload(server: savedServer))
+        XCTAssertEqual(c.server, "https://msa.internal")
+    }
+
+    func testRunSavesAServerTypedButNotYetCommitted() {
+        // On macOS clicking Run does not take focus from the field, so run() commits.
+        let cmds = NSMutableArray()
+        let c = makeController(captured: cmds)
+        c.loadFormPayload(payload(server: publicDefault))
+        c.inputText = "MKTAY"; c.predictor = "boltz2"
+        c.server = "https://msa.new"
+        c.run()
+        XCTAssertEqual(cmds.firstObject as? String,
+                       "from pymol import cmd as _c\n_c.msa_server('https://msa.new', quiet=0)")
     }
 }
 #endif

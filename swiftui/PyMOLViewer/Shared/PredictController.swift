@@ -16,10 +16,25 @@ struct PredictChain: Codable, Equatable, Identifiable {
     var isFromObject: Bool { !object.isEmpty }
 }
 
+/// The MSA server a search would use now (appkit_predict._msa_server, #598).
+struct MSAServerInfo: Codable, Equatable {
+    let url: String        // "" when `error` is set
+    let origin: String     // "saved" | "msa_server" | "RAYMOL_MSA_SERVER" | "default"
+    let isPublic: Bool
+    let error: String?     // a saved server that cannot be used; searches are refused
+
+    enum CodingKeys: String, CodingKey { case url, origin, isPublic = "public", error }
+}
+
 struct PredictFormPayload: Codable, Equatable {
     let predictors: [PredictorInfo]
     let chains: [PredictChain]
     let error: String?
+    var msaServer: MSAServerInfo? = nil   // absent from a payload older than #598
+
+    enum CodingKeys: String, CodingKey {
+        case predictors, chains, error, msaServer = "msa_server"
+    }
 }
 
 enum PredictPhase: Equatable {
@@ -69,6 +84,27 @@ extension PredictController {
         args.append("mode=\(InferenceJob.pythonLiteral(mode))")
         if !server.isEmpty { args.append("server=\(InferenceJob.pythonLiteral(server))") }
         return "from pymol import cmd as _c\n_c.msa_search(\(args.joined(separator: ", ")))"
+    }
+
+    /// `_c.msa_server(...)`: save the server field across launches, or forget the saved
+    /// server when the field is cleared. quiet=0 so the console records the change.
+    nonisolated static func msaServerPython(_ server: String) -> String {
+        let text = server.trimmingCharacters(in: .whitespacesAndNewlines)
+        let arg = InferenceJob.pythonLiteral(text.isEmpty ? "reset" : text)
+        return "from pymol import cmd as _c\n_c.msa_server(\(arg), quiet=0)"
+    }
+
+    /// Where "Sequences are sent to …" says a search goes: the host (and port) of the
+    /// resolved server, with the public default called out as public.
+    nonisolated static func serverLabel(_ info: MSAServerInfo?) -> String {
+        guard let info, info.error == nil, !info.url.isEmpty else {
+            return "the ColabFold MSA server"
+        }
+        var host = info.url
+        if let parts = URLComponents(string: info.url), let name = parts.host, !name.isEmpty {
+            host = parts.port.map { "\(name):\($0)" } ?? name
+        }
+        return info.isPublic ? "\(host), a public server" : host
     }
 
     /// Per-chain sequences of a literal input: split on '/', strip whitespace,
@@ -134,9 +170,12 @@ final class PredictController: ObservableObject {
     @Published var msaDepthText = ""    // empty → omit (predictor default)
     @Published var msaMode = "env"
     @Published var resultName = ""
+    /// The saved MSA server (empty when none is saved). Editing it and committing saves
+    /// it through `msa_server`, so it is the same setting the console reads (#598).
     @Published var server = ""
 
     // Resolved / status (rendered by PredictBar)
+    @Published var msaServer: MSAServerInfo?
     @Published var availablePredictors: [PredictorInfo] = []
     @Published var chains: [PredictChain] = []
     @Published var resolveError: String?
@@ -156,6 +195,10 @@ final class PredictController: ObservableObject {
 
     // Fix B: one-tick grace so the just-fired search can register before being declared failed.
     private var failGraceTicks = 0
+
+    // What `server` held when a payload last set it or the user last committed it. While
+    // the field differs from this it is mid-edit, and a payload must not overwrite it.
+    private var committedServer = ""
 
     // MARK: entering the mode / input changes
 
@@ -183,6 +226,29 @@ final class PredictController: ObservableObject {
         // Drop any selected MSA chains that no longer exist in the resolved input.
         let ids = Set(payload.chains.map(\.id))
         msaChains = msaChains.intersection(ids)
+        if let info = payload.msaServer {
+            msaServer = info
+            if server == committedServer {
+                // Only a server the user chose belongs in the field; the env var and the
+                // public default are what an EMPTY field means, and the label says which.
+                let chosen = info.origin == "saved" || info.origin == "msa_server"
+                server = chosen ? info.url : ""
+                committedServer = server
+            }
+        }
+    }
+
+    /// Save an edited server field (Return, focus loss, or Run). No-op when unchanged, so
+    /// focus moving through the field does not re-save it.
+    func commitServer() {
+        let typed = server.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard typed != committedServer else { return }
+        server = typed
+        committedServer = typed
+        runPythonSeam(PredictController.msaServerPython(typed))
+        // Re-resolve so the field and label show what Python settled on: the normalised
+        // URL, or the previous server if this one was refused.
+        refreshTrigger(inputText)
     }
 
     // MARK: run
@@ -200,6 +266,9 @@ final class PredictController: ObservableObject {
     }
 
     func run() {
+        // On macOS clicking Run does not take focus from the server field, so a server
+        // typed there would otherwise be used for this search but never saved.
+        commitServer()
         guard !predictor.isEmpty, !chains.isEmpty else {
             phase = .error(resolveError ?? "Nothing to fold — enter a sequence, "
                            + "selection, or object.")

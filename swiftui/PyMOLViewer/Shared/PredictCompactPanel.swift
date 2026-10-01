@@ -238,15 +238,18 @@ struct PredictCompactPanel: View {
                     .toggleStyle(.button).controlSize(.small)
             }
             Spacer(minLength: 0)
-            Text("Sent to \(serverLabel).")
-                .font(.system(size: 10)).foregroundColor(.orange.opacity(0.9))
-                .lineLimit(1)
+            if controller.msaServer?.error != nil {
+                // Searches are refused rather than sent to the public server; the
+                // settings sheet's Server row is where this gets fixed.
+                Label("Saved MSA server unusable", systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 10)).foregroundColor(.red).lineLimit(1)
+            } else {
+                Text("Sent to \(PredictController.serverLabel(controller.msaServer)).")
+                    .font(.system(size: 10)).foregroundColor(.orange.opacity(0.9))
+                    .lineLimit(1)
+            }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
-    }
-
-    private var serverLabel: String {
-        controller.server.isEmpty ? "the ColabFold server" : controller.server
     }
 }
 
@@ -279,6 +282,9 @@ struct PredictSettingsSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        // Done, a swipe down, and tapping outside all end here; none of them submits
+        // the Server field, so it is committed on the way out.
+        .onDisappear { controller.commitServer() }
     }
 
     private var selectedSupportsMSA: Bool {
@@ -333,6 +339,8 @@ struct PredictSettingsSheet: View {
                         .multilineTextAlignment(.trailing)
                         .autocorrectionDisabled(true)
                         .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        .onSubmit { controller.commitServer() }
                         .frame(width: 170)
                 }
                 // Not decoration. Depth is the dimension PredictSizeGuard's own history
