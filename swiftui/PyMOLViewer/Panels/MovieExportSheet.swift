@@ -117,7 +117,9 @@ struct MovieExportOptions: Codable, Equatable {
         quality = q
         guard q != .custom else { return }
         overrides = q.overrides
-        supersample = allows(supersample: q.supersample) ? q.supersample : 1
+        // Keep the preset's factor even when it exceeds the render limit at this
+        // size: the exporter falls back to 1× and the sheet warns about it.
+        supersample = q.supersample
     }
 }
 
@@ -146,30 +148,52 @@ struct MovieExportRequest {
         var last: Int
     }
 
-    static func decode(_ json: String) -> MovieExportRequest? {
-        guard let w = try? JSONDecoder().decode(Wire.self, from: Data(json.utf8)) else { return nil }
+    struct DecodeError: Error { let message: String }
+
+    static func decode(_ json: String) -> Result<MovieExportRequest, DecodeError> {
+        func bad(_ m: String) -> Result<MovieExportRequest, DecodeError> { .failure(DecodeError(message: m)) }
+        guard let w = try? JSONDecoder().decode(Wire.self, from: Data(json.utf8)) else {
+            return bad("could not read the export request")
+        }
         var o = MovieExportOptions()
         switch w.format {
         case "gif": o.format = .gif
         case "png": o.format = .png
-        default: o.format = .video
+        case "mp4", "mov": o.format = .video
+        default: return bad("unsupported format '\(w.format)'")
         }
-        switch w.codec {
-        case "hevc": o.codec = .hevc
-        case "prores": o.codec = .prores
-        default: o.codec = .h264
+        if o.format == .video {
+            switch w.codec {
+            case "h264": o.codec = .h264
+            case "hevc": o.codec = .hevc
+            case "prores": o.codec = .prores
+            default: return bad("unsupported video codec '\(w.codec)'")
+            }
+            // Same platform rule as the sheet's codec menu.
+            guard MovieExportOptions.Codec.available.contains(o.codec) else {
+                return bad("\(o.codec.rawValue) isn't available on this device; use codec=h264 or hevc")
+            }
+        }
+        let maxDim = MovieExportOptions.maxRenderDimension
+        guard (16...maxDim).contains(w.width), (16...maxDim).contains(w.height) else {
+            return bad("width and height must be between 16 and \(maxDim) on this device")
+        }
+        guard [1, 2, 4].contains(w.supersample) else { return bad("supersample must be 1, 2 or 4") }
+        guard w.bitrate.isFinite, w.bitrate == 0 || (1...400).contains(w.bitrate) else {
+            return bad("bitrate must be 0 (automatic) or 1–400 Mbit/s")
         }
         o.movContainer = (w.format == "mov")
         o.width = w.width
         o.height = w.height
         o.quality = MovieQuality(rawValue: w.quality) ?? .custom
         o.overrides = w.overrides
-        o.supersample = o.allows(supersample: w.supersample) ? w.supersample : 1
+        // Over the render limit at this size → start() renders at 1×.
+        o.supersample = w.supersample
         o.fpsOverride = w.fps
         o.rayTraced = w.ray != 0
         o.bitrateMbps = w.bitrate
-        return MovieExportRequest(path: w.path, options: o, first: w.first, last: w.last,
-                                  frames: w.frames)
+        return .success(MovieExportRequest(path: w.path, options: o, first: w.first,
+                                           last: w.last, frames: w.frames))
     }
 }
 
@@ -192,6 +216,8 @@ final class MovieExporter: ObservableObject {
     @Published var etaText: String?
     @Published var estimateText: String?
     @Published var isEstimating = false
+    // Encoder finalization in progress: too late to cancel.
+    @Published var isFinalizing = false
 
     // Called on the main thread when an export ends: (result, nil) on success,
     // (nil, message) on failure or cancel. Used by cmd.movie_export, which has
@@ -206,7 +232,12 @@ final class MovieExporter: ObservableObject {
     private var idx = 0
     private var frameDir: URL?
     private var outURL: URL?
-    private var startTime = Date()
+    // When frame 1 finished. The ETA averages frames 2+ only, so frame 1's
+    // one-off rep rebuild isn't counted once per remaining frame.
+    private var firstFrameDone: Date?
+    // Set by the first complete()/fail(); later calls are ignored, so a late
+    // writer callback can't tear down (or report) an export twice.
+    private var ended = false
     // True between apply_overrides and restore; drives every teardown path.
     private var overridesApplied = false
     // True while THIS exporter holds engine.exportRenderActive, so only the
@@ -247,6 +278,9 @@ final class MovieExporter: ObservableObject {
         self.errorText = nil
         self.etaText = nil
         self.finishedURL = nil
+        self.ended = false
+        self.isFinalizing = false
+        self.firstFrameDone = nil
 
         let tmp = FileManager.default.temporaryDirectory
         frameDir = tmp.appendingPathComponent("pymol_frames_\(UUID().uuidString.prefix(6))")
@@ -272,14 +306,13 @@ final class MovieExporter: ObservableObject {
         engine.exportRenderActive = true
         ownsCore = true
         isExporting = true
-        startTime = Date()
         renderNext()
     }
 
     // Stop after the in-flight frame. Settings are restored and the partial file
     // discarded once that frame's off-main render has finished.
     func cancel() {
-        guard isExporting else { return }
+        guard isExporting, !isFinalizing else { return }
         fail("Export cancelled.")
     }
 
@@ -375,16 +408,22 @@ final class MovieExporter: ObservableObject {
             // pure C++/Metal, no Python — safe off the main thread. It blocks on
             // the GPU and writes the PNG while the UI stays responsive.
             engine.renderHiResPNG(png.path, width: w, height: h, rayTraced: rt)
-            self.appendFrame(png, frameIndex: captureIdx)   // encode off-main
+            let error = self.appendFrame(png, frameIndex: captureIdx)   // encode off-main
             try? FileManager.default.removeItem(at: png)
             DispatchQueue.main.async {
                 guard self.isExporting else { return }
+                if let error = error { self.fail("Frame \(captureIdx): \(error)"); return }
                 let done = captureIdx - self.first + 1
                 self.progress = Double(done) / Double(self.total)
-                let perFrame = Date().timeIntervalSince(self.startTime) / Double(done)
+                let now = Date()
+                if done == 1 { self.firstFrameDone = now }
                 let left = self.total - done
-                self.etaText = left > 0
-                    ? "About \(Self.formatDuration(perFrame * Double(left))) left" : nil
+                if left > 0, done >= 2, let t1 = self.firstFrameDone {
+                    let perFrame = now.timeIntervalSince(t1) / Double(done - 1)
+                    self.etaText = "About \(Self.formatDuration(perFrame * Double(left))) left"
+                } else {
+                    self.etaText = nil
+                }
                 self.idx += 1
                 self.renderNext()
             }
@@ -393,19 +432,27 @@ final class MovieExporter: ObservableObject {
 
     // Runs on renderQueue (off main). `frameIndex` is passed in rather than read
     // from `self.idx` (which the main thread mutates) so there's no cross-thread
-    // read of the loop counter.
-    private func appendFrame(_ png: URL, frameIndex: Int) {
+    // read of the loop counter. Returns why the frame couldn't be written, or nil.
+    private func appendFrame(_ png: URL, frameIndex: Int) -> String? {
+        guard FileManager.default.fileExists(atPath: png.path) else {
+            return "the renderer produced no image"
+        }
         switch options.format {
         case .video:
-            guard let cg = loadCGImage(png), let input = videoInput, let adaptor = adaptor else { return }
-            var tries = 0
-            while !input.isReadyForMoreMediaData && tries < 200 { usleep(2000); tries += 1 }
-            if let pb = pixelBuffer(from: cg) {
-                let t = CMTime(value: Int64(frameIndex - first), timescale: Int32(fps))
-                adaptor.append(pb, withPresentationTime: t)
+            guard let input = videoInput, let adaptor = adaptor else { return "no encoder" }
+            guard let cg = loadCGImage(png) else { return "could not read the rendered image" }
+            // Appending while not ready raises; wait (bounded) for the encoder.
+            var waited = 0
+            while !input.isReadyForMoreMediaData && waited < 30_000 { usleep(2000); waited += 2 }
+            guard input.isReadyForMoreMediaData else { return "the encoder stopped accepting frames" }
+            guard let pb = pixelBuffer(from: cg) else { return "could not convert the image" }
+            let t = CMTime(value: Int64(frameIndex - first), timescale: Int32(fps))
+            guard adaptor.append(pb, withPresentationTime: t) else {
+                return writer?.error?.localizedDescription ?? "the encoder rejected the frame"
             }
         case .gif:
-            guard let cg = loadCGImage(png), let dest = gifDest else { return }
+            guard let dest = gifDest else { return "no encoder" }
+            guard let cg = loadCGImage(png) else { return "could not read the rendered image" }
             // renderHiResPNG produces a transparent background (molecule alpha=1,
             // bg alpha=0). GIF would collapse that to its background color, so
             // flatten onto opaque black first (matching the MP4 pixel-buffer path).
@@ -414,15 +461,20 @@ final class MovieExporter: ObservableObject {
                             [kCGImagePropertyGIFDelayTime: 1.0 / Double(fps)]]
             CGImageDestinationAddImage(dest, opaque, props as CFDictionary)
         case .png:
-            guard let dir = outURL else { return }
+            guard let dir = outURL else { return "no output folder" }
             let dst = dir.appendingPathComponent(String(format: "frame_%04d.png", frameIndex - first + 1))
             if renderW == width && renderH == height {
                 // No supersampling: keep the renderer's PNG (alpha and all) as-is.
-                try? FileManager.default.moveItem(at: png, to: dst)
-            } else if let cg = loadCGImage(png), let small = downsampled(cg) {
-                writePNG(small, to: dst)
+                do { try FileManager.default.moveItem(at: png, to: dst) }
+                catch { return error.localizedDescription }
+            } else {
+                guard let cg = loadCGImage(png), let small = downsampled(cg) else {
+                    return "could not downsample the rendered image"
+                }
+                guard writePNG(small, to: dst) else { return "could not write \(dst.lastPathComponent)" }
             }
         }
+        return nil
     }
 
     // Composite a (possibly transparent) frame onto opaque black at output size.
@@ -449,22 +501,25 @@ final class MovieExporter: ObservableObject {
         return ctx.makeImage()
     }
 
-    private func writePNG(_ image: CGImage, to url: URL) {
+    @discardableResult
+    private func writePNG(_ image: CGImage, to url: URL) -> Bool {
         guard let dest = CGImageDestinationCreateWithURL(
-            url as CFURL, UTType.png.identifier as CFString, 1, nil) else { return }
+            url as CFURL, UTType.png.identifier as CFString, 1, nil) else { return false }
         CGImageDestinationAddImage(dest, image, nil)
-        CGImageDestinationFinalize(dest)
+        return CGImageDestinationFinalize(dest)
     }
 
     private func finish() {
         switch options.format {
         case .video:
+            guard let w = writer else { fail("Encoding failed."); return }
+            isFinalizing = true     // Cancel is disabled from here on
             videoInput?.markAsFinished()
-            writer?.finishWriting { [weak self] in
+            w.finishWriting { [weak self] in
                 DispatchQueue.main.async {
-                    guard let self = self else { return }
-                    if self.writer?.status == .completed { self.complete(self.outURL) }
-                    else { self.fail(self.writer?.error?.localizedDescription ?? "Encoding failed.") }
+                    guard let self = self, !self.ended else { return }
+                    if w.status == .completed { self.complete(self.outURL) }
+                    else { self.fail(w.error?.localizedDescription ?? "Encoding failed.") }
                 }
             }
         case .gif:
@@ -476,6 +531,9 @@ final class MovieExporter: ObservableObject {
     }
 
     private func complete(_ url: URL?) {
+        guard !ended else { return }
+        ended = true
+        isFinalizing = false
         isExporting = false
         progress = 1
         etaText = nil
@@ -487,18 +545,22 @@ final class MovieExporter: ObservableObject {
     }
 
     private func fail(_ message: String) {
+        guard !ended else { return }
+        ended = true
+        isFinalizing = false
         isExporting = false
         etaText = nil
         errorText = message
-        // Cancel the writer and drop the partial output on renderQueue, after
-        // any in-flight frame has finished appending to them.
-        let w = writer, out = outURL
-        renderQueue.async {
-            if w?.status == .writing { w?.cancelWriting() }
+        // Cancel the writer, drop the partial output and clear the encoder state
+        // on renderQueue, AFTER any in-flight frame has finished using them
+        // (appendFrame reads writer/videoInput/adaptor/gifDest off-main).
+        let out = outURL
+        renderQueue.async { [weak self] in
+            if let w = self?.writer, w.status == .writing { w.cancelWriting() }
             if let out = out { try? FileManager.default.removeItem(at: out) }
+            self?.writer = nil; self?.videoInput = nil; self?.adaptor = nil; self?.gifDest = nil
         }
         releaseCore { [weak self] in self?.onFinish?(nil, message) }
-        writer = nil; videoInput = nil; adaptor = nil; gifDest = nil
     }
 
     // Hand the core back to the live loop: restore the overridden settings and
@@ -540,9 +602,10 @@ final class MovieExporter: ObservableObject {
 
     // MARK: time estimate
 
-    // Render one probe frame of the CURRENT frame with these options, and
+    // Render one probe frame of the CURRENT frame with these options and push
+    // it through the selected encoder/writer (a throwaway one-frame file), then
     // estimate the whole export: the one-off rep rebuild the overrides cause,
-    // plus frames × (render + decode/encode prep). Overrides are restored after.
+    // plus frames × (render + encode/write). Overrides are restored after.
     func estimate(engine: PyMOLEngine, options: MovieExportOptions, frames: Int) {
         guard !isExporting, !isEstimating, !engine.exportRenderActive else { return }
         self.engine = engine
@@ -554,8 +617,18 @@ final class MovieExporter: ObservableObject {
         self.width = w; self.height = h
         self.renderW = w * ss; self.renderH = h * ss
         self.options = options
-        let png = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pymol_probe_\(UUID().uuidString.prefix(6)).png")
+        self.first = 1; self.last = 1; self.fps = max(options.fpsOverride, 30)
+        let tmp = FileManager.default.temporaryDirectory
+        let tag = UUID().uuidString.prefix(6)
+        let png = tmp.appendingPathComponent("pymol_probe_\(tag).png")
+        outURL = options.format == .png ? tmp.appendingPathComponent("pymol_probe_\(tag)_frames")
+            : tmp.appendingPathComponent("pymol_probe_\(tag).\(options.fileExtension)")
+        let probeOut = outURL
+        guard setupEncoder() else {
+            isEstimating = false
+            estimateText = "Couldn't start the encoder for an estimate."
+            return
+        }
 
         engine.pause()
         let t0 = Date()
@@ -569,21 +642,29 @@ final class MovieExporter: ObservableObject {
             let t1 = Date()
             engine.renderHiResPNG(png.path, width: w * ss, height: h * ss,
                                   rayTraced: options.rayTraced ? 1 : 0)
-            if let cg = self.loadCGImage(png) {
-                switch options.format {
-                case .video: _ = self.pixelBuffer(from: cg)
-                case .gif: _ = self.flattenedOpaque(cg)
-                case .png: if ss > 1 { _ = self.downsampled(cg) }
-                }
+            let error = self.appendFrame(png, frameIndex: 1)
+            // Drain the encoder so its compression time is counted too.
+            switch options.format {
+            case .video:
+                let done = DispatchSemaphore(value: 0)
+                self.videoInput?.markAsFinished()
+                if let wr = self.writer { wr.finishWriting { done.signal() }; done.wait() }
+            case .gif:
+                if let d = self.gifDest { CGImageDestinationFinalize(d) }
+            case .png:
+                break
             }
             let perFrame = Date().timeIntervalSince(t1)
             try? FileManager.default.removeItem(at: png)
+            if let o = probeOut { try? FileManager.default.removeItem(at: o) }
+            self.writer = nil; self.videoInput = nil; self.adaptor = nil; self.gifDest = nil
             DispatchQueue.main.async {
                 let total = rebuild + perFrame * Double(max(frames, 1))
                 self.releaseCore {
                     self.isEstimating = false
-                    self.estimateText = String(format: "≈ %.1f s/frame · about %@ total",
-                                               perFrame, Self.formatDuration(total))
+                    self.estimateText = error.map { "Estimate failed: \($0)" }
+                        ?? String(format: "≈ %.1f s/frame · about %@ total",
+                                  perFrame, Self.formatDuration(total))
                 }
             }
         }
@@ -752,7 +833,10 @@ struct MovieExportControls: View {
                 .disabled(exporter.isExporting || exporter.isEstimating
                           || engine.playback.frameCount <= 1)
                 if exporter.isExporting {
-                    Button("Cancel", role: .cancel) { exporter.cancel() }
+                    Button(exporter.isFinalizing ? "Finishing…" : "Cancel", role: .cancel) {
+                        exporter.cancel()
+                    }
+                    .disabled(exporter.isFinalizing)
                         .buttonStyle(.bordered)
                         .padding(.vertical, 10)
                 }

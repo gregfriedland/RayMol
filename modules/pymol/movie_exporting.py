@@ -16,7 +16,8 @@ and anti-aliasing for the export only. This module owns that override step:
 does not render anything itself: rendering needs the Swift exporter, so it
 emits a ``MOVIEEXPORT:<json>`` feedback line that PyMOLEngine picks up and
 hands to a MovieExporter. The export runs asynchronously; completion is
-reported in the log as ``Movie export: wrote <path>``.
+reported in the log as `` movie_export: wrote <path>`` (failures as
+`` movie_export: failed: <reason>``).
 
 Kept free of Swift-specific state so the preset tables and the snapshot/restore
 logic are testable under plain PyMOL.
@@ -160,7 +161,7 @@ def _emit(line):
 
 
 _FORMATS = ('mp4', 'mov', 'gif', 'png')
-_CODECS = ('h264', 'hevc', 'prores', 'png')
+_VIDEO_CODECS = ('h264', 'hevc', 'prores')
 
 
 def _infer(filename, format, codec):
@@ -175,8 +176,8 @@ def _infer(filename, format, codec):
         c = 'png'
     elif not c:
         c = 'prores' if fmt == 'mov' else 'h264'
-    if c and c not in _CODECS:
-        raise ValueError('codec must be one of: ' + ', '.join(_CODECS))
+    if fmt in ('mp4', 'mov') and c not in _VIDEO_CODECS:
+        raise ValueError('codec must be one of: ' + ', '.join(_VIDEO_CODECS))
     if c == 'prores' and fmt == 'mp4':
         raise ValueError('ProRes needs a .mov file')
     return fmt, c
@@ -201,8 +202,9 @@ USAGE
 ARGUMENTS
 
     filename = str: output path. The extension picks the format: .mp4
-    (H.264 or HEVC), .mov (ProRes 422, or H.264/HEVC), .gif, or a folder /
-    .png for a PNG sequence.
+    (H.264 or HEVC), .mov (ProRes 422 on macOS, or H.264/HEVC), .gif, or a
+    new or empty folder for a PNG sequence. A movie file replaces an existing
+    file; a PNG sequence never writes into a non-empty folder.
 
     width, height = int: output size in pixels {default: 1920, 1080}
 
@@ -222,8 +224,8 @@ ARGUMENTS
 
     ray = 0/1: ray-trace every frame {default: 0}
 
-    bitrate = float: H.264/HEVC average bitrate in Mbit/s; 0 lets the
-    encoder decide {default: 0}
+    bitrate = float: H.264/HEVC average bitrate in Mbit/s (1-400); 0 lets
+    the encoder decide {default: 0}
 
     first, last = int: frame range; last 0 means the final frame
 
@@ -232,6 +234,8 @@ EXAMPLES
     movie_export ~/Desktop/spin.mp4, 3840, 2160, quality=high
     movie_export ~/Desktop/spin.mov, 1920, 1080, codec=prores, ray=1
     '''
+    if not str(filename).strip():
+        raise ValueError('filename is required')
     filename = os.path.abspath(os.path.expanduser(str(filename)))
     fmt, c = _infer(filename, format, codec)
     q = str(quality).strip().lower()
@@ -242,6 +246,12 @@ EXAMPLES
     ss = int(supersample) or PRESET_SUPERSAMPLE[q]
     if ss not in (1, 2, 4):
         raise ValueError('supersample must be 1, 2 or 4')
+    br = float(bitrate)
+    if not (br == 0 or 1 <= br <= 400):  # also rejects nan/inf
+        raise ValueError('bitrate must be 0 (automatic) or 1-400 Mbit/s')
+    first, last = int(first), int(last)
+    if first < 1 or last < 0 or (last and last < first):
+        raise ValueError('need 1 <= first <= last (last 0 = final frame)')
     w, h = int(width), int(height)
     if w < 16 or h < 16 or w > 8192 or h > 8192:
         raise ValueError('width and height must be between 16 and 8192')
@@ -260,8 +270,8 @@ EXAMPLES
         'supersample': ss,
         'fps': fps,
         'ray': 1 if int(ray) else 0,
-        'bitrate': float(bitrate),
-        'first': int(first), 'last': int(last),
+        'bitrate': br,
+        'first': first, 'last': last,
     }
     _emit('MOVIEEXPORT:' + json.dumps(request, separators=(',', ':')))
     if not int(quiet):

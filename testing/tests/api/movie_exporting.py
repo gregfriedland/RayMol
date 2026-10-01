@@ -95,12 +95,18 @@ class TestMovieExportCommand(testing.PyMOLTestCase):
         self.assertEqual(req['overrides']['cartoon_sampling'], 14)
         self.assertEqual(cmd.movie_export('/tmp/x.mp4', quality='maximum')['supersample'], 2)
 
+    def test_empty_filename(self):
+        with self.assertRaises(ValueError):
+            cmd.movie_export('')
+
     def test_command_syntax(self):
         cmd.do('movie_export /tmp/y.mp4, 2560, 1440, quality=high')
 
     def test_invalid(self):
         for kw in ({'codec': 'prores'}, {'supersample': 3}, {'width': 99999},
-                   {'format': 'avi'}):
+                   {'format': 'avi'}, {'codec': 'png'}, {'bitrate': -1},
+                   {'bitrate': 1000}, {'bitrate': float('nan')},
+                   {'first': 0}, {'first': 5, 'last': 3}):
             with self.assertRaises(ValueError):
                 cmd.movie_export('/tmp/x.mp4', **kw)
 
