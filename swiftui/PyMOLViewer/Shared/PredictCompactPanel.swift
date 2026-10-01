@@ -42,6 +42,7 @@ struct PredictCompactPanel: View {
         .background(theme.active.panelBackground.color)
         .tint(theme.active.accent.color)
         .onChange(of: controller.inputText) { _ in controller.inputChanged() }
+        .modifier(PublicMSAWarning(controller: controller))
         .sheet(isPresented: $showSettings) {
             PredictSettingsSheet(controller: controller)
         }
@@ -238,13 +239,13 @@ struct PredictCompactPanel: View {
                     .toggleStyle(.button).controlSize(.small)
             }
             Spacer(minLength: 0)
-            if controller.msaServer?.error != nil {
+            if controller.selectedServer == nil, controller.msaServer?.error != nil {
                 // Searches are refused rather than sent to the public server; the
                 // settings sheet's Server row is where this gets fixed.
                 Label("Saved MSA server unusable", systemImage: "exclamationmark.triangle")
                     .font(.system(size: 10)).foregroundColor(.red).lineLimit(1)
             } else {
-                Text("Sent to \(PredictController.serverLabel(controller.msaServer)).")
+                Text("Sent to \(PredictController.serverLabel(controller.selectedServer)).")
                     .font(.system(size: 10)).foregroundColor(.orange.opacity(0.9))
                     .lineLimit(1)
             }
@@ -282,9 +283,6 @@ struct PredictSettingsSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
-        // Done, a swipe down, and tapping outside all end here; none of them submits
-        // the Server field, so it is committed on the way out.
-        .onDisappear { controller.commitServer() }
     }
 
     private var selectedSupportsMSA: Bool {
@@ -335,13 +333,7 @@ struct PredictSettingsSheet: View {
                 HStack {
                     Text("Server")
                     Spacer()
-                    TextField("default", text: $controller.server)
-                        .multilineTextAlignment(.trailing)
-                        .autocorrectionDisabled(true)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .onSubmit { controller.commitServer() }
-                        .frame(width: 170)
+                    MSAServerPicker(controller: controller)
                 }
                 // Not decoration. Depth is the dimension PredictSizeGuard's own history
                 // records it having failed to model — 3.6× optimistic at the ceiling —

@@ -9,7 +9,6 @@ struct PredictBar: View {
     @ObservedObject var theme: ThemeManager
 
     @State private var showAdvanced = false
-    @FocusState private var serverFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,6 +24,7 @@ struct PredictBar: View {
         .background(theme.active.panelBackground.color)
         .tint(theme.active.accent.color)
         .onChange(of: controller.inputText) { controller.inputChanged() }
+        .modifier(PublicMSAWarning(controller: controller))
     }
 
     private var selectedSupportsMSA: Bool {
@@ -154,7 +154,7 @@ struct PredictBar: View {
                     .toggleStyle(.button).controlSize(.small)
             }
             Spacer(minLength: 0)
-            if let problem = controller.msaServer?.error {
+            if controller.selectedServer == nil, let problem = controller.msaServer?.error {
                 // msa_search refuses to search past an unusable saved server rather than
                 // fall back to the public one; say so here, not only in the console.
                 Label("The saved MSA server cannot be used, so searches are stopped.",
@@ -163,7 +163,7 @@ struct PredictBar: View {
                     .help(problem)
             } else {
                 Text("Sequences are sent to "
-                     + "\(PredictController.serverLabel(controller.msaServer)).")
+                     + "\(PredictController.serverLabel(controller.selectedServer)).")
                     .font(.system(size: 10)).foregroundColor(.orange.opacity(0.9))
             }
         }
@@ -189,15 +189,7 @@ struct PredictBar: View {
                 }
                 .labelsHidden().frame(width: 110)
             }
-            labeled("server") { TextField("default", text: $controller.server)
-                .focused($serverFocused)
-                .onSubmit { controller.commitServer() }
-                .onChange(of: serverFocused) {
-                    if !serverFocused { controller.commitServer() }
-                }
-                .help("Saved MSA server, used in every session. Clear it to go back "
-                      + "to the default.")
-                .frame(width: 150).textFieldStyle(.roundedBorder) }
+            labeled("server") { MSAServerPicker(controller: controller) }
             labeled("name") { TextField("auto", text: $controller.resultName)
                 .frame(width: 90).textFieldStyle(.roundedBorder) }
             Spacer(minLength: 0)

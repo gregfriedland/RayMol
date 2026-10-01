@@ -120,20 +120,37 @@ final class PredictControllerTests: XCTestCase {
     }
 
     func testServerLabelNamesThePrivateHost() {
-        let info = MSAServerInfo(url: "https://msa.internal:8080", origin: "saved",
-                                 isPublic: false, error: nil)
-        XCTAssertEqual(PredictController.serverLabel(info), "msa.internal:8080")
+        XCTAssertEqual(PredictController.serverLabel("https://msa.internal:8080"),
+                       "msa.internal:8080")
     }
 
-    func testServerLabelSaysThePublicDefaultIsPublic() {
-        let info = MSAServerInfo(url: "https://api.colabfold.com", origin: "default",
-                                 isPublic: true, error: nil)
-        XCTAssertEqual(PredictController.serverLabel(info),
+    func testServerLabelSaysColabFoldIsPublic() {
+        XCTAssertEqual(PredictController.serverLabel("https://api.colabfold.com"),
                        "api.colabfold.com, a public server")
     }
 
-    func testServerLabelBeforeThePayloadArrives() {
-        XCTAssertEqual(PredictController.serverLabel(nil), "the ColabFold MSA server")
+    func testServerLabelBeforeAServerIsKnown() {
+        XCTAssertEqual(PredictController.serverLabel(nil), "the default MSA server")
+    }
+
+    func testOnlyColabFoldCountsAsPublic() {
+        XCTAssertTrue(PredictController.isPublicServer("https://api.colabfold.com"))
+        XCTAssertTrue(PredictController.isPublicServer("https://API.colabfold.com/"))
+        XCTAssertFalse(PredictController.isPublicServer("https://msa.internal"))
+        XCTAssertFalse(PredictController.isPublicServer("https://api.colabfold.com.evil.example"))
+    }
+
+    func testNormalizedServerAcceptsHttpAndHttps() {
+        XCTAssertEqual(PredictController.normalizedServer(" https://msa.internal/ "),
+                       "https://msa.internal")
+        XCTAssertEqual(PredictController.normalizedServer("http://10.0.0.5:8080"),
+                       "http://10.0.0.5:8080")
+    }
+
+    func testNormalizedServerRefusesWhatPythonWouldRefuse() {
+        for bad in ["", "msa.internal", "ftp://msa.internal", "https://", "not a url"] {
+            XCTAssertNil(PredictController.normalizedServer(bad), bad)
+        }
     }
 
     // MARK: Task 2 deferred — direct coverage of pure statics
@@ -343,109 +360,296 @@ final class PredictControllerRunTests: XCTestCase {
         XCTAssertEqual(c.predictor, "boltz2")
     }
 
-    // MARK: MSA server field (#598)
+    // MARK: MSA server dropdown (#598)
 
+    private let colab = "https://api.colabfold.com"
+    private let internalServer = "https://msa.internal"
     private let savedServer = MSAServerInfo(url: "https://msa.internal", origin: "saved",
                                             isPublic: false, error: nil)
     private let publicDefault = MSAServerInfo(url: "https://api.colabfold.com",
                                               origin: "default", isPublic: true,
                                               error: nil)
+    private let unusableSaved = MSAServerInfo(url: "", origin: "", isPublic: false,
+                                              error: "Error: the saved MSA server in x")
 
-    private func payload(server: MSAServerInfo?) -> PredictFormPayload {
+    /// A controller whose preferences live in a throwaway suite, never the app's own.
+    private func makeServerController(_ cmds: NSMutableArray) -> PredictController {
+        let c = makeController(captured: cmds)
+        c.settings = UserDefaults(suiteName: "PredictControllerTests-\(UUID().uuidString)")!
+        return c
+    }
+
+    private func payload(server: MSAServerInfo?, chains: [PredictChain]? = nil)
+        -> PredictFormPayload {
         PredictFormPayload(predictors: [PredictorInfo(id: "boltz2", msa: true)],
-                           chains: [chain("A", 30)], error: nil, msaServer: server)
+                           chains: chains ?? [chain("A", 30)], error: nil, msaServer: server)
     }
 
-    func testTheFieldShowsTheSavedServer() {
-        let c = PredictController()
+    private func msaServerCommands(_ cmds: NSMutableArray) -> [String] {
+        (cmds as? [String] ?? []).filter { $0.contains("msa_server") }
+    }
+
+    private func searchCommands(_ cmds: NSMutableArray) -> [String] {
+        (cmds as? [String] ?? []).filter { $0.contains("msa_search") }
+    }
+
+    /// Ready to run an MSA search for chain A of a literal sequence.
+    private func readyForSearch(_ c: PredictController, server: MSAServerInfo) {
+        c.loadFormPayload(payload(server: server))
+        c.inputText = "MKTAYIAKQRQISFVKSHFSRQLE"; c.predictor = "boltz2"
+        c.useMSA = true; c.msaChains = ["A"]
+    }
+
+    func testTheDropdownStartsOnTheSavedDefault() {
+        let c = makeServerController(NSMutableArray())
         c.loadFormPayload(payload(server: savedServer))
-        XCTAssertEqual(c.server, "https://msa.internal")
+        XCTAssertEqual(c.selectedServer, internalServer)
+        XCTAssertEqual(c.defaultServer, internalServer)
     }
 
-    func testTheFieldStaysEmptyForTheDefault() {
-        // Empty means "not configured": the label line says where that goes.
-        let c = PredictController()
+    func testTheDropdownStartsOnColabFoldWhenNothingIsSaved() {
+        let c = makeServerController(NSMutableArray())
         c.loadFormPayload(payload(server: publicDefault))
-        XCTAssertEqual(c.server, "")
+        XCTAssertEqual(c.selectedServer, colab)
+        XCTAssertEqual(c.savedServers, [])
     }
 
-    func testCommittingAnEditSavesItAndReResolves() {
-        let cmds = NSMutableArray()
-        let c = makeController(captured: cmds)
-        var refreshed: [String] = []
-        c.refreshTrigger = { refreshed.append($0) }
-        c.loadFormPayload(payload(server: publicDefault))
-        c.inputText = "MKTAY"
-        c.server = "https://msa.new"
-        c.commitServer()
-        XCTAssertEqual(cmds as? [String],
-                       ["from pymol import cmd as _c\n_c.msa_server('https://msa.new', quiet=0)"])
-        XCTAssertEqual(refreshed, ["MKTAY"])
-    }
-
-    func testCommittingAnUnchangedFieldSendsNothing() {
-        // Focus moving in and out of the field must not re-save on every blur.
-        let cmds = NSMutableArray()
-        let c = makeController(captured: cmds)
+    func testAServerSavedFromTheConsoleJoinsTheList() {
+        let c = makeServerController(NSMutableArray())
         c.loadFormPayload(payload(server: savedServer))
-        c.commitServer()
+        XCTAssertEqual(c.savedServers, [internalServer])
+    }
+
+    func testTheListOutlivesTheController() {
+        let suite = UserDefaults(suiteName: "PredictControllerTests-\(UUID().uuidString)")!
+        let first = makeController(captured: NSMutableArray())
+        first.settings = suite
+        XCTAssertNil(first.addServer("https://msa.lab:8080", makeDefault: false))
+        let second = makeController(captured: NSMutableArray())
+        second.settings = suite
+        XCTAssertEqual(second.savedServers, ["https://msa.lab:8080"])
+    }
+
+    func testPickingAServerDoesNotChangeTheDefault() {
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        c.loadFormPayload(payload(server: savedServer))
+        c.selectedServer = colab
+        XCTAssertEqual(msaServerCommands(cmds), [])
+        XCTAssertEqual(c.defaultServer, internalServer)
+    }
+
+    func testAPayloadKeepsTheUsersPick() {
+        // e.g. the input was edited and the form re-resolved: same default, so the pick stays.
+        let c = makeServerController(NSMutableArray())
+        c.loadFormPayload(payload(server: savedServer))
+        c.selectedServer = colab
+        c.loadFormPayload(payload(server: savedServer))
+        XCTAssertEqual(c.selectedServer, colab)
+    }
+
+    func testANewDefaultIsAlsoSelected() {
+        // The default changed (here: from the console), so the dropdown follows it.
+        let c = makeServerController(NSMutableArray())
+        c.loadFormPayload(payload(server: publicDefault))
+        c.loadFormPayload(payload(server: savedServer))
+        XCTAssertEqual(c.selectedServer, internalServer)
+    }
+
+    func testTheSearchGoesToThePickedServer() {
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        readyForSearch(c, server: publicDefault)
+        XCTAssertNil(c.addServer("https://msa.lab", makeDefault: false))
+        c.selectedServer = "https://msa.lab"
+        c.run()
+        XCTAssertEqual(searchCommands(cmds).count, 1)
+        XCTAssertTrue(searchCommands(cmds)[0].contains("server='https://msa.lab'"))
+    }
+
+    func testAddingAsDefaultSavesItAndSelectsIt() {
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        var refreshed = 0
+        c.refreshTrigger = { _ in refreshed += 1 }
+        c.loadFormPayload(payload(server: publicDefault))
+        XCTAssertNil(c.addServer("https://msa.lab/", makeDefault: true))
+        XCTAssertEqual(c.savedServers, ["https://msa.lab"])
+        XCTAssertEqual(c.selectedServer, "https://msa.lab")
+        XCTAssertEqual(msaServerCommands(cmds),
+                       ["from pymol import cmd as _c\n_c.msa_server('https://msa.lab', quiet=0)"])
+        XCTAssertEqual(refreshed, 1)
+    }
+
+    func testAddingWithoutDefaultLeavesTheDefaultAlone() {
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        c.loadFormPayload(payload(server: publicDefault))
+        XCTAssertNil(c.addServer("https://msa.lab", makeDefault: false))
+        XCTAssertEqual(c.savedServers, ["https://msa.lab"])
+        XCTAssertEqual(c.selectedServer, "https://msa.lab")   // you added it to use it
+        XCTAssertEqual(c.defaultServer, colab)
+        XCTAssertEqual(msaServerCommands(cmds), [])
+    }
+
+    func testAddingTheSameServerTwiceListsItOnce() {
+        let c = makeServerController(NSMutableArray())
+        XCTAssertNil(c.addServer("https://msa.lab", makeDefault: false))
+        XCTAssertNil(c.addServer("https://msa.lab/", makeDefault: false))
+        XCTAssertEqual(c.savedServers, ["https://msa.lab"])
+    }
+
+    func testABadAddressIsRefusedAndNotListed() {
+        let c = makeServerController(NSMutableArray())
+        XCTAssertNotNil(c.addServer("msa.lab", makeDefault: true))
+        XCTAssertEqual(c.savedServers, [])
+    }
+
+    func testColabFoldCannotBeAddedAsAPrivateServer() {
+        let c = makeServerController(NSMutableArray())
+        XCTAssertNotNil(c.addServer("https://api.colabfold.com", makeDefault: false))
+        XCTAssertEqual(c.savedServers, [])
+    }
+
+    func testEditCanMakeColabFoldTheDefaultAgain() {
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        c.loadFormPayload(payload(server: savedServer))
+        c.setDefaultServer(colab)
+        XCTAssertEqual(msaServerCommands(cmds),
+                       ["from pymol import cmd as _c\n_c.msa_server('reset', quiet=0)"])
+        XCTAssertEqual(c.selectedServer, colab)
+    }
+
+    func testEditCanMakeAPrivateServerTheDefault() {
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        c.loadFormPayload(payload(server: publicDefault))
+        XCTAssertNil(c.addServer("https://msa.lab", makeDefault: false))
+        c.setDefaultServer("https://msa.lab")
+        XCTAssertEqual(msaServerCommands(cmds),
+                       ["from pymol import cmd as _c\n_c.msa_server('https://msa.lab', quiet=0)"])
+    }
+
+    func testDeletingTheDefaultFallsBackToColabFold() {
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        c.loadFormPayload(payload(server: savedServer))
+        c.removeServer(internalServer)
+        XCTAssertEqual(c.savedServers, [])
+        XCTAssertEqual(msaServerCommands(cmds),
+                       ["from pymol import cmd as _c\n_c.msa_server('reset', quiet=0)"])
+        XCTAssertEqual(c.selectedServer, colab)
+    }
+
+    func testDeletingAnotherServerLeavesTheDefaultAlone() {
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        c.loadFormPayload(payload(server: savedServer))
+        XCTAssertNil(c.addServer("https://msa.lab", makeDefault: false))
+        c.removeServer("https://msa.lab")
+        XCTAssertEqual(c.savedServers, [internalServer])
+        XCTAssertEqual(msaServerCommands(cmds), [])
+        XCTAssertEqual(c.selectedServer, internalServer)   // the pick fell back to the default
+    }
+
+    func testAnUnusableSavedServerSelectsNothingAndRefusesToSearch() {
+        // Python refuses to search past a damaged saved file rather than go public; the
+        // dropdown must not quietly pick ColabFold for it either.
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        readyForSearch(c, server: unusableSaved)
+        XCTAssertNil(c.selectedServer)
+        c.run()
+        XCTAssertEqual(cmds.count, 0)
+        guard case .error = c.phase else { return XCTFail("expected an error, got \(c.phase)") }
+    }
+
+    // MARK: public-server warning
+
+    func testRunningOnColabFoldAsksBeforeSendingAnything() {
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        readyForSearch(c, server: publicDefault)
+        c.run()
+        XCTAssertTrue(c.pendingPublicWarning)
         XCTAssertEqual(cmds.count, 0)
     }
 
-    func testClearingTheFieldForgetsTheSavedServer() {
+    func testSendingAfterTheWarningSearchesColabFold() {
         let cmds = NSMutableArray()
-        let c = makeController(captured: cmds)
-        c.loadFormPayload(payload(server: savedServer))
-        c.server = ""
-        c.commitServer()
-        XCTAssertEqual(cmds as? [String],
-                       ["from pymol import cmd as _c\n_c.msa_server('reset', quiet=0)"])
-    }
-
-    func testAPayloadDoesNotOverwriteAServerBeingTyped() {
-        let c = PredictController()
-        c.loadFormPayload(payload(server: savedServer))
-        c.server = "https://msa.half-typ"
-        c.loadFormPayload(payload(server: savedServer))   // e.g. the input was edited
-        XCTAssertEqual(c.server, "https://msa.half-typ")
-    }
-
-    func testAPayloadAfterACommitShowsTheServerPythonSettledOn() {
-        // Python normalises (trailing '/') or refuses a bad URL; the field follows it.
-        let c = makeController(captured: NSMutableArray())
-        c.loadFormPayload(payload(server: publicDefault))
-        c.server = "https://msa.internal/"
-        c.commitServer()
-        c.loadFormPayload(payload(server: savedServer))
-        XCTAssertEqual(c.server, "https://msa.internal")
-    }
-
-    func testReEnteringTheModeDropsAnUncommittedEdit() {
-        // Found driving the app: a field cleared but never committed survived leaving
-        // and re-entering Predict mode, so the bar showed no server while one was saved
-        // -- and the next Run would have committed the stale edit and forgotten it.
-        let cmds = NSMutableArray()
-        let c = makeController(captured: cmds)
-        c.loadFormPayload(payload(server: savedServer))
-        c.server = ""
-        c.refresh()                                       // the mode is re-entered
-        c.loadFormPayload(payload(server: savedServer))
-        XCTAssertEqual(c.server, "https://msa.internal")
-        c.inputText = "MKTAY"; c.predictor = "boltz2"
+        let c = makeServerController(cmds)
+        readyForSearch(c, server: publicDefault)
         c.run()
-        XCTAssertFalse((cmds as? [String] ?? []).contains { $0.contains("msa_server") })
+        c.confirmPublicWarning(dontShowAgain: false)
+        XCTAssertFalse(c.pendingPublicWarning)
+        XCTAssertEqual(searchCommands(cmds).count, 1)
+        XCTAssertTrue(searchCommands(cmds)[0].contains("server='https://api.colabfold.com'"))
+        XCTAssertEqual(c.phase, .searching(remaining: 1))
+        // Not suppressed: the next run asks again.
+        cmds.removeAllObjects()
+        c.cancel()
+        c.run()
+        XCTAssertTrue(c.pendingPublicWarning)
     }
 
-    func testRunSavesAServerTypedButNotYetCommitted() {
-        // On macOS clicking Run does not take focus from the field, so run() commits.
+    func testCancellingTheWarningSendsNothing() {
         let cmds = NSMutableArray()
-        let c = makeController(captured: cmds)
-        c.loadFormPayload(payload(server: publicDefault))
-        c.inputText = "MKTAY"; c.predictor = "boltz2"
-        c.server = "https://msa.new"
+        let c = makeServerController(cmds)
+        readyForSearch(c, server: publicDefault)
         c.run()
-        XCTAssertEqual(cmds.firstObject as? String,
-                       "from pymol import cmd as _c\n_c.msa_server('https://msa.new', quiet=0)")
+        c.cancelPublicWarning()
+        XCTAssertFalse(c.pendingPublicWarning)
+        XCTAssertEqual(cmds.count, 0)
+        XCTAssertEqual(c.phase, .idle)
+    }
+
+    func testDontShowAgainStopsTheWarning() {
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        readyForSearch(c, server: publicDefault)
+        c.run()
+        c.confirmPublicWarning(dontShowAgain: true)
+        c.cancel()
+        cmds.removeAllObjects()
+        c.run()
+        XCTAssertFalse(c.pendingPublicWarning)
+        XCTAssertEqual(searchCommands(cmds).count, 1)
+    }
+
+    func testAPrivateServerNeverWarns() {
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        readyForSearch(c, server: savedServer)
+        c.run()
+        XCTAssertFalse(c.pendingPublicWarning)
+        XCTAssertEqual(searchCommands(cmds).count, 1)
+    }
+
+    func testNoWarningWhenNoSequenceWouldBeSent() {
+        // The chain's alignment is already attached: nothing is searched, nothing leaves.
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        c.loadFormPayload(payload(server: publicDefault,
+                                  chains: [chain("A", 60, obj: "1ubq", ch: "A")]))
+        c.inputText = "1ubq"; c.predictor = "boltz2"; c.useMSA = true; c.msaChains = ["A"]
+        c.onEngineState(alignments: [AlignmentEntry(id: "aln", name: "x", depth: 8,
+                                                    columns: 60, residues: 60,
+                                                    target: "1ubq", chain: "A")],
+                        searches: [])
+        c.run()
+        XCTAssertFalse(c.pendingPublicWarning)
+        XCTAssertEqual(searchCommands(cmds), [])
+    }
+
+    func testNoWarningWithoutMSA() {
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        readyForSearch(c, server: publicDefault)
+        c.useMSA = false
+        c.run()
+        XCTAssertFalse(c.pendingPublicWarning)
+        XCTAssertEqual(cmds.count, 1)   // the predict itself
     }
 }
 #endif

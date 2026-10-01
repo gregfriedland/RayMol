@@ -86,25 +86,49 @@ extension PredictController {
         return "from pymol import cmd as _c\n_c.msa_search(\(args.joined(separator: ", ")))"
     }
 
-    /// `_c.msa_server(...)`: save the server field across launches, or forget the saved
-    /// server when the field is cleared. quiet=0 so the console records the change.
+    /// The public ColabFold server: the dropdown's built-in entry and Python's default.
+    nonisolated static let publicServer = "https://api.colabfold.com"
+
+    /// True for ColabFold's public deployment. Mirrors `colabfold.PUBLIC_HOSTS` (one
+    /// host); the hostname is compared exactly so a look-alike domain is not "public".
+    nonisolated static func isPublicServer(_ url: String) -> Bool {
+        URLComponents(string: url.trimmingCharacters(in: .whitespaces))?.host?.lowercased()
+            == "api.colabfold.com"
+    }
+
+    /// `url` trimmed and without a trailing '/', or nil when it is not an http(s) URL with
+    /// a host -- the same test `colabfold.normalize` applies, so the add sheet refuses here
+    /// what Python would refuse later.
+    nonisolated static func normalizedServer(_ url: String) -> String? {
+        var text = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        while text.hasSuffix("/") { text.removeLast() }
+        guard let parts = URLComponents(string: text),
+              let scheme = parts.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let host = parts.host, !host.isEmpty else { return nil }
+        return text
+    }
+
+    /// Host and port of `url`, for the dropdown and the "sent to" line.
+    nonisolated static func hostLabel(_ url: String) -> String {
+        guard let parts = URLComponents(string: url), let name = parts.host, !name.isEmpty
+        else { return url }
+        return parts.port.map { "\(name):\($0)" } ?? name
+    }
+
+    /// `_c.msa_server(...)`: make `server` the saved default, or forget the saved default
+    /// (back to ColabFold) when it is empty. quiet=0 so the console records the change.
     nonisolated static func msaServerPython(_ server: String) -> String {
         let text = server.trimmingCharacters(in: .whitespacesAndNewlines)
         let arg = InferenceJob.pythonLiteral(text.isEmpty ? "reset" : text)
         return "from pymol import cmd as _c\n_c.msa_server(\(arg), quiet=0)"
     }
 
-    /// Where "Sequences are sent to …" says a search goes: the host (and port) of the
-    /// resolved server, with the public default called out as public.
-    nonisolated static func serverLabel(_ info: MSAServerInfo?) -> String {
-        guard let info, info.error == nil, !info.url.isEmpty else {
-            return "the ColabFold MSA server"
-        }
-        var host = info.url
-        if let parts = URLComponents(string: info.url), let name = parts.host, !name.isEmpty {
-            host = parts.port.map { "\(name):\($0)" } ?? name
-        }
-        return info.isPublic ? "\(host), a public server" : host
+    /// Where "Sequences are sent to …" says a search goes: the picked server's host, with
+    /// ColabFold called out as public.
+    nonisolated static func serverLabel(_ url: String?) -> String {
+        guard let url, !url.isEmpty else { return "the default MSA server" }
+        let host = hostLabel(url)
+        return isPublicServer(url) ? "\(host), a public server" : host
     }
 
     /// Per-chain sequences of a literal input: split on '/', strip whitespace,
@@ -170,9 +194,10 @@ final class PredictController: ObservableObject {
     @Published var msaDepthText = ""    // empty → omit (predictor default)
     @Published var msaMode = "env"
     @Published var resultName = ""
-    /// The saved MSA server (empty when none is saved). Editing it and committing saves
-    /// it through `msa_server`, so it is the same setting the console reads (#598).
-    @Published var server = ""
+    /// The server this bar's searches go to (#598). Picking one in the dropdown changes
+    /// only this; the saved default changes only through addServer / setDefaultServer.
+    /// nil until the form payload names a server, and while the saved one is unusable.
+    @Published var selectedServer: String?
 
     // Resolved / status (rendered by PredictBar)
     @Published var msaServer: MSAServerInfo?
@@ -181,6 +206,20 @@ final class PredictController: ObservableObject {
     @Published var resolveError: String?
     @Published var phase: PredictPhase = .idle
     @Published var pendingSizeWarning: PredictSizeWarning?
+    /// Run is waiting on "your sequences go to a public server" (#598).
+    @Published var pendingPublicWarning = false
+    /// Private servers the user has added, in the order added. Persisted in `settings`.
+    @Published private(set) var savedServers: [String] = []
+    /// The saved default as Python last reported it; nil before a payload, or when the
+    /// saved file cannot be used.
+    @Published private(set) var defaultServer: String?
+
+    /// Where the server list and "don't warn again" live. A seam so tests use their own.
+    var settings: UserDefaults = .standard {
+        didSet { savedServers = settings.stringArray(forKey: Self.serversKey) ?? [] }
+    }
+    nonisolated static let serversKey = "msaServers"
+    nonisolated static let publicWarningSuppressedKey = "msaPublicWarningSuppressed"
 
     // Injected seams (default no-ops; PyMOLEngine wires real ones in Task 4).
     var runPythonSeam: (String) -> Void = { _ in }
@@ -196,9 +235,9 @@ final class PredictController: ObservableObject {
     // Fix B: one-tick grace so the just-fired search can register before being declared failed.
     private var failGraceTicks = 0
 
-    // What `server` held when a payload last set it or the user last committed it. While
-    // the field differs from this it is mid-edit, and a payload must not overwrite it.
-    private var committedServer = ""
+    init() {
+        savedServers = settings.stringArray(forKey: Self.serversKey) ?? []
+    }
 
     // MARK: entering the mode / input changes
 
@@ -209,9 +248,7 @@ final class PredictController: ObservableObject {
         resolveError = nil
         phase = .idle
         pendingSizeWarning = nil
-        // Drop a server edit that was never committed, so the payload below shows the
-        // server actually saved -- and a later Run cannot commit a stale edit.
-        server = committedServer
+        pendingPublicWarning = false
         refreshTrigger("")          // emit('') → predictors only
     }
 
@@ -229,29 +266,75 @@ final class PredictController: ObservableObject {
         // Drop any selected MSA chains that no longer exist in the resolved input.
         let ids = Set(payload.chains.map(\.id))
         msaChains = msaChains.intersection(ids)
-        if let info = payload.msaServer {
-            msaServer = info
-            if server == committedServer {
-                // Only a server the user chose belongs in the field; the env var and the
-                // public default are what an EMPTY field means, and the label says which.
-                let chosen = info.origin == "saved" || info.origin == "msa_server"
-                server = chosen ? info.url : ""
-                committedServer = server
-            }
-        }
+        if let info = payload.msaServer { applyServerInfo(info) }
     }
 
-    /// Save an edited server field (Return, focus loss, or Run). No-op when unchanged, so
-    /// focus moving through the field does not re-save it.
-    func commitServer() {
-        let typed = server.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard typed != committedServer else { return }
-        server = typed
-        committedServer = typed
-        runPythonSeam(PredictController.msaServerPython(typed))
-        // Re-resolve so the field and label show what Python settled on: the normalised
-        // URL, or the previous server if this one was refused.
-        refreshTrigger(inputText)
+    private func applyServerInfo(_ info: MSAServerInfo) {
+        msaServer = info
+        guard info.error == nil, !info.url.isEmpty else {
+            // Python refuses to search past an unusable saved server; picking ColabFold
+            // here on its behalf would publish what the user meant to keep private.
+            defaultServer = nil
+            if selectedServer == nil || selectedServer.map(isListed) != true {
+                selectedServer = nil
+            }
+            return
+        }
+        // A server saved from the console (or the env var's) belongs in the list too.
+        if !PredictController.isPublicServer(info.url) { remember(info.url) }
+        let changed = info.url != defaultServer
+        defaultServer = info.url
+        // Follow the default when it changes, or when there is no usable pick; otherwise
+        // the user's pick stands (a payload also arrives on every input edit).
+        if changed || selectedServer.map(isListed) != true { selectedServer = info.url }
+    }
+
+    private func isListed(_ url: String) -> Bool {
+        PredictController.isPublicServer(url) || savedServers.contains(url)
+    }
+
+    private func remember(_ url: String) {
+        guard !savedServers.contains(url) else { return }
+        savedServers.append(url)
+        settings.set(savedServers, forKey: Self.serversKey)
+    }
+
+    /// Add a private server to the dropdown and pick it. Returns why it was refused, or
+    /// nil. Only `makeDefault` touches the saved default.
+    @discardableResult
+    func addServer(_ url: String, makeDefault: Bool) -> String? {
+        guard let server = PredictController.normalizedServer(url) else {
+            return "Enter an address starting with http:// or https://"
+        }
+        if PredictController.isPublicServer(server) {
+            return "That is the public ColabFold server, which is always in the list."
+        }
+        remember(server)
+        selectedServer = server
+        if makeDefault { setDefaultServer(server) }
+        return nil
+    }
+
+    /// Make `url` the saved default (ColabFold forgets the saved one) and pick it.
+    func setDefaultServer(_ url: String) {
+        let isPublic = PredictController.isPublicServer(url)
+        runPythonSeam(PredictController.msaServerPython(isPublic ? "" : url))
+        defaultServer = isPublic ? PredictController.publicServer : url
+        selectedServer = defaultServer
+        refreshTrigger(inputText)   // the payload then reports what Python settled on
+    }
+
+    /// Drop a private server from the dropdown. Deleting the default falls back to
+    /// ColabFold; deleting the pick falls back to the default.
+    func removeServer(_ url: String) {
+        guard let index = savedServers.firstIndex(of: url) else { return }
+        savedServers.remove(at: index)
+        settings.set(savedServers, forKey: Self.serversKey)
+        if url == defaultServer {
+            setDefaultServer(PredictController.publicServer)
+        } else if url == selectedServer {
+            selectedServer = defaultServer
+        }
     }
 
     // MARK: run
@@ -269,12 +352,14 @@ final class PredictController: ObservableObject {
     }
 
     func run() {
-        // On macOS clicking Run does not take focus from the server field, so a server
-        // typed there would otherwise be used for this search but never saved.
-        commitServer()
         guard !predictor.isEmpty, !chains.isEmpty else {
             phase = .error(resolveError ?? "Nothing to fold — enter a sequence, "
                            + "selection, or object.")
+            return
+        }
+        if useMSAEffective, selectedServer == nil, msaServer?.error != nil {
+            phase = .error("The saved MSA server cannot be used. Pick a server, or fix "
+                           + "the default under Edit….")
             return
         }
         // Size guard (per predictor). A warn stops for confirmation; a refusal is fatal.
@@ -334,7 +419,19 @@ final class PredictController: ObservableObject {
         useMSA && selectedSupportsMSA && !msaChains.isEmpty
     }
 
-    private func proceed() {
+    func confirmPublicWarning(dontShowAgain: Bool) {
+        if dontShowAgain { settings.set(true, forKey: Self.publicWarningSuppressedKey) }
+        pendingPublicWarning = false
+        proceed(publicServerAccepted: true)
+    }
+
+    func cancelPublicWarning() {
+        pendingPublicWarning = false
+        plannedNames = [:]
+        phase = .idle
+    }
+
+    private func proceed(publicServerAccepted: Bool = false) {
         pendingSizeWarning = nil
         guard useMSAEffective else { submitPredict(); return }
 
@@ -342,7 +439,7 @@ final class PredictController: ObservableObject {
         // not already satisfied by the current latestAlignments snapshot (Fix A).
         plannedNames = [:]
         let literalSeqs = PredictController.literalChainSequences(inputText)
-        var started = 0
+        var searches: [String] = []
         for ch in chains where msaChains.contains(ch.id) {
             let literal = ch.isFromObject ? nil
                 : (indexOf(ch).map { $0 < literalSeqs.count ? literalSeqs[$0] : "" } ?? "")
@@ -357,15 +454,22 @@ final class PredictController: ObservableObject {
                 sequence: sequence, name: name,
                 target: ch.isFromObject ? ch.object : "",
                 chain: ch.isFromObject ? ch.chain : "",
-                mode: msaMode, server: server)
-            runPythonSeam(cmd)
-            started += 1
+                mode: msaMode, server: selectedServer ?? "")
+            searches.append(cmd)
         }
         // Fix A: if all chains were already satisfied, predict immediately.
-        if started == 0 { submitPredict(); return }
+        if searches.isEmpty { submitPredict(); return }
+        // Asked only now, once a sequence would actually leave: an alignment already
+        // attached sends nothing (#598).
+        if !publicServerAccepted, PredictController.isPublicServer(selectedServer ?? ""),
+           !settings.bool(forKey: Self.publicWarningSuppressedKey) {
+            pendingPublicWarning = true
+            return
+        }
+        searches.forEach(runPythonSeam)
         // Fix B: arm the one-tick grace so the just-fired searches can register.
         failGraceTicks = 1
-        phase = .searching(remaining: started)
+        phase = .searching(remaining: searches.count)
     }
 
     private func indexOf(_ ch: PredictChain) -> Int? {
@@ -446,6 +550,7 @@ final class PredictController: ObservableObject {
         plannedNames = [:]
         phase = .idle
         failGraceTicks = 0
+        pendingPublicWarning = false
     }
 }
 #endif

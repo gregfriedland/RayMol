@@ -92,6 +92,7 @@
 		5313FFF152E5D3F23159919B /* MousePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 221117550FAD97CF81924E05 /* MousePanel.swift */; };
 		54D986046911571938A3CF13 /* MPNNKit in Frameworks */ = {isa = PBXBuildFile; productRef = 80B2210B207942EBB65BAF59 /* MPNNKit */; };
 		54F313461574BD8EEE414E3E /* WhatsNewLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3753EB4AA7EC91E685E36B84 /* WhatsNewLogic.swift */; };
+		55ADA607AC3BB30CC3F6EE15 /* MSAServerControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E5C2F6163EFEA36009B55A5 /* MSAServerControls.swift */; };
 		55F78301BAF8CD914D86069D /* MCPConnectSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE692F1547C53D28B5F9A9AD /* MCPConnectSheet.swift */; };
 		56CC6A9A8A95D5B1B8D92688 /* PyMOLEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33D6A753E4525628B96C259C /* PyMOLEngine.swift */; };
 		575E4E4792DE4C46A70ECE01 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 10CCAA289EA2934B267C337A /* PrivacyInfo.xcprivacy */; };
@@ -223,6 +224,7 @@
 		CE1CC588AA02F7FE11A0048B /* MPNNGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56BE219EF1CF1EB2B05E44AD /* MPNNGate.swift */; };
 		CE45D81735E70E8FFFD49875 /* ThemeStudioPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85B66833BF167209A47B9C15 /* ThemeStudioPanel.swift */; };
 		CFBEE2172EC92121700639E7 /* PendingJobTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DEAB18A89F026148528C71E /* PendingJobTests.swift */; };
+		D00E3076FED2390242EFE8AA /* MSAServerControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E5C2F6163EFEA36009B55A5 /* MSAServerControls.swift */; };
 		D0505F6B98C64B96BE87A753 /* DesignTargetSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFD9E3092D310E443F7CD546 /* DesignTargetSelectionTests.swift */; };
 		D0BB5840BDEAA557F5B8F387 /* RFD3Runtime.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECB1F4D491FA24E65DD3B011 /* RFD3Runtime.swift */; };
 		D1810E28536159A86EF507F8 /* whatsnew-190-raymolrc.png in Resources */ = {isa = PBXBuildFile; fileRef = 7D10B5CB9ECF81346BD9CAE8 /* whatsnew-190-raymolrc.png */; };
@@ -326,6 +328,7 @@
 		29DBC7BEEA492BFACB616C34 /* whatsnew-152-camera-dock.mp4 */ = {isa = PBXFileReference; path = "whatsnew-152-camera-dock.mp4"; sourceTree = "<group>"; };
 		2B749BA43350521D047F2CE4 /* whatsnew-190-design.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "whatsnew-190-design.png"; sourceTree = "<group>"; };
 		2E5AA1A4BFA5787E1B83D100 /* PredictAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictAvailability.swift; sourceTree = "<group>"; };
+		2E5C2F6163EFEA36009B55A5 /* MSAServerControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MSAServerControls.swift; sourceTree = "<group>"; };
 		33D6A753E4525628B96C259C /* PyMOLEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PyMOLEngine.swift; sourceTree = "<group>"; };
 		356FC561FA1515B3D15A26E2 /* PyMOLBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = PyMOLBridge.mm; sourceTree = "<group>"; };
 		35DC456EDC3E55F84506C8B7 /* NotesInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesInspectorView.swift; sourceTree = "<group>"; };
@@ -624,6 +627,7 @@
 				86E93358875495F499780A00 /* MLXRuntime.swift */,
 				56BE219EF1CF1EB2B05E44AD /* MPNNGate.swift */,
 				E2D0BB6A1E7959881767F049 /* MPNNRuntime.swift */,
+				2E5C2F6163EFEA36009B55A5 /* MSAServerControls.swift */,
 				B47211EDB3E34DF3B0CFE8BB /* PanelLayout.swift */,
 				2E5AA1A4BFA5787E1B83D100 /* PredictAvailability.swift */,
 				F14E7328C4421ADC9E81417D /* PredictBar.swift */,
@@ -1509,6 +1513,7 @@
 				B238B98768632BEFAD9327E4 /* MLXRuntime.swift in Sources */,
 				CE1CC588AA02F7FE11A0048B /* MPNNGate.swift in Sources */,
 				1BD51D786A5D6DFD98F3E6FA /* MPNNRuntime.swift in Sources */,
+				55ADA607AC3BB30CC3F6EE15 /* MSAServerControls.swift in Sources */,
 				104B27F848D308735A6D6DD2 /* MetalViewport.swift in Sources */,
 				5313FFF152E5D3F23159919B /* MousePanel.swift in Sources */,
 				ACBE8F70B980BCCE6730141A /* MovieBuilderSheet.swift in Sources */,
@@ -1584,6 +1589,7 @@
 				6F45C01C9E3DE3CC89268445 /* MLXRuntime.swift in Sources */,
 				1624BC38CDD73398C68FC135 /* MPNNGate.swift in Sources */,
 				F03621597BA93F7EADDEF676 /* MPNNRuntime.swift in Sources */,
+				D00E3076FED2390242EFE8AA /* MSAServerControls.swift in Sources */,
 				979AB10150CC62EE5E7962F9 /* MetalViewport.swift in Sources */,
 				F619DEB3EA3D691634AE8268 /* MousePanel.swift in Sources */,
 				667B289D123B261F82B10FFC /* MovieBuilderSheet.swift in Sources */,
