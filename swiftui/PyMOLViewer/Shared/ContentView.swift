@@ -1891,13 +1891,26 @@ struct ContentView: View {
                 }
             }
             if let e = ProcessInfo.processInfo.environment["PYMOL_AUTOEXPORTMOVIE"] {
+                // "fmt,first,last[,WxH[,quality]]" — fmt: mp4|hevc|mov|gif|png.
                 let parts = e.split(separator: ",").map(String.init)
-                let fmt: MovieExporter.Format = (parts.first == "gif") ? .gif : .mp4
+                var o = MovieExportOptions()
+                switch parts.first {
+                case "gif": o.format = .gif
+                case "png": o.format = .png
+                case "hevc": o.codec = .hevc
+                case "mov": o.codec = .prores
+                default: break
+                }
+                o.width = 640; o.height = 360
+                if parts.count > 3 {
+                    let wh = parts[3].split(separator: "x").compactMap { Int($0) }
+                    if wh.count == 2 { o.width = wh[0]; o.height = wh[1] }
+                }
+                if parts.count > 4, let q = MovieQuality(rawValue: parts[4]) { o.applyPreset(q) }
                 let f = parts.count > 1 ? (Int(parts[1]) ?? 1) : 1
                 let l = parts.count > 2 ? (Int(parts[2]) ?? 10) : 10
                 DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) {
-                    exportTester.start(engine: engine, format: fmt, width: 640, height: 360,
-                                       first: f, last: l, fps: 15, rayTraced: false)
+                    exportTester.start(engine: engine, options: o, first: f, last: l, fps: 15)
                 }
             }
             #if RAYMOL_MPNN

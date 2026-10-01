@@ -1,11 +1,15 @@
 // MovieExportSheet.swift — render the Timeline to a movie file with in-app
-// encoding (MP4 via AVAssetWriter, GIF via ImageIO) — no ffmpeg needed.
+// encoding (H.264 / HEVC / ProRes via AVAssetWriter, GIF via ImageIO, or a PNG
+// sequence) — no ffmpeg needed.
 //
-// Pipeline: pause playback, then per frame set cmd.frame(N) and capture the full
-// Metal pipeline offscreen via engine.renderHiResPNG (the known-good capture path
-// — NOT cmd.mpng, which uses a GL framebuffer path unavailable on this backend),
-// load the PNG and stream it into the encoder. Frames are written/released one at
-// a time so memory stays bounded. Result is shared (iOS) or saved (macOS).
+// Pipeline: pause playback, apply the export-only quality overrides (#581),
+// then per frame set cmd.frame(N) and capture the full Metal pipeline offscreen
+// via engine.renderHiResPNG (the known-good capture path — NOT cmd.mpng, which
+// uses a GL framebuffer path unavailable on this backend), load the PNG,
+// downsample it if supersampling, and stream it into the encoder. Frames are
+// written/released one at a time so memory stays bounded. The overrides are
+// restored when the export completes, is cancelled or fails. Result is shared
+// (iOS) or saved (macOS).
 
 import SwiftUI
 import AVFoundation
@@ -19,6 +23,156 @@ import UIKit
 import AppKit
 #endif
 
+// MARK: - Options
+
+enum MovieQuality: String, Codable, CaseIterable, Identifiable {
+    case draft, standard, high, maximum, custom
+    var id: String { rawValue }
+    var label: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
+
+    // Export-only setting overrides per preset. KEEP IN SYNC with
+    // QUALITY_PRESETS in modules/pymol/movie_exporting.py (cmd.movie_export),
+    // so scripted and UI exports at the same preset match. `standard` is empty
+    // on purpose: no overrides = exactly the pre-#581 export.
+    var overrides: [String: Int] {
+        switch self {
+        case .draft:
+            return ["metal_msaa": 0]
+        case .standard, .custom:
+            return [:]
+        case .high:
+            return ["cartoon_sampling": 14, "cartoon_oval_quality": 16,
+                    "cartoon_tube_quality": 12, "cartoon_loop_quality": 10,
+                    "ribbon_sampling": 4, "sphere_quality": 3, "stick_quality": 16,
+                    "cgo_sphere_quality": 3, "metal_rt_samples": 128,
+                    "metal_rt_reflect_samples": 16, "metal_msaa": 1, "metal_dof_hq": 1]
+        case .maximum:
+            return ["cartoon_sampling": 20, "cartoon_oval_quality": 24,
+                    "cartoon_tube_quality": 16, "cartoon_loop_quality": 12,
+                    "ribbon_sampling": 8, "sphere_quality": 4, "stick_quality": 24,
+                    "cgo_sphere_quality": 4, "surface_quality": 2,
+                    "metal_rt_samples": 256, "metal_rt_reflect_samples": 32,
+                    "metal_msaa": 1, "metal_dof_hq": 1]
+        }
+    }
+
+    // Mirrors PRESET_SUPERSAMPLE in movie_exporting.py.
+    var supersample: Int { self == .maximum ? 2 : 1 }
+}
+
+struct MovieExportOptions: Codable, Equatable {
+    enum Format: String, Codable, CaseIterable, Identifiable {
+        case video = "Video", gif = "GIF", png = "PNG sequence"
+        var id: String { rawValue }
+    }
+    enum Codec: String, Codable, CaseIterable, Identifiable {
+        case h264 = "H.264", hevc = "HEVC", prores = "ProRes 422"
+        var id: String { rawValue }
+        // ProRes encoding is only dependable on the Mac.
+        static var available: [Codec] {
+            #if os(macOS)
+            return allCases
+            #else
+            return [.h264, .hevc]
+            #endif
+        }
+    }
+
+    var format: Format = .video
+    var codec: Codec = .h264
+    var width = 1280
+    var height = 720
+    var rayTraced = false
+    var quality: MovieQuality = .standard
+    var overrides: [String: Int] = [:]   // what's applied; preset's table unless .custom
+    var supersample = 1                  // 1, 2 or 4: render larger, downsample
+    var fpsOverride = 0                  // 0 = the timeline's movie_fps
+    var bitrateMbps = 0.0                // 0 = let AVFoundation choose (H.264/HEVC)
+    var movContainer = false             // .mov even for H.264/HEVC (ProRes always .mov)
+
+    var fileExtension: String {
+        switch format {
+        case .gif: return "gif"
+        case .png: return ""
+        case .video: return (codec == .prores || movContainer) ? "mov" : "mp4"
+        }
+    }
+
+    // Largest offscreen render the exporter will attempt (render = output ×
+    // supersample). Bigger targets than this risk the GPU's texture limit and
+    // gigabytes of MSAA/RT intermediates.
+    static var maxRenderDimension: Int {
+        #if os(macOS)
+        return 8192
+        #else
+        return 4096
+        #endif
+    }
+
+    func allows(supersample s: Int) -> Bool {
+        max(width, height) * s <= Self.maxRenderDimension
+    }
+
+    mutating func applyPreset(_ q: MovieQuality) {
+        quality = q
+        guard q != .custom else { return }
+        overrides = q.overrides
+        supersample = allows(supersample: q.supersample) ? q.supersample : 1
+    }
+}
+
+// A cmd.movie_export request (the JSON movie_exporting.movie_export prints).
+struct MovieExportRequest {
+    var path: String
+    var options: MovieExportOptions
+    var first: Int
+    var last: Int
+    var frames: Int        // count_frames() when the request was made
+
+    private struct Wire: Decodable {
+        var path: String
+        var frames: Int
+        var width: Int
+        var height: Int
+        var format: String
+        var codec: String
+        var quality: String
+        var overrides: [String: Int]
+        var supersample: Int
+        var fps: Int
+        var ray: Int
+        var bitrate: Double
+        var first: Int
+        var last: Int
+    }
+
+    static func decode(_ json: String) -> MovieExportRequest? {
+        guard let w = try? JSONDecoder().decode(Wire.self, from: Data(json.utf8)) else { return nil }
+        var o = MovieExportOptions()
+        switch w.format {
+        case "gif": o.format = .gif
+        case "png": o.format = .png
+        default: o.format = .video
+        }
+        switch w.codec {
+        case "hevc": o.codec = .hevc
+        case "prores": o.codec = .prores
+        default: o.codec = .h264
+        }
+        o.movContainer = (w.format == "mov")
+        o.width = w.width
+        o.height = w.height
+        o.quality = MovieQuality(rawValue: w.quality) ?? .custom
+        o.overrides = w.overrides
+        o.supersample = o.allows(supersample: w.supersample) ? w.supersample : 1
+        o.fpsOverride = w.fps
+        o.rayTraced = w.ray != 0
+        o.bitrateMbps = w.bitrate
+        return MovieExportRequest(path: w.path, options: o, first: w.first, last: w.last,
+                                  frames: w.frames)
+    }
+}
+
 // MARK: - Exporter
 
 // NOT @MainActor: the per-frame core render (renderHiResPNG) + AV/GIF encode run
@@ -26,23 +180,38 @@ import AppKit
 // are explicitly hopped back to the main thread; loop control (idx/isExporting)
 // is only touched on the main thread (in renderNext / start / finish).
 final class MovieExporter: ObservableObject {
-    enum Format: String, CaseIterable, Identifiable { case mp4 = "MP4", gif = "GIF"; var id: String { rawValue } }
-
-    // Serial: frames render + encode one at a time, off the main thread.
+    // Serial: frames render + encode one at a time, off the main thread. Also
+    // the teardown barrier: anything queued after the in-flight frame runs only
+    // once that frame's off-main render has finished.
     private let renderQueue = DispatchQueue(label: "io.raymol.movieexport", qos: .userInitiated)
 
     @Published var isExporting = false
     @Published var progress: Double = 0
     @Published var finishedURL: URL?
     @Published var errorText: String?
+    @Published var etaText: String?
+    @Published var estimateText: String?
+    @Published var isEstimating = false
+
+    // Called on the main thread when an export ends: (result, nil) on success,
+    // (nil, message) on failure or cancel. Used by cmd.movie_export, which has
+    // no sheet to observe finishedURL.
+    var onFinish: ((URL?, String?) -> Void)?
 
     private weak var engine: PyMOLEngine?
-    private var format: Format = .mp4
-    private var width = 1280, height = 720
+    private var options = MovieExportOptions()
+    private var width = 1280, height = 720          // output size
+    private var renderW = 1280, renderH = 720       // offscreen render size (× supersample)
     private var first = 1, last = 1, fps = 30, rayTraced = 0
     private var idx = 0
     private var frameDir: URL?
     private var outURL: URL?
+    private var startTime = Date()
+    // True between apply_overrides and restore; drives every teardown path.
+    private var overridesApplied = false
+    // True while THIS exporter holds engine.exportRenderActive, so only the
+    // owner ever clears it (the sheet and cmd.movie_export each have one).
+    private var ownsCore = false
 
     private var writer: AVAssetWriter?
     private var videoInput: AVAssetWriterInput?
@@ -51,51 +220,99 @@ final class MovieExporter: ObservableObject {
 
     private var total: Int { max(last - first + 1, 1) }
 
-    func start(engine: PyMOLEngine, format: Format, width: Int, height: Int,
-               first: Int, last: Int, fps: Int, rayTraced: Bool) {
-        guard !isExporting else { return }
+    private static let restorePython =
+        "from pymol import movie_exporting as _me\n_me.restore()"
+
+    func start(engine: PyMOLEngine, options: MovieExportOptions,
+               first: Int, last: Int, fps: Int) {
+        guard !isExporting, !isEstimating else { return }
+        guard !engine.exportRenderActive else {
+            errorText = "Another movie export is already running."
+            onFinish?(nil, errorText); return
+        }
         self.engine = engine
-        self.format = format
+        self.options = options
         // H.264 requires even dimensions.
-        self.width = max(2, width - (width % 2))
-        self.height = max(2, height - (height % 2))
+        self.width = max(2, options.width - (options.width % 2))
+        self.height = max(2, options.height - (options.height % 2))
+        let ss = options.allows(supersample: options.supersample) ? options.supersample : 1
+        self.renderW = width * ss
+        self.renderH = height * ss
         self.first = max(1, min(first, last))
         self.last = max(self.first, last)
         self.fps = max(1, fps)
-        self.rayTraced = rayTraced ? 1 : 0
+        self.rayTraced = options.rayTraced ? 1 : 0
         self.idx = self.first
         self.progress = 0
         self.errorText = nil
+        self.etaText = nil
         self.finishedURL = nil
 
         let tmp = FileManager.default.temporaryDirectory
         frameDir = tmp.appendingPathComponent("pymol_frames_\(UUID().uuidString.prefix(6))")
         try? FileManager.default.createDirectory(at: frameDir!, withIntermediateDirectories: true)
-        outURL = tmp.appendingPathComponent("RayMol_movie.\(format == .mp4 ? "mp4" : "gif")")
+        if options.format == .png {
+            outURL = tmp.appendingPathComponent("RayMol_movie_frames")
+        } else {
+            outURL = tmp.appendingPathComponent("RayMol_movie.\(options.fileExtension)")
+        }
         try? FileManager.default.removeItem(at: outURL!)
 
         guard setupEncoder() else {
-            errorText = "Could not initialize the \(format.rawValue) encoder."
-            cleanup(); return
+            fail("Could not initialize the \(options.format == .video ? options.codec.rawValue : options.format.rawValue) encoder.")
+            return
         }
 
         engine.pause()           // stop core-driven advance during capture
+        // Export-only overrides, set ONCE before frame 1 so the reps rebuild
+        // once (in frame 1's on-main updateScene), not per frame.
+        applyOverrides(options.overrides, on: engine)
         // Claim the core for the exporter: the live draw loop + feedback poll now
         // skip (they gate on this), so renderHiResPNG can run off-main exclusively.
         engine.exportRenderActive = true
+        ownsCore = true
         isExporting = true
+        startTime = Date()
         renderNext()
+    }
+
+    // Stop after the in-flight frame. Settings are restored and the partial file
+    // discarded once that frame's off-main render has finished.
+    func cancel() {
+        guard isExporting else { return }
+        fail("Export cancelled.")
+    }
+
+    private func applyOverrides(_ overrides: [String: Int], on engine: PyMOLEngine) {
+        guard !overrides.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: overrides, options: [.sortedKeys])
+        else { return }
+        let b64 = data.base64EncodedString()
+        engine.runPython("import base64 as _b64\nfrom pymol import movie_exporting as _me\n"
+            + "_me.apply_overrides(_b64.b64decode('\(b64)').decode('utf-8'))")
+        overridesApplied = true
     }
 
     private func setupEncoder() -> Bool {
         guard let outURL = outURL else { return false }
-        switch format {
-        case .mp4:
-            guard let w = try? AVAssetWriter(outputURL: outURL, fileType: .mp4) else { return false }
-            let settings: [String: Any] = [
-                AVVideoCodecKey: AVVideoCodecType.h264,
+        switch options.format {
+        case .video:
+            let isMOV = outURL.pathExtension == "mov"
+            guard let w = try? AVAssetWriter(outputURL: outURL, fileType: isMOV ? .mov : .mp4) else { return false }
+            var settings: [String: Any] = [
+                AVVideoCodecKey: {
+                    switch options.codec {
+                    case .h264: return AVVideoCodecType.h264
+                    case .hevc: return AVVideoCodecType.hevc
+                    case .prores: return AVVideoCodecType.proRes422
+                    }
+                }(),
                 AVVideoWidthKey: width, AVVideoHeightKey: height,
             ]
+            if options.bitrateMbps > 0 && options.codec != .prores {
+                settings[AVVideoCompressionPropertiesKey] =
+                    [AVVideoAverageBitRateKey: Int(options.bitrateMbps * 1_000_000)]
+            }
             let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
             input.expectsMediaDataInRealTime = false
             let adaptor = AVAssetWriterInputPixelBufferAdaptor(
@@ -118,6 +335,9 @@ final class MovieExporter: ObservableObject {
             CGImageDestinationSetProperties(dest, props as CFDictionary)
             gifDest = dest
             return true
+        case .png:
+            return (try? FileManager.default.createDirectory(
+                at: outURL, withIntermediateDirectories: true)) != nil
         }
     }
 
@@ -130,7 +350,7 @@ final class MovieExporter: ObservableObject {
     private func renderNext() {
         guard isExporting, let engine = engine, let frameDir = frameDir else { return }
         if idx > last { finish(); return }
-        let captureIdx = idx, w = width, h = height, rt = rayTraced
+        let captureIdx = idx, w = renderW, h = renderH, rt = rayTraced
         let png = frameDir.appendingPathComponent("f\(captureIdx).png")
         // Both of these MUST run on the main thread because they reach the Python
         // C-API, and under _PYMOL_EMBEDDED the main thread owns the interpreter's
@@ -155,11 +375,16 @@ final class MovieExporter: ObservableObject {
             // pure C++/Metal, no Python — safe off the main thread. It blocks on
             // the GPU and writes the PNG while the UI stays responsive.
             engine.renderHiResPNG(png.path, width: w, height: h, rayTraced: rt)
-            if let cg = self.loadCGImage(png) { self.appendFrame(cg, frameIndex: captureIdx) }   // encode off-main
+            self.appendFrame(png, frameIndex: captureIdx)   // encode off-main
             try? FileManager.default.removeItem(at: png)
             DispatchQueue.main.async {
                 guard self.isExporting else { return }
-                self.progress = Double(captureIdx - self.first + 1) / Double(self.total)
+                let done = captureIdx - self.first + 1
+                self.progress = Double(done) / Double(self.total)
+                let perFrame = Date().timeIntervalSince(self.startTime) / Double(done)
+                let left = self.total - done
+                self.etaText = left > 0
+                    ? "About \(Self.formatDuration(perFrame * Double(left))) left" : nil
                 self.idx += 1
                 self.renderNext()
             }
@@ -169,10 +394,10 @@ final class MovieExporter: ObservableObject {
     // Runs on renderQueue (off main). `frameIndex` is passed in rather than read
     // from `self.idx` (which the main thread mutates) so there's no cross-thread
     // read of the loop counter.
-    private func appendFrame(_ cg: CGImage, frameIndex: Int) {
-        switch format {
-        case .mp4:
-            guard let input = videoInput, let adaptor = adaptor else { return }
+    private func appendFrame(_ png: URL, frameIndex: Int) {
+        switch options.format {
+        case .video:
+            guard let cg = loadCGImage(png), let input = videoInput, let adaptor = adaptor else { return }
             var tries = 0
             while !input.isReadyForMoreMediaData && tries < 200 { usleep(2000); tries += 1 }
             if let pb = pixelBuffer(from: cg) {
@@ -180,7 +405,7 @@ final class MovieExporter: ObservableObject {
                 adaptor.append(pb, withPresentationTime: t)
             }
         case .gif:
-            guard let dest = gifDest else { return }
+            guard let cg = loadCGImage(png), let dest = gifDest else { return }
             // renderHiResPNG produces a transparent background (molecule alpha=1,
             // bg alpha=0). GIF would collapse that to its background color, so
             // flatten onto opaque black first (matching the MP4 pixel-buffer path).
@@ -188,57 +413,188 @@ final class MovieExporter: ObservableObject {
             let props = [kCGImagePropertyGIFDictionary:
                             [kCGImagePropertyGIFDelayTime: 1.0 / Double(fps)]]
             CGImageDestinationAddImage(dest, opaque, props as CFDictionary)
+        case .png:
+            guard let dir = outURL else { return }
+            let dst = dir.appendingPathComponent(String(format: "frame_%04d.png", frameIndex - first + 1))
+            if renderW == width && renderH == height {
+                // No supersampling: keep the renderer's PNG (alpha and all) as-is.
+                try? FileManager.default.moveItem(at: png, to: dst)
+            } else if let cg = loadCGImage(png), let small = downsampled(cg) {
+                writePNG(small, to: dst)
+            }
         }
     }
 
-    // Composite a (possibly transparent) frame onto opaque black.
+    // Composite a (possibly transparent) frame onto opaque black at output size.
     private func flattenedOpaque(_ image: CGImage) -> CGImage? {
         guard let ctx = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8,
             bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue) else { return nil }
+        if renderW != width { ctx.interpolationQuality = .high }
         ctx.setFillColor(red: 0, green: 0, blue: 0, alpha: 1)
         ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         return ctx.makeImage()
     }
 
+    // Scale a supersampled frame down to output size, keeping alpha.
+    private func downsampled(_ image: CGImage) -> CGImage? {
+        guard let ctx = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return ctx.makeImage()
+    }
+
+    private func writePNG(_ image: CGImage, to url: URL) {
+        guard let dest = CGImageDestinationCreateWithURL(
+            url as CFURL, UTType.png.identifier as CFString, 1, nil) else { return }
+        CGImageDestinationAddImage(dest, image, nil)
+        CGImageDestinationFinalize(dest)
+    }
+
     private func finish() {
-        switch format {
-        case .mp4:
+        switch options.format {
+        case .video:
             videoInput?.markAsFinished()
             writer?.finishWriting { [weak self] in
                 DispatchQueue.main.async {
                     guard let self = self else { return }
                     if self.writer?.status == .completed { self.complete(self.outURL) }
-                    else { self.errorText = self.writer?.error?.localizedDescription ?? "Encoding failed."; self.cleanup() }
+                    else { self.fail(self.writer?.error?.localizedDescription ?? "Encoding failed.") }
                 }
             }
         case .gif:
             if let dest = gifDest, CGImageDestinationFinalize(dest) { complete(outURL) }
-            else { errorText = "GIF encoding failed."; cleanup() }
+            else { fail("GIF encoding failed.") }
+        case .png:
+            complete(outURL)
         }
     }
 
     private func complete(_ url: URL?) {
-        finishedURL = url
         isExporting = false
         progress = 1
-        engine?.exportRenderActive = false   // hand the core back to the live loop
-        if let d = frameDir { try? FileManager.default.removeItem(at: d) }
+        etaText = nil
+        releaseCore { [weak self] in
+            guard let self = self else { return }
+            self.finishedURL = url
+            self.onFinish?(url, nil)
+        }
     }
 
-    private func cleanup() {
+    private func fail(_ message: String) {
         isExporting = false
-        engine?.exportRenderActive = false   // hand the core back to the live loop
-        if let d = frameDir { try? FileManager.default.removeItem(at: d) }
+        etaText = nil
+        errorText = message
+        // Cancel the writer and drop the partial output on renderQueue, after
+        // any in-flight frame has finished appending to them.
+        let w = writer, out = outURL
+        renderQueue.async {
+            if w?.status == .writing { w?.cancelWriting() }
+            if let out = out { try? FileManager.default.removeItem(at: out) }
+        }
+        releaseCore { [weak self] in self?.onFinish?(nil, message) }
         writer = nil; videoInput = nil; adaptor = nil; gifDest = nil
+    }
+
+    // Hand the core back to the live loop: restore the overridden settings and
+    // clear exportRenderActive. Queued behind any in-flight frame on renderQueue,
+    // because restoring marks reps dirty — if that happened while an off-main
+    // render was still running, its SceneUpdate would rebuild reps (and touch
+    // Python) off the main thread.
+    private func releaseCore(then done: @escaping () -> Void = {}) {
+        let engine = self.engine
+        let restore = overridesApplied, release = ownsCore
+        overridesApplied = false
+        ownsCore = false
+        let dir = frameDir
+        frameDir = nil
+        renderQueue.async {
+            DispatchQueue.main.async {
+                if restore { engine?.runPython(MovieExporter.restorePython) }
+                if release { engine?.exportRenderActive = false }
+                if let d = dir { try? FileManager.default.removeItem(at: d) }
+                done()
+            }
+        }
     }
 
     // Safety net: if the sheet is dismissed mid-export and the exporter is
     // released, never leave the core flag stuck true (that would freeze the live
-    // viewport). The in-flight renderQueue frame finishes harmlessly.
-    deinit { engine?.exportRenderActive = false }
+    // viewport) or the session's settings overridden. Both wait for the in-flight
+    // renderQueue frame, which finishes harmlessly.
+    deinit {
+        guard let engine = engine, ownsCore || overridesApplied else { return }
+        let restore = overridesApplied, release = ownsCore
+        renderQueue.async {
+            DispatchQueue.main.async {
+                if restore { engine.runPython(MovieExporter.restorePython) }
+                if release { engine.exportRenderActive = false }
+            }
+        }
+    }
+
+    // MARK: time estimate
+
+    // Render one probe frame of the CURRENT frame with these options, and
+    // estimate the whole export: the one-off rep rebuild the overrides cause,
+    // plus frames × (render + decode/encode prep). Overrides are restored after.
+    func estimate(engine: PyMOLEngine, options: MovieExportOptions, frames: Int) {
+        guard !isExporting, !isEstimating, !engine.exportRenderActive else { return }
+        self.engine = engine
+        isEstimating = true
+        estimateText = nil
+        let w = max(2, options.width - (options.width % 2))
+        let h = max(2, options.height - (options.height % 2))
+        let ss = options.allows(supersample: options.supersample) ? options.supersample : 1
+        self.width = w; self.height = h
+        self.renderW = w * ss; self.renderH = h * ss
+        self.options = options
+        let png = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pymol_probe_\(UUID().uuidString.prefix(6)).png")
+
+        engine.pause()
+        let t0 = Date()
+        applyOverrides(options.overrides, on: engine)
+        engine.updateScene()
+        let rebuild = Date().timeIntervalSince(t0)
+        engine.exportRenderActive = true
+        ownsCore = true
+        renderQueue.async { [weak self] in
+            guard let self = self else { return }
+            let t1 = Date()
+            engine.renderHiResPNG(png.path, width: w * ss, height: h * ss,
+                                  rayTraced: options.rayTraced ? 1 : 0)
+            if let cg = self.loadCGImage(png) {
+                switch options.format {
+                case .video: _ = self.pixelBuffer(from: cg)
+                case .gif: _ = self.flattenedOpaque(cg)
+                case .png: if ss > 1 { _ = self.downsampled(cg) }
+                }
+            }
+            let perFrame = Date().timeIntervalSince(t1)
+            try? FileManager.default.removeItem(at: png)
+            DispatchQueue.main.async {
+                let total = rebuild + perFrame * Double(max(frames, 1))
+                self.releaseCore {
+                    self.isEstimating = false
+                    self.estimateText = String(format: "≈ %.1f s/frame · about %@ total",
+                                               perFrame, Self.formatDuration(total))
+                }
+            }
+        }
+    }
+
+    static func formatDuration(_ s: Double) -> String {
+        if s < 60 { return "\(max(1, Int(s.rounded()))) s" }
+        let m = Int((s / 60).rounded())
+        if m < 60 { return "\(m) min" }
+        return String(format: "%d h %02d min", m / 60, m % 60)
+    }
 
     // MARK: helpers
 
@@ -263,6 +619,9 @@ final class MovieExporter: ObservableObject {
             bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue) else { return nil }
+        // Downsampling a supersampled frame. Left at the default for 1× so a
+        // Standard export stays byte-identical to the pre-#581 output.
+        if renderW != width { ctx.interpolationQuality = .high }
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         return buffer
     }
@@ -277,46 +636,98 @@ struct MovieExportControls: View {
     @EnvironmentObject var engine: PyMOLEngine
     @StateObject private var exporter = MovieExporter()
 
-    private struct SizePreset: Identifiable { let id = UUID(); let name: String; let w: Int; let h: Int }
-    private let presets = [SizePreset(name: "720p", w: 1280, h: 720),
-                           SizePreset(name: "480p", w: 854, h: 480),
-                           SizePreset(name: "360p", w: 640, h: 360)]
+    private struct SizePreset: Identifiable {
+        let name: String; let w: Int; let h: Int
+        var id: String { name }
+    }
+    private static var presets: [SizePreset] {
+        var p = [SizePreset(name: "360p", w: 640, h: 360),
+                 SizePreset(name: "480p", w: 854, h: 480),
+                 SizePreset(name: "720p", w: 1280, h: 720),
+                 SizePreset(name: "1080p", w: 1920, h: 1080),
+                 SizePreset(name: "1440p", w: 2560, h: 1440)]
+        // 4K frames are memory-heavy (esp. ray-traced); like still-image export,
+        // don't offer them on iPhone.
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom != .phone {
+            p.append(SizePreset(name: "4K", w: 3840, h: 2160))
+        }
+        #else
+        p.append(SizePreset(name: "4K", w: 3840, h: 2160))
+        #endif
+        return p
+    }
+    private static let customSizeTag = "custom"
 
-    @State private var format: MovieExporter.Format = .mp4
-    @State private var presetIdx = 0
-    @State private var rayMode = false
+    // Last-used settings, per user (not in the .pse).
+    @AppStorage("raymol.movieExport.options") private var storedOptions = Data()
+    @State private var options = MovieExportOptions()
+    @State private var sizeTag = "720p"
+    @State private var customW = 1920
+    @State private var customH = 1080
+    @State private var showAdvanced = false
+    @State private var loaded = false
 
     private var frameCount: Int { max(engine.playback.frameCount, 1) }
+    private var timelineFPS: Int { Int(engine.playback.movieFPS.rounded()) }
+    private var effectiveFPS: Int { options.fpsOverride > 0 ? options.fpsOverride : timelineFPS }
+    private var rtSupported: Bool { engine.rayTracingSupported }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             labeled("Format") {
-                Picker("", selection: $format) {
-                    ForEach(MovieExporter.Format.allCases) { Text($0.rawValue).tag($0) }
+                Picker("", selection: $options.format) {
+                    ForEach(MovieExportOptions.Format.allCases) { Text($0.rawValue).tag($0) }
                 }.pickerStyle(.segmented)
             }
             labeled("Size") {
-                Picker("", selection: $presetIdx) {
-                    ForEach(presets.indices, id: \.self) { i in
-                        Text("\(presets[i].name)  ·  \(presets[i].w)×\(presets[i].h)").tag(i)
+                HStack {
+                    Picker("", selection: $sizeTag) {
+                        ForEach(Self.presets) { p in
+                            Text("\(p.name)  ·  \(p.w)×\(p.h)").tag(p.name)
+                        }
+                        Text("Custom…").tag(Self.customSizeTag)
                     }
-                }.pickerStyle(.segmented)
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                    if sizeTag == Self.customSizeTag {
+                        dimensionField($customW)
+                        Text("×").foregroundStyle(.secondary)
+                        dimensionField($customH)
+                    }
+                    Spacer(minLength: 0)
+                }
             }
-            Toggle(isOn: $rayMode) {
+            Toggle(isOn: $options.rayTraced) {
                 Label("Ray-traced frames (slow)", systemImage: "sparkles")
-            }.tint(TimelineTheme.accent)
-            if rayMode {
+            }
+            .tint(TimelineTheme.accent)
+            .disabled(!rtSupported)
+            if options.rayTraced && rtSupported {
                 Text("Ray-tracing every frame is much slower.")
                     .font(.caption).foregroundStyle(.orange)
             }
-            Text("\(frameCount) frames at \(Int(engine.playback.movieFPS.rounded())) fps.")
+
+            DisclosureGroup(isExpanded: $showAdvanced) {
+                advancedControls.padding(.top, 10)
+            } label: {
+                Text("Advanced  ·  \(options.quality.label)")
+                    .font(.system(size: 13, weight: .medium))
+            }
+
+            Text("\(frameCount) frames at \(effectiveFPS) fps.")
                 .font(.caption).foregroundStyle(.secondary)
+            ForEach(warnings, id: \.self) { w in
+                Text(w).font(.caption).foregroundStyle(.orange)
+            }
 
             if exporter.isExporting {
                 VStack(alignment: .leading, spacing: 6) {
                     ProgressView(value: exporter.progress)
                         .tint(TimelineTheme.accent)
-                    Text("Rendering frame \(Int(exporter.progress * Double(frameCount)))/\(frameCount)…")
+                    Text("Rendering frame \(Int(exporter.progress * Double(frameCount)))/\(frameCount)…"
+                         + (exporter.etaText.map { "  \($0)." } ?? ""))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -324,27 +735,223 @@ struct MovieExportControls: View {
                 Text(err).font(.caption).foregroundStyle(.red)
             }
 
-            Button(action: runExport) {
-                Label(exporter.isExporting ? "Rendering…" : "Render & Export",
-                      systemImage: "film")
-                    .font(.system(size: 14, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
+            HStack(spacing: 10) {
+                Button(action: runExport) {
+                    Label(exporter.isExporting ? "Rendering…" : "Render & Export",
+                          systemImage: "film")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(TimelineTheme.accent)
+                .disabled(exporter.isExporting || exporter.isEstimating
+                          || engine.playback.frameCount <= 1)
+                if exporter.isExporting {
+                    Button("Cancel", role: .cancel) { exporter.cancel() }
+                        .buttonStyle(.bordered)
+                        .padding(.vertical, 10)
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(TimelineTheme.accent)
-            .disabled(exporter.isExporting || engine.playback.frameCount <= 1)
         }
+        .onAppear(perform: loadStoredOptions)
+        .onChange(of: options) { _ in saveOptions() }
+        .onChange(of: sizeTag) { _ in applySize() }
+        .onChange(of: customW) { _ in applySize() }
+        .onChange(of: customH) { _ in applySize() }
         .onChange(of: exporter.finishedURL) { url in
             if let url = url { deliver(url) }
         }
     }
 
+    // MARK: advanced
+
+    @ViewBuilder
+    private var advancedControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            labeled("Quality") {
+                Picker("", selection: Binding(
+                    get: { options.quality },
+                    set: { options.applyPreset($0) })) {
+                    ForEach(MovieQuality.allCases) { Text($0.label).tag($0) }
+                }.pickerStyle(.segmented)
+            }
+            Text(qualityBlurb).font(.caption).foregroundStyle(.secondary)
+
+            section("Geometry") {
+                knob("Cartoon sampling", "cartoon_sampling", [7, 10, 14, 20])
+                knob("Sphere quality", "sphere_quality", [1, 2, 3, 4])
+                knob("Stick quality", "stick_quality", [8, 12, 16, 24])
+                knob("Surface quality", "surface_quality", [0, 1, 2, 3])
+            }
+            section("Ray tracing") {
+                knob("AO samples / pixel", "metal_rt_samples", [48, 64, 128, 256])
+                    .disabled(!rtSupported)
+                knob("Reflection samples", "metal_rt_reflect_samples", [8, 16, 32, 64])
+                    .disabled(!rtSupported)
+            }
+            section("Image") {
+                row("Supersampling") {
+                    Picker("", selection: Binding(
+                        get: { options.supersample },
+                        set: { options.supersample = $0; options.quality = .custom })) {
+                        ForEach([1, 2, 4], id: \.self) { s in
+                            Text("\(s)×").tag(s)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 140)
+                }
+                knob("Anti-aliasing (MSAA)", "metal_msaa", [0, 1], onOff: true)
+                knob("High-quality depth of field", "metal_dof_hq", [0, 1], onOff: true)
+            }
+            if options.format == .video {
+                section("Encoding") {
+                    row("Codec") {
+                        Picker("", selection: $options.codec) {
+                            ForEach(MovieExportOptions.Codec.available) { Text($0.rawValue).tag($0) }
+                        }.pickerStyle(.menu).labelsHidden().fixedSize()
+                    }
+                    if options.codec != .prores {
+                        row("Bitrate") {
+                            Picker("", selection: $options.bitrateMbps) {
+                                Text("Automatic").tag(0.0)
+                                ForEach([8.0, 16, 32, 64, 128], id: \.self) { b in
+                                    Text("\(Int(b)) Mbit/s").tag(b)
+                                }
+                            }.pickerStyle(.menu).labelsHidden().fixedSize()
+                        }
+                    }
+                }
+            }
+            if options.format != .png {
+                row("Frame rate") {
+                    Picker("", selection: $options.fpsOverride) {
+                        Text("Timeline (\(timelineFPS) fps)").tag(0)
+                        ForEach([24, 25, 30, 50, 60], id: \.self) { f in Text("\(f) fps").tag(f) }
+                    }.pickerStyle(.menu).labelsHidden().fixedSize()
+                }
+            }
+
+            HStack(spacing: 8) {
+                Button(exporter.isEstimating ? "Estimating…" : "Estimate time") {
+                    exporter.estimate(engine: engine, options: options, frames: frameCount)
+                }
+                .buttonStyle(.bordered)
+                .disabled(exporter.isExporting || exporter.isEstimating)
+                if let e = exporter.estimateText {
+                    Text(e).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var qualityBlurb: String {
+        switch options.quality {
+        case .draft: return "Faster: no MSAA. For checking timing and framing."
+        case .standard: return "The same settings as the live view."
+        case .high: return "Finer geometry, 128 AO samples, high-quality depth of field."
+        case .maximum: return "Finest geometry and surfaces, 256 AO samples, 2× supersampling. Slow."
+        case .custom: return "Your own mix. \"Session\" keeps the current setting."
+        }
+    }
+
+    private var warnings: [String] {
+        var w: [String] = []
+        if (options.overrides["surface_quality"] ?? 0) >= 2 {
+            w.append("High surface quality rebuilds surfaces at export start. This can take minutes and a lot of memory.")
+        }
+        #if os(iOS)
+        let pixels = options.width * options.height * options.supersample * options.supersample
+        if pixels >= 3840 * 2160 && ((options.overrides["surface_quality"] ?? 0) >= 2 || options.supersample > 1) {
+            w.append("4K with high surface quality or supersampling may run out of memory on this device.")
+        }
+        #endif
+        if !options.allows(supersample: options.supersample) {
+            w.append("\(options.supersample)× supersampling exceeds the \(MovieExportOptions.maxRenderDimension)-pixel render limit at this size; frames render at 1×.")
+        }
+        return w
+    }
+
+    // A menu of fixed values plus "Session" (nil = don't override). Picking a
+    // value switches the preset to Custom.
+    private func knob(_ title: String, _ key: String, _ values: [Int],
+                      onOff: Bool = false) -> some View {
+        row(title) {
+            Picker("", selection: Binding<Int?>(
+                get: { options.overrides[key] },
+                set: { v in
+                    options.overrides[key] = v
+                    options.quality = .custom
+                })) {
+                Text("Session").tag(Int?.none)
+                ForEach(values, id: \.self) { v in
+                    Text(onOff ? (v != 0 ? "On" : "Off") : "\(v)").tag(Int?.some(v))
+                }
+            }.pickerStyle(.menu).labelsHidden().fixedSize()
+        }
+    }
+
+    private func row<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
+        HStack {
+            Text(title).font(.system(size: 12))
+            Spacer()
+            content()
+        }
+    }
+
+    private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            content()
+        }
+    }
+
+    private func dimensionField(_ value: Binding<Int>) -> some View {
+        TextField("", value: value, format: .number.grouping(.never))
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 64)
+            #if os(iOS)
+            .keyboardType(.numberPad)
+            #endif
+    }
+
+    // MARK: state
+
+    private func applySize() {
+        guard loaded else { return }
+        if sizeTag == Self.customSizeTag {
+            options.width = min(max(customW, 16), MovieExportOptions.maxRenderDimension)
+            options.height = min(max(customH, 16), MovieExportOptions.maxRenderDimension)
+        } else if let p = Self.presets.first(where: { $0.name == sizeTag }) {
+            options.width = p.w; options.height = p.h
+        }
+    }
+
+    private func loadStoredOptions() {
+        if let o = try? JSONDecoder().decode(MovieExportOptions.self, from: storedOptions) {
+            options = o
+            if !MovieExportOptions.Codec.available.contains(o.codec) { options.codec = .h264 }
+        }
+        if let p = Self.presets.first(where: { $0.w == options.width && $0.h == options.height }) {
+            sizeTag = p.name
+        } else {
+            sizeTag = Self.customSizeTag
+            customW = options.width; customH = options.height
+        }
+        // Applied after the size tag so the restored size isn't overwritten.
+        DispatchQueue.main.async { loaded = true }
+    }
+
+    private func saveOptions() {
+        guard loaded, let d = try? JSONEncoder().encode(options) else { return }
+        storedOptions = d
+    }
+
     private func runExport() {
-        let p = presets[presetIdx]
-        exporter.start(engine: engine, format: format, width: p.w, height: p.h,
-                       first: 1, last: frameCount, fps: Int(engine.playback.movieFPS.rounded()),
-                       rayTraced: rayMode)
+        exporter.start(engine: engine, options: options,
+                       first: 1, last: frameCount, fps: effectiveFPS)
     }
 
     // MARK: deliver result
@@ -366,9 +973,11 @@ struct MovieExportControls: View {
         #else
         let panel = NSSavePanel()
         panel.nameFieldStringValue = url.lastPathComponent
-        if let ct = UTType(filenameExtension: url.pathExtension) { panel.allowedContentTypes = [ct] }
+        if !url.pathExtension.isEmpty, let ct = UTType(filenameExtension: url.pathExtension) {
+            panel.allowedContentTypes = [ct]
+        }
         panel.canCreateDirectories = true
-        panel.title = "Save Movie"
+        panel.title = options.format == .png ? "Save Frames Folder" : "Save Movie"
         guard panel.runModal() == .OK, let dest = panel.url else { return }
         try? FileManager.default.removeItem(at: dest)
         try? FileManager.default.copyItem(at: url, to: dest)
@@ -404,7 +1013,7 @@ struct MovieExportSheet: View {
         #if os(iOS)
         .presentationDetents([.medium, .large])
         #else
-        .frame(width: 420, height: 480)
+        .frame(width: 460, height: 620)
         #endif
     }
 }

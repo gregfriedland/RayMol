@@ -200,6 +200,7 @@ def get_command_keywords(self_cmd=cmd):
         'mdo'           : [ self_cmd.mdo               , 2 , 2 , ':' , parsing.MOVIE  ],
         'mdump'         : [ self_cmd.mdump             , 0 , 0 , ''  , parsing.STRICT ],
         'mpng'          : [ self_cmd.mpng              , 0 , 0 , ''  , parsing.SECURE ],
+        'movie_export'  : [ self_cmd.movie_export      , 0 , 0 , ''  , parsing.STRICT ],
         'mplay'         : [ self_cmd.mplay             , 0 , 0 , ''  , parsing.STRICT ],
         'mtoggle'       : [ self_cmd.mtoggle           , 0 , 0 , ''  , parsing.STRICT ],
         'mstop'         : [ self_cmd.mstop             , 0 , 0 , ''  , parsing.STRICT ],

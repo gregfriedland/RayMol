@@ -1283,6 +1283,57 @@ final class PyMOLEngine: ObservableObject {
         PyMOLBridge_RenderHiResPNG(inst, path, Int32(width), Int32(height), Int32(rayTraced))
     }
 
+    // Exporter for cmd.movie_export requests (#581). Owned here, not by a sheet,
+    // so a scripted export outlives any UI and has no save panel: it writes
+    // straight to the requested path and reports in the log.
+    private lazy var scriptedMovieExporter = MovieExporter()
+
+    // Append a line to the console log from the main thread.
+    func logLine(_ line: String) {
+        feedbackLog.append(line)
+        if feedbackLog.count > 400 { feedbackLog.removeFirst(feedbackLog.count - 400) }
+    }
+
+    // Handle a `MOVIEEXPORT:<json>` request emitted by cmd.movie_export.
+    // MUST be called on the main thread.
+    func startScriptedMovieExport(_ json: String) {
+        guard let req = MovieExportRequest.decode(json) else {
+            logLine(" movie_export: could not read the export request"); return
+        }
+        let exporter = scriptedMovieExporter
+        guard !exporter.isExporting && !exportRenderActive else {
+            logLine(" movie_export: another movie export is already running"); return
+        }
+        // From the request, not the playback mirror (which lags by a poll).
+        let frames = max(req.frames, 1)
+        guard frames > 1 else {
+            logLine(" movie_export: there is no movie to export (build one in the Movie tab)"); return
+        }
+        let last = req.last > 0 ? min(req.last, frames) : frames
+        let fps = max(req.options.fpsOverride, 1)
+        let dest = URL(fileURLWithPath: req.path)
+        exporter.onFinish = { [weak self] url, error in
+            guard let self = self else { return }
+            if let url = url {
+                do {
+                    try FileManager.default.createDirectory(
+                        at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try? FileManager.default.removeItem(at: dest)
+                    try FileManager.default.moveItem(at: url, to: dest)
+                    self.logLine(" movie_export: wrote \(dest.path)")
+                } catch {
+                    self.logLine(" movie_export: could not write \(dest.path): \(error.localizedDescription)")
+                }
+            } else {
+                self.logLine(" movie_export: failed: \(error ?? "unknown error")")
+            }
+        }
+        logLine(" movie_export: rendering \(last - max(req.first, 1) + 1) frames at "
+                + "\(req.options.width)×\(req.options.height)…")
+        exporter.start(engine: self, options: req.options,
+                       first: req.first, last: last, fps: fps)
+    }
+
     // Rebuild dirty object representations for the current frame on the MAIN
     // thread. Movie export calls this before its off-main renderHiResPNG so the
     // rep rebuild — which reaches the Python C-API via the busy-status callback —
@@ -3711,6 +3762,10 @@ final class PyMOLEngine: ObservableObject {
                     parsePlaybackFeedback(line)
                 } else if line.hasPrefix("PLAYBACK_ERR:") {
                     // swallow (don't flood the log with poll errors)
+                } else if line.hasPrefix("MOVIEEXPORT:") {
+                    // cmd.movie_export (#581): a scripted export request.
+                    let json = String(line.dropFirst("MOVIEEXPORT:".count))
+                    DispatchQueue.main.async { self.startScriptedMovieExport(json) }
                 } else if line.hasPrefix("SELPREVIEW:") {
                     let v = String(line.dropFirst("SELPREVIEW:".count))
                     let count = Int(v)

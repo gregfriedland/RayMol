@@ -40,6 +40,11 @@ from .predicting import \
       predict_weights_cancel
 
 #--------------------------------------------------------------------
+# Movie export with export-only quality overrides (#581). Rendering happens in
+# the native app's MovieExporter; see movie_exporting.py.
+from .movie_exporting import movie_export
+
+#--------------------------------------------------------------------
 # Backbone GENERATION, a separate surface from prediction on purpose: a generator is
 # handed a target structure and returns a chain that did not exist, so it has no
 # sequence to fold and nothing to put in a PredictionSpec. See docs/generators.md.
