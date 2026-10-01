@@ -1283,6 +1283,94 @@ final class PyMOLEngine: ObservableObject {
         PyMOLBridge_RenderHiResPNG(inst, path, Int32(width), Int32(height), Int32(rayTraced))
     }
 
+    // Exporter for cmd.movie_export requests (#581). Owned here, not by a sheet,
+    // so a scripted export outlives any UI and has no save panel: it writes
+    // straight to the requested path and reports in the log.
+    private lazy var scriptedMovieExporter = MovieExporter()
+
+    // Append a line to the console log from the main thread.
+    func logLine(_ line: String) {
+        feedbackLog.append(line)
+        if feedbackLog.count > 400 { feedbackLog.removeFirst(feedbackLog.count - 400) }
+    }
+
+    // Handle a `MOVIEEXPORT:<json>` request emitted by cmd.movie_export.
+    // MUST be called on the main thread.
+    func startScriptedMovieExport(_ json: String) {
+        let req: MovieExportRequest
+        switch MovieExportRequest.decode(json) {
+        case .failure(let e): logLine(" movie_export: \(e.message)"); return
+        case .success(let r): req = r
+        }
+        let exporter = scriptedMovieExporter
+        guard !exporter.isExporting && !exportRenderActive else {
+            logLine(" movie_export: another movie export is already running"); return
+        }
+        // From the request, not the playback mirror (which lags by a poll).
+        let frames = max(req.frames, 1)
+        guard frames > 1 else {
+            logLine(" movie_export: there is no movie to export (build one in the Movie tab)"); return
+        }
+        let first = max(req.first, 1)
+        let last = req.last > 0 ? min(req.last, frames) : frames
+        guard first <= last else {
+            logLine(" movie_export: first frame \(first) is past the last frame \(last)"); return
+        }
+        let fps = max(req.options.fpsOverride, 1)
+        let dest = URL(fileURLWithPath: req.path)
+        let isFrames = req.options.format == .png
+        // Check the destination BEFORE rendering, and never delete anything we
+        // didn't make: a PNG sequence needs a new or empty folder; a movie file
+        // may replace a file but never a folder.
+        if let problem = Self.movieDestinationProblem(dest, frames: isFrames) {
+            logLine(" movie_export: \(problem)"); return
+        }
+        exporter.onFinish = { [weak self] url, error in
+            guard let self = self else { return }
+            guard let url = url else {
+                self.logLine(" movie_export: failed: \(error ?? "unknown error")"); return
+            }
+            do {
+                let fm = FileManager.default
+                try fm.createDirectory(at: dest.deletingLastPathComponent(),
+                                       withIntermediateDirectories: true)
+                // Re-check: the destination may have changed during the render.
+                if let problem = Self.movieDestinationProblem(dest, frames: isFrames) {
+                    try? fm.removeItem(at: url)
+                    self.logLine(" movie_export: \(problem)"); return
+                }
+                if fm.fileExists(atPath: dest.path) {
+                    // Only an empty folder (frames) or a file (movie) gets here.
+                    try fm.removeItem(at: dest)
+                }
+                try fm.moveItem(at: url, to: dest)
+                self.logLine(" movie_export: wrote \(dest.path)")
+            } catch {
+                self.logLine(" movie_export: could not write \(dest.path): \(error.localizedDescription)")
+            }
+        }
+        logLine(" movie_export: rendering \(last - first + 1) frames at "
+                + "\(req.options.width)×\(req.options.height)…")
+        exporter.start(engine: self, options: req.options,
+                       first: first, last: last, fps: fps)
+    }
+
+    // Why `dest` can't receive this export, or nil if it can.
+    static func movieDestinationProblem(_ dest: URL, frames: Bool) -> String? {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: dest.path, isDirectory: &isDir) else { return nil }
+        if frames {
+            guard isDir.boolValue else {
+                return "\(dest.path) is a file; a PNG sequence needs a new or empty folder"
+            }
+            let contents = (try? fm.contentsOfDirectory(atPath: dest.path)) ?? ["?"]
+            return contents.isEmpty ? nil
+                : "\(dest.path) is not empty; choose a new or empty folder for the frames"
+        }
+        return isDir.boolValue ? "\(dest.path) is a folder; give a movie file name" : nil
+    }
+
     // Rebuild dirty object representations for the current frame on the MAIN
     // thread. Movie export calls this before its off-main renderHiResPNG so the
     // rep rebuild — which reaches the Python C-API via the busy-status callback —
@@ -3711,6 +3799,10 @@ final class PyMOLEngine: ObservableObject {
                     parsePlaybackFeedback(line)
                 } else if line.hasPrefix("PLAYBACK_ERR:") {
                     // swallow (don't flood the log with poll errors)
+                } else if line.hasPrefix("MOVIEEXPORT:") {
+                    // cmd.movie_export (#581): a scripted export request.
+                    let json = String(line.dropFirst("MOVIEEXPORT:".count))
+                    DispatchQueue.main.async { self.startScriptedMovieExport(json) }
                 } else if line.hasPrefix("SELPREVIEW:") {
                     let v = String(line.dropFirst("SELPREVIEW:".count))
                     let count = Int(v)
