@@ -1,5 +1,6 @@
-"""Feed the macOS Predict tool bar: the registered predictors, and the chains of
-an input resolved exactly as `predict` resolves it.
+"""Feed the macOS Predict tool bar: the registered predictors, the chains of an
+input resolved exactly as `predict` resolves it, and the MSA server a search would
+use.
 
 RayMol has no Python->Swift call path, so the bar cannot ask a function for these
 values; it triggers `emit(input)` over runPython and reads the JSON this writes,
@@ -84,6 +85,24 @@ def _chains(input_str):
         return [], str(exc)
 
 
+def _msa_server():
+    """{'url', 'origin', 'public', 'error'}: the server an MSA search would use now.
+
+    Resolved exactly as `msa_search` resolves it, so the bar's server field and its
+    "Sequences are sent to ..." line name the server the sequence would actually go to.
+    Never raises: a saved server that cannot be used (which `msa_search` refuses to
+    search past) is an `error` with an empty `url`, and the rest of the form still
+    resolves.
+    """
+    from pymol.msas import colabfold
+    try:
+        url, origin = colabfold.resolve()
+    except Exception as exc:
+        return {'url': '', 'origin': '', 'public': False, 'error': str(exc).strip()}
+    return {'url': url, 'origin': origin, 'public': colabfold.is_public(url),
+            'error': None}
+
+
 def emit(input_str=''):
     """Write pymol_predict_<pid>.json and print PREDICT_FORM:ready.
 
@@ -94,7 +113,8 @@ def emit(input_str=''):
     """
     try:
         chains, error = _chains(input_str)
-        payload = {'predictors': _predictors(), 'chains': chains, 'error': error}
+        payload = {'predictors': _predictors(), 'chains': chains, 'error': error,
+                   'msa_server': _msa_server()}
         blob = json.dumps(payload)
         p = raymol_tmp.channel_path('pymol_predict')
         with open(p, 'w') as f:

@@ -183,3 +183,57 @@ class TestAppkitPredict(testing.PyMOLTestCase):
         self.assertIsNotNone(payload['error'])
         # predictors are still resolved on the error path
         self.assertGreater(len(payload['predictors']), 0)
+
+
+class TestAppkitPredictMSAServer(testing.PyMOLTestCase):
+    """The payload names the MSA server a search would use (#598), so the bar's server
+    field and its "Sequences are sent to ..." line show the server actually in effect,
+    not a guess."""
+
+    SAVED = 'https://msa.saved.example'
+
+    def setUp(self):
+        super().setUp()
+        from pymol.msas import colabfold
+        self.colabfold = colabfold
+        self._tmp = tempfile.TemporaryDirectory()
+        self._env_backup = {k: os.environ.get(k)
+                            for k in ('RAYMOL_MSA_DIR', colabfold.SERVER_ENV)}
+        os.environ['RAYMOL_MSA_DIR'] = self._tmp.name
+        os.environ.pop(colabfold.SERVER_ENV, None)
+        colabfold.set_server('')
+
+    def tearDown(self):
+        self.colabfold.set_server('')
+        for key, value in self._env_backup.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        self._tmp.cleanup()
+        super().tearDown()
+
+    def test_the_saved_server_is_named(self):
+        cmd.msa_server(self.SAVED)
+        appkit_predict.emit('')
+        self.assertEqual(_payload()['msa_server'],
+                         {'url': self.SAVED, 'origin': 'saved', 'public': False,
+                          'error': None})
+
+    def test_the_public_default_is_flagged_public(self):
+        appkit_predict.emit('')
+        self.assertEqual(_payload()['msa_server'],
+                         {'url': 'https://api.colabfold.com', 'origin': 'default',
+                          'public': True, 'error': None})
+
+    def test_an_unusable_saved_server_is_an_error_not_a_throw(self):
+        path = os.path.join(self._tmp.name, 'server.json')
+        with open(path, 'w') as handle:
+            handle.write('{not json')
+        appkit_predict.emit('MKTAY')
+        payload = _payload()
+        server = payload['msa_server']
+        self.assertEqual(server['url'], '')
+        self.assertIn(path, server['error'])
+        # The rest of the form still resolves: the bad file is the server's problem.
+        self.assertEqual([c['id'] for c in payload['chains']], ['A'])
