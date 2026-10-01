@@ -635,6 +635,10 @@ final class MovieExporter: ObservableObject {
 struct MovieExportControls: View {
     @EnvironmentObject var engine: PyMOLEngine
     @StateObject private var exporter = MovieExporter()
+    // Test affordance (MovieExportSnapshot): start from these options instead
+    // of the stored ones, with Advanced expanded or not.
+    var previewOptions: MovieExportOptions? = nil
+    var previewAdvanced = false
 
     private struct SizePreset: Identifiable {
         let name: String; let w: Int; let h: Int
@@ -684,7 +688,7 @@ struct MovieExportControls: View {
                 HStack {
                     Picker("", selection: $sizeTag) {
                         ForEach(Self.presets) { p in
-                            Text("\(p.name)  ·  \(p.w)×\(p.h)").tag(p.name)
+                            Text("\(p.name)  ·  \(String(p.w))×\(String(p.h))").tag(p.name)
                         }
                         Text("Custom…").tag(Self.customSizeTag)
                     }
@@ -930,7 +934,10 @@ struct MovieExportControls: View {
     }
 
     private func loadStoredOptions() {
-        if let o = try? JSONDecoder().decode(MovieExportOptions.self, from: storedOptions) {
+        if let o = previewOptions {
+            options = o
+            showAdvanced = previewAdvanced
+        } else if let o = try? JSONDecoder().decode(MovieExportOptions.self, from: storedOptions) {
             options = o
             if !MovieExportOptions.Codec.available.contains(o.codec) { options.codec = .h264 }
         }
@@ -945,7 +952,7 @@ struct MovieExportControls: View {
     }
 
     private func saveOptions() {
-        guard loaded, let d = try? JSONEncoder().encode(options) else { return }
+        guard loaded, previewOptions == nil, let d = try? JSONEncoder().encode(options) else { return }
         storedOptions = d
     }
 
@@ -1017,6 +1024,76 @@ struct MovieExportSheet: View {
         #endif
     }
 }
+
+#if DEBUG && os(macOS)
+// Test affordance (PYMOL_SNAPSHOT_MOVIEEXPORT=<dir>): render the export
+// controls in a few states to PNGs, via NSView caching (the app's own views,
+// so no screen-recording permission is needed). Debug builds only.
+enum MovieExportSnapshot {
+    static func write(engine: PyMOLEngine, to dir: String) {
+        var high = MovieExportOptions()
+        high.width = 3840; high.height = 2160
+        high.applyPreset(.high)
+        var custom = high
+        custom.codec = .hevc; custom.bitrateMbps = 64
+        custom.overrides["metal_rt_samples"] = 256
+        custom.supersample = 2
+        custom.quality = .custom
+        let shots: [(String, MovieExportOptions, Bool, Bool)] = [
+            ("1_default_light", MovieExportOptions(), false, false),
+            ("2_advanced_high_4k_light", high, true, false),
+            ("3_advanced_custom_dark", custom, true, true),
+        ]
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        for (i, shot) in shots.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 1.5) {
+                render(shot, engine: engine, dir: dir)
+            }
+        }
+    }
+
+    private static var windows: [NSWindow] = []
+
+    private static func render(_ shot: (String, MovieExportOptions, Bool, Bool),
+                               engine: PyMOLEngine, dir: String) {
+        let (name, options, advanced, dark) = shot
+        let root = VStack(spacing: 0) {
+            HStack {
+                Text("Export Movie").font(.headline)
+                Spacer()
+                Button("Done") {}
+            }.padding(16)
+            MovieExportControls(previewOptions: options, previewAdvanced: advanced)
+                .padding(16)
+        }
+        .frame(width: 460)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .environmentObject(engine)
+        let host = NSHostingView(rootView: root)
+        host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        let win = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 460, height: 900),
+                           styleMask: [.borderless], backing: .buffered, defer: false)
+        win.contentView = host
+        win.orderFrontRegardless()
+        windows.append(win)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            let size = host.fittingSize
+            win.setContentSize(size)
+            host.layoutSubtreeIfNeeded()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
+                host.cacheDisplay(in: host.bounds, to: rep)
+                let path = (dir as NSString).appendingPathComponent(name + ".png")
+                try? rep.representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: path))
+                NSLog("MOVIEEXPORT_SNAPSHOT: \(path)")
+                win.orderOut(nil)
+            }
+        }
+    }
+}
+#endif
 
 // MARK: - Movie content tab
 

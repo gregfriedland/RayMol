@@ -813,6 +813,15 @@ struct ContentView: View {
                 if ProcessInfo.processInfo.environment["PYMOL_AUTOSHEET"] == "theme" {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { showThemeStudio = true }
                 }
+                #if DEBUG && os(macOS)
+                // Test affordance: render the Export Movie controls to PNGs
+                // (MovieExportSnapshot). PYMOL_SNAPSHOT_MOVIEEXPORT=<dir>.
+                if let dir = ProcessInfo.processInfo.environment["PYMOL_SNAPSHOT_MOVIEEXPORT"] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                        MovieExportSnapshot.write(engine: engine, to: dir)
+                    }
+                }
+                #endif
                 // Test affordance: show the in-viewport scene buttons at launch so the
                 // overlay can be screenshotted. PYMOL_AUTOSCENEBUTTONS=1.
                 if ProcessInfo.processInfo.environment["PYMOL_AUTOSCENEBUTTONS"] != nil {
