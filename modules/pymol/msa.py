@@ -454,61 +454,105 @@ def _check_query(sequence):
     return text
 
 
-def msa_server(server='', quiet=1, _self=cmd):
+def msa_server(server='', save=1, quiet=1, _self=cmd):
     """
 DESCRIPTION
 
     "msa_server" sets -- or reports -- the ColabFold MSA server that
-    "msa_search" sends queries to.
+    "msa_search" sends queries to. A server set here is remembered across
+    launches; the Predict bar's server field reads and sets the same one.
 
 USAGE
 
-    msa_server [ server ]
+    msa_server [ server [, save ]]
 
 ARGUMENTS
 
     server = str: base URL of a ColabFold MSA server, e.g.
-    https://msa.internal.example. Omit it to print the one in use.
+    https://msa.internal.example; or "reset" to forget the saved server.
+    Omit it to print the one in use.
+
+    save = 0/1: remember the server across launches {default: 1}. With 0 it
+    applies to this session only.
 
 NOTES
 
-    Resolution order: the "server" argument of msa_search, then this setting,
-    then the RAYMOL_MSA_SERVER environment variable, then the public default
-    https://api.colabfold.com.
+    Resolution order: the "server" argument of msa_search, then a server set
+    with save=0, then the saved server, then the RAYMOL_MSA_SERVER environment
+    variable, then the public default https://api.colabfold.com.
 
     THE DEFAULT IS A THIRD-PARTY SERVICE. Searching there publishes the query
     sequence to infrastructure RayMol does not control. A private deployment
     running ColabFold's own msa-server speaks exactly the same protocol, so
     only this URL changes.
 
-    This setting is per session. Put the command in ~/.raymolrc.py to make it
-    permanent -- the native apps boot Python directly and never read ~/.pymolrc.
+    The saved server is kept in RayMol's Application Support folder, beside
+    the alignment cache. If that file is damaged, searches stop with an error
+    rather than fall back to the public default.
 
 EXAMPLES
 
     msa_server https://msa.internal.example
+    msa_server https://msa.staging.example, save=0
+    msa_server reset
     msa_server
 
 SEE ALSO
 
     msa_search, msa_status
     """
-    if server:
-        url = colabfold.set_server(str(server))
+    text = str(server or '').strip()
+    if text.lower() == 'reset':
+        colabfold.set_server('')
+        forgot = colabfold.forget()
+        url, origin = colabfold.resolve()
         if not int(quiet):
-            colorprinting.parrot(' msa_server: searches will use %s' % url)
+            colorprinting.parrot(' msa_server: %s; searches will use %s (%s)'
+                                 % ('forgot the saved server' if forgot
+                                    else 'no server was saved',
+                                    url, _origin_text(origin)))
+        return url
+    if text:
+        if not int(save):
+            url = colabfold.set_server(text)
+            if not int(quiet):
+                colorprinting.parrot(' msa_server: searches will use %s for this'
+                                     ' session' % url)
+            return url
+        url = colabfold.normalize(text)
+        try:
+            colabfold.save(url)
+        except (IOError, OSError) as exc:
+            # The server still applies; only the remembering failed. Regardless of
+            # `quiet`: the user believes this survives a relaunch, and it will not.
+            colabfold.set_server(url)
+            colorprinting.warning(
+                ' msa_server: could not save %s to %s (%s); it applies to this session'
+                ' only.' % (url, colabfold.saved_path(), exc))
+            return url
+        # The session layer outranks the saved one, so an earlier save=0 would
+        # otherwise shadow the server just saved.
+        colabfold.set_server('')
+        if not int(quiet):
+            colorprinting.parrot(' msa_server: searches will use %s (saved)' % url)
         return url
     url, origin = colabfold.resolve()
     if not int(quiet):
-        where = {'msa_server': 'set with msa_server',
-                 'default': 'the public default',
-                 colabfold.SERVER_ENV: 'from ' + colabfold.SERVER_ENV,
-                 }.get(origin, origin)
+        where = _origin_text(origin)
         colorprinting.parrot(' msa_server: %s (%s)%s'
                              % (url, where,
                                 '; a PUBLIC, third-party service'
                                 if colabfold.is_public(url) else ''))
     return url
+
+
+def _origin_text(origin):
+    """How `msa_server` describes where the server in use came from."""
+    return {'msa_server': 'set with msa_server for this session',
+            'saved': 'saved in %s' % colabfold.saved_path(),
+            'default': 'the public default',
+            colabfold.SERVER_ENV: 'from ' + colabfold.SERVER_ENV,
+            }.get(origin, origin)
 
 
 def msa_search(sequence, name='', target='', chain='', server='', mode='env',
@@ -545,8 +589,8 @@ ARGUMENTS
     protein chain.
 
     server = str: base URL of the MSA server for this search only
-    {default: the "msa_server" setting, then RAYMOL_MSA_SERVER, then the
-    public https://api.colabfold.com}
+    {default: the server set or saved with "msa_server", then
+    RAYMOL_MSA_SERVER, then the public https://api.colabfold.com}
 
     mode = env | all | env-nofilter | nofilter: which databases are searched
     and whether the result is filtered. "env" adds the environmental databases

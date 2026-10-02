@@ -202,6 +202,7 @@ class MSASearchTestCase(testing.PyMOLTestCase):
         colabfold.set_server('')
         msa_module._PUBLIC_WARNED.clear()
         os.environ.pop('RAYMOL_MSA_DIR', None)
+        os.environ.pop(colabfold.SERVER_ENV, None)
         if self._saved_env is not None:
             os.environ[colabfold.SERVER_ENV] = self._saved_env
         self._tmp.__exit__(None, None, None)
@@ -561,6 +562,15 @@ class MSAServerSettingTest(MSASearchTestCase):
                          'https://other.example')
         self.assertEqual(cmd.msa_server(), 'https://other.example')
 
+    def testAnInvalidEnvironmentServerSaysItIsTheVariable(self):
+        # Review on #599: an unusable server can come from RAYMOL_MSA_SERVER as well as
+        # from the saved file, and the message must say which, or the fix is a guess.
+        colabfold.set_server('')
+        os.environ[colabfold.SERVER_ENV] = 'not a url'
+        with self.assertRaises(MSAInputError) as caught:
+            colabfold.resolve()
+        self.assertIn(colabfold.SERVER_ENV, str(caught.exception))
+
     def testANonUrlIsRefused(self):
         self.assertRaises(MSAInputError, cmd.msa_server, 'not a url')
         self.assertRaises(MSAInputError, cmd.msa_server, 'ftp://nope.example')
@@ -572,6 +582,138 @@ class MSAServerSettingTest(MSASearchTestCase):
         self.assertTrue(server.urls[0].startswith('https://elsewhere.example'))
         self.assertEqual(store.get(cmd.msa_list()[0]).source['server'],
                          'https://elsewhere.example')
+
+
+class MSASavedServerTest(MSASearchTestCase):
+    """`msa_server URL` is remembered across launches (#598).
+
+    A launch is simulated by clearing the session layer (`colabfold.set_server('')`):
+    what survives that is what the next session would see. The saved file lives under
+    RAYMOL_MSA_DIR, which the fixture points at a temp dir -- so nothing here can read or
+    overwrite a developer's own saved server.
+    """
+
+    SAVED = 'https://msa.saved.example'
+
+    def relaunch(self):
+        colabfold.set_server('')
+
+    def saved_file(self):
+        return os.path.join(self.root, 'server.json')
+
+    def testASavedServerOutlivesTheSession(self):
+        cmd.msa_server(self.SAVED)
+        self.relaunch()
+        self.assertEqual(colabfold.resolve(), (self.SAVED, 'saved'))
+
+    def testASearchAfterARelaunchGoesToTheSavedServer(self):
+        cmd.msa_server(self.SAVED)
+        self.relaunch()
+        server = FakeServer()
+        self.run_search(server)
+        cmd.msa_status()
+        self.assertTrue(server.urls[0].startswith(self.SAVED + '/'))
+
+    def testTheReportSaysWhereTheSavedServerLives(self):
+        cmd.msa_server(self.SAVED)
+        self.relaunch()
+        with captured_output() as out:
+            self.assertEqual(cmd.msa_server(quiet=0), self.SAVED)
+        self.assertIn(self.saved_file(), out.text())
+
+    def testSaveZeroLastsOnlyForThisSession(self):
+        cmd.msa_server(self.SAVED, save=0)
+        self.assertEqual(colabfold.resolve()[0], self.SAVED)
+        self.relaunch()
+        self.assertEqual(colabfold.resolve(), (colabfold.PUBLIC_SERVER, 'default'))
+        self.assertFalse(os.path.exists(self.saved_file()))
+
+    def testASessionServerBeatsTheSavedOne(self):
+        cmd.msa_server(self.SAVED)
+        cmd.msa_server('https://just-today.example', save=0)
+        self.assertEqual(colabfold.resolve()[0], 'https://just-today.example')
+
+    def testTheDefaultIgnoresASessionServer(self):
+        # Review on #599: what new sessions use is not what THIS session uses once a
+        # save=0 override is in place, and the UI must be able to tell them apart.
+        cmd.msa_server(self.SAVED)
+        cmd.msa_server('https://just-today.example', save=0)
+        self.assertEqual(colabfold.resolve(), ('https://just-today.example', 'msa_server'))
+        self.assertEqual(colabfold.resolve_default(), (self.SAVED, 'saved'))
+
+    def testSavingReplacesAnEarlierSessionServer(self):
+        # The most recent msa_server wins, whichever layer it went to.
+        cmd.msa_server('https://just-today.example', save=0)
+        cmd.msa_server(self.SAVED)
+        self.assertEqual(colabfold.resolve(), (self.SAVED, 'saved'))
+
+    def testTheSavedServerBeatsTheEnvironment(self):
+        # Otherwise a server picked in the app would silently not apply on a machine
+        # that also exports RAYMOL_MSA_SERVER.
+        os.environ[colabfold.SERVER_ENV] = 'https://from-env.example'
+        cmd.msa_server(self.SAVED)
+        self.relaunch()
+        self.assertEqual(colabfold.resolve()[0], self.SAVED)
+
+    def testResetForgetsTheSavedServer(self):
+        cmd.msa_server(self.SAVED)
+        cmd.msa_server('reset')
+        self.assertEqual(colabfold.resolve(), (colabfold.PUBLIC_SERVER, 'default'))
+        self.relaunch()
+        self.assertEqual(colabfold.resolve(), (colabfold.PUBLIC_SERVER, 'default'))
+
+    def testResetFallsBackToTheEnvironment(self):
+        os.environ[colabfold.SERVER_ENV] = 'https://from-env.example'
+        cmd.msa_server(self.SAVED)
+        cmd.msa_server('reset')
+        self.assertEqual(colabfold.resolve(),
+                         ('https://from-env.example', colabfold.SERVER_ENV))
+
+    def testAnUnusableSavedServerStopsTheSearchInsteadOfGoingPublic(self):
+        # Fail closed. Whoever saved a server meant their sequences to go THERE; falling
+        # through to the public default would publish them because a file went bad.
+        for content in ('{not json', '[]', '{}', '{"server": "ftp://nope.example"}'):
+            with self.subTest(content=content):
+                self.relaunch()
+                with open(self.saved_file(), 'w') as handle:
+                    handle.write(content)
+                server = FakeServer()
+                caught = None
+                with patch.object(colabfold, '_urlopen', server):
+                    try:
+                        cmd.msa_search(QUERY)
+                    except MSAInputError as exc:
+                        caught = exc
+                    finally:
+                        # A search that DID start must finish while the fake is still
+                        # patched in: a worker outliving this block would reach the real
+                        # default server.
+                        searching.shutdown()
+                self.assertEqual(server.urls, [])
+                self.assertIsNotNone(caught, 'the search was not refused')
+                self.assertIn(self.saved_file(), str(caught))
+
+    def testResetRecoversFromAnUnusableSavedServer(self):
+        with open(self.saved_file(), 'w') as handle:
+            handle.write('{not json')
+        self.relaunch()
+        cmd.msa_server('reset')
+        self.assertEqual(colabfold.resolve(), (colabfold.PUBLIC_SERVER, 'default'))
+
+    def testAServerThatCannotBeSavedStillAppliesForThisSession(self):
+        # A regular file where the directory should be: makedirs fails whatever the
+        # permissions of the user running the suite.
+        blocker = os.path.join(self.root, 'blocker')
+        open(blocker, 'w').close()
+        os.environ['RAYMOL_MSA_DIR'] = os.path.join(blocker, 'msa')
+        with captured_output() as out:
+            self.assertEqual(cmd.msa_server(self.SAVED, quiet=1), self.SAVED)
+        self.assertEqual(colabfold.resolve(), (self.SAVED, 'msa_server'))
+        self.assertIn('this session', out.text())
+
+    def testABadUrlIsNotSaved(self):
+        self.assertRaises(MSAInputError, cmd.msa_server, 'not a url')
+        self.assertFalse(os.path.exists(self.saved_file()))
 
 
 class MSAPublicServerWarningTest(MSASearchTestCase):

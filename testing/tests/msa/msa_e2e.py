@@ -814,11 +814,72 @@ class PanelPollTest(MSAEndToEndTestCase):
                     * appkit_inspector.SEARCH_ELAPSED_BUCKET),
                 expected)
 
+    def swift_failure_fields(self):
+        """Field names of ObjectPanel.swift's `MSAFailureSummary` (plain `let`s)."""
+        import re
+
+        root = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir)
+        path = os.path.normpath(os.path.join(
+            root, 'swiftui', 'PyMOLViewer', 'Panels', 'ObjectPanel.swift'))
+        if not os.path.isfile(path):
+            self.skipTest('ObjectPanel.swift not present; not a repo checkout')
+        with open(path) as handle:
+            source = handle.read()
+        block = source[source.index('struct MSAFailureSummary'):]
+        block = block[:block.index('}')]
+        return set(re.findall(r'let\s+(\w+)\s*:', block))
+
+    def failed_search(self):
+        """A search the server refused outright, settled and reaped by one poll."""
+        from urllib.error import URLError
+
+        def unreachable(request, timeout=None):
+            raise URLError('Connection refused')
+
+        with patch('pymol.msas.colabfold._urlopen', unreachable):
+            search_id = cmd.msa_search(QUERY, name='aln')
+            searching.join(search_id, timeout=10)
+        return search_id
+
+    def testAFailedSearchIsReportedWithItsReason(self):
+        """#598: without this the Predict bar only ever saw a failed search VANISH from
+        msa_searches -- which it cannot tell apart from one about to land -- and waited
+        for it forever. The reason is the server's own, so the bar can say it."""
+        search_id = self.failed_search()
+        payload = self.poll_payload()
+        self.assertEqual(payload['msa_searches'], [])
+        failures = payload['msa_failures']
+        self.assertEqual([f['id'] for f in failures], [search_id])
+        self.assertEqual(failures[0]['name'], 'aln')
+        self.assertIn('cannot reach the MSA server at msa.internal.example',
+                      failures[0]['error'])
+
+    def testTheFailureRowCarriesEverySwiftFieldItRequires(self):
+        self.failed_search()
+        row = self.poll_payload()['msa_failures'][0]
+        self.assertEqual(set(row), self.swift_failure_fields())
+        for field in ('id', 'name', 'error'):
+            self.assertIsInstance(row[field], str, field)
+
+    def testOnlyTheMostRecentFailuresAreReported(self):
+        """Bounded: a long session of failed searches must not grow every tick."""
+        from pymol import appkit_inspector
+
+        ids = [self.failed_search()
+               for _ in range(appkit_inspector.MSA_FAILURES_REPORTED + 2)]
+        reported = [f['id'] for f in self.poll_payload()['msa_failures']]
+        self.assertEqual(reported, ids[-appkit_inspector.MSA_FAILURES_REPORTED:])
+
+    def testASuccessfulSearchIsNotAFailure(self):
+        self.search(FakeServer(), QUERY, name='aln')
+        self.assertEqual(self.poll_payload()['msa_failures'], [])
+
     def testNoSearchMeansAnEmptyListRatherThanAMissingKey(self):
         """Present and empty, so Swift's decode has one shape to handle -- and so the
         common case (no search ever) cannot be confused with an older Python."""
         payload = self.poll_payload()
         self.assertEqual(payload['msa_searches'], [])
+        self.assertEqual(payload['msa_failures'], [])
 
     def testAFoldableAlignmentShowsTheChainItIsAttachedTo(self):
         """The panel row is how a user checks, before spending minutes folding, that

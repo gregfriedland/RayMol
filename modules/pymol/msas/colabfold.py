@@ -96,8 +96,15 @@ UNIREF_A3M = 'uniref.a3m'
 #: Never merged in even if the server returns one: it is the paired alignment.
 PAIRED_A3M = 'pair.a3m'
 
-#: Set by `msa_server`. Empty means "not configured"; see resolve().
+#: Set by `msa_server ..., save=0` (or when saving failed). Empty means "not configured
+#: for this session"; see resolve().
 _SERVER = ''
+
+#: The server `msa_server` remembers across launches (#598), as {"server": url}. It sits
+#: beside the alignment cache, under the same RAYMOL_MSA_DIR override, so a test that
+#: points the cache at a temp dir can never read or overwrite a developer's own saved
+#: server.
+SAVED_FILENAME = 'server.json'
 
 
 # -- where to search -----------------------------------------------------------
@@ -122,20 +129,118 @@ def set_server(server):
     return _SERVER
 
 
+def saved_path():
+    """Where the saved server lives. Imported late: `searching` imports this module."""
+    from .searching import cache_root
+    return os.path.join(cache_root(), SAVED_FILENAME)
+
+
+def load_saved():
+    """The saved server's URL, '' when none is saved, or raise.
+
+    A file that exists but cannot be used RAISES rather than reading as "none saved".
+    Whoever saved a server meant their sequences to go there, and treating a damaged
+    file as absent would send the next search to the public default instead.
+    """
+    path = saved_path()
+    try:
+        with open(path, 'r', encoding='utf-8') as handle:
+            text = handle.read()
+    except FileNotFoundError:
+        return ''
+    except (IOError, OSError, UnicodeDecodeError) as exc:
+        raise _unusable_saved(path, exc)
+    try:
+        payload = json.loads(text)
+    except ValueError as exc:
+        raise _unusable_saved(path, exc)
+    if not isinstance(payload, dict) or not payload.get('server'):
+        raise _unusable_saved(path, 'it names no server')
+    try:
+        return normalize(payload['server'])
+    except MSAInputError as exc:
+        raise _unusable_saved(path, exc)
+
+
+def _unusable_saved(path, why):
+    return MSAInputError(
+        'the saved MSA server in %s cannot be used (%s), so nothing was sent anywhere.'
+        ' Save a server again with "msa_server https://your.server", or forget it with'
+        ' "msa_server reset".' % (path, str(why).strip()))
+
+
+def save(server):
+    """Remember `server` across launches. Returns the normalised URL.
+
+    Raises MSAInputError for a bad URL -- before anything is written -- and OSError when
+    the file cannot be written. Written to a temp file and renamed into place, so a crash
+    mid-write leaves the previous saved server rather than a truncated file.
+    """
+    url = normalize(server)
+    path = saved_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    scratch = '%s.%d.tmp' % (path, os.getpid())
+    try:
+        with open(scratch, 'w', encoding='utf-8') as handle:
+            json.dump({'server': url}, handle)
+        os.replace(scratch, path)
+    finally:
+        if os.path.exists(scratch):
+            os.unlink(scratch)
+    return url
+
+
+def forget():
+    """Drop the saved server. True if there was one to drop."""
+    try:
+        os.unlink(saved_path())
+    except FileNotFoundError:
+        return False
+    return True
+
+
 def resolve(server=''):
     """(url, where it came from), in the documented resolution order.
 
-    Explicit argument, then the `msa_server` setting, then RAYMOL_MSA_SERVER, then the
-    public default. The origin is returned rather than inferred by the caller because
-    `msa_server` with no argument has to say WHY it is about to publish a sequence.
+    Explicit argument, then a server set for this session, then the saved server, then
+    RAYMOL_MSA_SERVER, then the public default. The origin is returned rather than
+    inferred by the caller because `msa_server` with no argument has to say WHY it is
+    about to publish a sequence.
+
+    The saved server is read here, on every call, rather than loaded once at startup:
+    every caller then sees the same answer, including one in a session that started
+    before the server was saved. It is a few bytes. An unusable saved file raises -- see
+    load_saved.
     """
     if server:
         return normalize(server), 'argument'
     if _SERVER:
         return _SERVER, 'msa_server'
+    return resolve_default()
+
+
+def resolve_default():
+    """(url, origin) that a NEW session would use: resolve() without the argument and
+    without a server set for this session -- the saved server, then RAYMOL_MSA_SERVER,
+    then the public default.
+
+    Separate because the two differ once `msa_server URL, save=0` is in effect, and the
+    Predict bar has to know which server is the persistent default: treating a
+    session-only override as one, deleting it there ran `msa_server reset` and erased
+    the server that was actually saved. Raises as resolve() does.
+    """
+    saved = load_saved()
+    if saved:
+        return saved, 'saved'
     from_env = os.environ.get(SERVER_ENV)
     if from_env:
-        return normalize(from_env), SERVER_ENV
+        try:
+            return normalize(from_env), SERVER_ENV
+        except MSAInputError as exc:
+            # Said to be the variable, so nobody goes looking for a saved setting.
+            raise MSAInputError('%s is not a usable MSA server (%s). Fix or unset it,'
+                                ' or save a server with "msa_server https://your.server".'
+                                % (SERVER_ENV, str(exc).strip()))
     return PUBLIC_SERVER, 'default'
 
 

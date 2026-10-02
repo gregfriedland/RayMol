@@ -24,6 +24,7 @@ struct PredictBar: View {
         .background(theme.active.panelBackground.color)
         .tint(theme.active.accent.color)
         .onChange(of: controller.inputText) { controller.inputChanged() }
+        .modifier(PublicMSAWarning(controller: controller))
     }
 
     private var selectedSupportsMSA: Bool {
@@ -153,14 +154,22 @@ struct PredictBar: View {
                     .toggleStyle(.button).controlSize(.small)
             }
             Spacer(minLength: 0)
-            Text("Sequences are sent to \(serverLabel).")
-                .font(.system(size: 10)).foregroundColor(.orange.opacity(0.9))
+            if controller.selectedServer == nil, let problem = controller.msaServer?.error {
+                // msa_search refuses to search past an unusable server setting rather
+                // than fall back to the public one; say so here, not only in the
+                // console. Which setting (saved file or RAYMOL_MSA_SERVER) is Python's
+                // to say, in the tooltip.
+                Label("The MSA server setting cannot be used, so searches are stopped.",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 10)).foregroundColor(.red).lineLimit(1)
+                    .help(PredictController.plainError(problem))
+            } else {
+                Text("Sequences are sent to "
+                     + "\(PredictController.serverLabel(controller.selectedServer)).")
+                    .font(.system(size: 10)).foregroundColor(.orange.opacity(0.9))
+            }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
-    }
-
-    private var serverLabel: String {
-        controller.server.isEmpty ? "the ColabFold MSA server" : controller.server
     }
 
     // Row 4 (Advanced): recycling / diffusion / seed / msa_depth / msa_mode / server / name.
@@ -182,8 +191,7 @@ struct PredictBar: View {
                 }
                 .labelsHidden().frame(width: 110)
             }
-            labeled("server") { TextField("default", text: $controller.server)
-                .frame(width: 90).textFieldStyle(.roundedBorder) }
+            labeled("server") { MSAServerPicker(controller: controller) }
             labeled("name") { TextField("auto", text: $controller.resultName)
                 .frame(width: 90).textFieldStyle(.roundedBorder) }
             Spacer(minLength: 0)

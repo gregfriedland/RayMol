@@ -43,10 +43,17 @@ class TestAppkitPredict(testing.PyMOLTestCase):
         # runs on iOS, so this is the only place that gets checked.
         self._env_backup = {
             k: os.environ.get(k)
-            for k in ('RAYMOL_PREDICT_HOST', 'RAYMOL_PREDICT_RUNTIMES')
+            for k in ('RAYMOL_PREDICT_HOST', 'RAYMOL_PREDICT_RUNTIMES',
+                      'RAYMOL_MSA_DIR', 'RAYMOL_MSA_SERVER')
         }
         os.environ['RAYMOL_PREDICT_HOST'] = '1'
         os.environ['RAYMOL_PREDICT_RUNTIMES'] = 'boltz'
+        # emit() also resolves the MSA server (#598), which reads the saved server and
+        # RAYMOL_MSA_SERVER. Point both away from the developer's own, so this class can
+        # neither see nor depend on them.
+        self._msa_dir = tempfile.TemporaryDirectory()
+        os.environ['RAYMOL_MSA_DIR'] = self._msa_dir.name
+        os.environ.pop('RAYMOL_MSA_SERVER', None)
 
     def tearDown(self):
         for key, value in getattr(self, '_env_backup', {}).items():
@@ -54,6 +61,8 @@ class TestAppkitPredict(testing.PyMOLTestCase):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+        if hasattr(self, '_msa_dir'):
+            self._msa_dir.cleanup()
         super().tearDown()
 
     def test_predictors_are_listed_with_msa_capability(self):
@@ -183,3 +192,79 @@ class TestAppkitPredict(testing.PyMOLTestCase):
         self.assertIsNotNone(payload['error'])
         # predictors are still resolved on the error path
         self.assertGreater(len(payload['predictors']), 0)
+
+
+class TestAppkitPredictMSAServer(testing.PyMOLTestCase):
+    """The payload names the MSA server a search would use (#598), so the bar's server
+    field and its "Sequences are sent to ..." line show the server actually in effect,
+    not a guess."""
+
+    SAVED = 'https://msa.saved.example'
+
+    def setUp(self):
+        super().setUp()
+        from pymol.msas import colabfold
+        self.colabfold = colabfold
+        self._tmp = tempfile.TemporaryDirectory()
+        self._env_backup = {k: os.environ.get(k)
+                            for k in ('RAYMOL_MSA_DIR', colabfold.SERVER_ENV)}
+        os.environ['RAYMOL_MSA_DIR'] = self._tmp.name
+        os.environ.pop(colabfold.SERVER_ENV, None)
+        colabfold.set_server('')
+
+    def tearDown(self):
+        self.colabfold.set_server('')
+        for key, value in self._env_backup.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        self._tmp.cleanup()
+        super().tearDown()
+
+    def test_the_saved_server_is_named(self):
+        cmd.msa_server(self.SAVED)
+        appkit_predict.emit('')
+        self.assertEqual(_payload()['msa_server'],
+                         {'url': self.SAVED, 'origin': 'saved', 'public': False,
+                          'error': None,
+                          'default': self.SAVED, 'default_origin': 'saved'})
+
+    def test_the_public_default_is_flagged_public(self):
+        appkit_predict.emit('')
+        self.assertEqual(_payload()['msa_server'],
+                         {'url': 'https://api.colabfold.com', 'origin': 'default',
+                          'public': True, 'error': None,
+                          'default': 'https://api.colabfold.com',
+                          'default_origin': 'default'})
+
+    def test_a_session_server_is_not_reported_as_the_default(self):
+        # Review on #599: the bar marked a save=0 server as the default, and deleting
+        # it in Edit then ran `msa_server reset` -- erasing the server actually saved.
+        cmd.msa_server(self.SAVED)
+        cmd.msa_server('https://just-today.example', save=0)
+        appkit_predict.emit('')
+        server = _payload()['msa_server']
+        self.assertEqual((server['url'], server['origin']),
+                         ('https://just-today.example', 'msa_server'))
+        self.assertEqual((server['default'], server['default_origin']),
+                         (self.SAVED, 'saved'))
+
+    def test_an_invalid_environment_server_is_an_error_naming_the_variable(self):
+        os.environ[self.colabfold.SERVER_ENV] = 'not a url'
+        appkit_predict.emit('')
+        server = _payload()['msa_server']
+        self.assertEqual(server['url'], '')
+        self.assertIn(self.colabfold.SERVER_ENV, server['error'])
+
+    def test_an_unusable_saved_server_is_an_error_not_a_throw(self):
+        path = os.path.join(self._tmp.name, 'server.json')
+        with open(path, 'w') as handle:
+            handle.write('{not json')
+        appkit_predict.emit('MKTAY')
+        payload = _payload()
+        server = payload['msa_server']
+        self.assertEqual(server['url'], '')
+        self.assertIn(path, server['error'])
+        # The rest of the form still resolves: the bad file is the server's problem.
+        self.assertEqual([c['id'] for c in payload['chains']], ['A'])
