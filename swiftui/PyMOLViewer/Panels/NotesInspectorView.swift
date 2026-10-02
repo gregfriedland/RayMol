@@ -919,6 +919,92 @@ enum AnalysisNoteMarkdownParser {
     }
 }
 
+/// Renders one block of a note. Split out of `NotesInspectorView` so block
+/// rendering carries no engine or store dependency: it takes a parsed block and
+/// a font size and nothing else, which also makes it renderable on its own.
+struct AnalysisNoteBlockView: View {
+    let block: AnalysisNoteMarkdownBlock
+    let fontSize: CGFloat
+
+    var body: some View {
+        switch block {
+        case .heading(let level, let text):
+            Text(inlineMarkdown(text))
+                .font(.system(size: headingSize(level), weight: level <= 2 ? .bold : .semibold))
+                .textSelection(.enabled)
+                .padding(.top, level <= 2 ? 7 : 3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityAddTraits(.isHeader)
+        case .bullet(let depth, let text):
+            listRow(depth: depth, marker: Text(bulletMarker(depth)).foregroundStyle(.secondary), text: text)
+        case .numbered(let depth, let number, let text):
+            listRow(depth: depth,
+                    marker: Text("\(number).").monospacedDigit().foregroundStyle(.secondary),
+                    text: text)
+        case .quote(let text):
+            HStack(alignment: .top, spacing: 8) {
+                Rectangle().fill(Color.secondary.opacity(0.35)).frame(width: 3)
+                Text(inlineMarkdown(text))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        case .code(let lines):
+            Text(lines.joined(separator: "\n"))
+                .font(.system(size: max(10, fontSize - 1), design: .monospaced))
+                .textSelection(.enabled)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+        case .rule:
+            Divider().padding(.vertical, 3)
+        case .paragraph(let text):
+            Text(inlineMarkdown(text))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func listRow(depth: Int, marker: Text, text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            marker
+            Text(inlineMarkdown(text))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.leading, CGFloat(depth) * 16)
+    }
+
+    private func bulletMarker(_ depth: Int) -> String {
+        switch depth {
+        case 0: return "\u{2022}"
+        case 1: return "\u{25E6}"
+        default: return "\u{25AA}"
+        }
+    }
+
+    private func headingSize(_ level: Int) -> CGFloat {
+        switch level {
+        case 1: return fontSize * 1.55
+        case 2: return fontSize * 1.3
+        case 3: return fontSize * 1.14
+        default: return fontSize * 1.04
+        }
+    }
+
+    /// Inline-only parsing, applied per block. It keeps RayMol's `raymol-view`,
+    /// `raymol-asset` and `raymol-residue` links intact as inline links, which
+    /// the preview's `OpenURLAction` resolves back to a bookmark or selection.
+    private func inlineMarkdown(_ source: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace
+        )
+        return (try? AttributedString(markdown: source, options: options))
+            ?? AttributedString(source)
+    }
+}
+
 struct NotesInspectorView: View {
     @EnvironmentObject private var notes: AnalysisNotesStore
     @EnvironmentObject private var engine: PyMOLEngine
@@ -1238,7 +1324,7 @@ struct NotesInspectorView: View {
             let blocks = AnalysisNoteMarkdownParser.blocks(in: markdown)
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                    markdownBlock(block)
+                    AnalysisNoteBlockView(block: block, fontSize: fontSize)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1271,84 +1357,6 @@ struct NotesInspectorView: View {
         Label("Linked image unavailable", systemImage: "photo.badge.exclamationmark")
             .font(.caption)
             .foregroundStyle(.secondary)
-    }
-
-    @ViewBuilder private func markdownBlock(_ block: AnalysisNoteMarkdownBlock) -> some View {
-        switch block {
-        case .heading(let level, let text):
-            Text(inlineMarkdown(text))
-                .font(.system(size: headingSize(level), weight: level <= 2 ? .bold : .semibold))
-                .textSelection(.enabled)
-                .padding(.top, level <= 2 ? 7 : 3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityAddTraits(.isHeader)
-        case .bullet(let depth, let text):
-            listRow(depth: depth, marker: Text(bulletMarker(depth)).foregroundStyle(.secondary), text: text)
-        case .numbered(let depth, let number, let text):
-            listRow(depth: depth,
-                    marker: Text("\(number).").monospacedDigit().foregroundStyle(.secondary),
-                    text: text)
-        case .quote(let text):
-            HStack(alignment: .top, spacing: 8) {
-                Rectangle().fill(Color.secondary.opacity(0.35)).frame(width: 3)
-                Text(inlineMarkdown(text))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-        case .code(let lines):
-            Text(lines.joined(separator: "\n"))
-                .font(.system(size: max(10, fontSize - 1), design: .monospaced))
-                .textSelection(.enabled)
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
-        case .rule:
-            Divider().padding(.vertical, 3)
-        case .paragraph(let text):
-            Text(inlineMarkdown(text))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func listRow(depth: Int, marker: Text, text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            marker
-            Text(inlineMarkdown(text))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.leading, CGFloat(depth) * 16)
-    }
-
-    private func bulletMarker(_ depth: Int) -> String {
-        switch depth {
-        case 0: return "•"
-        case 1: return "◦"
-        default: return "▪"
-        }
-    }
-
-    private func headingSize(_ level: Int) -> CGFloat {
-        switch level {
-        case 1: return fontSize * 1.55
-        case 2: return fontSize * 1.3
-        case 3: return fontSize * 1.14
-        default: return fontSize * 1.04
-        }
-    }
-
-    /// Inline-only parsing, applied per block. It keeps RayMol's `raymol-view`,
-    /// `raymol-asset` and `raymol-residue` links intact as inline links, which
-    /// the preview's `OpenURLAction` resolves back to a bookmark or selection.
-    private func inlineMarkdown(_ source: String) -> AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(
-            interpretedSyntax: .inlineOnlyPreservingWhitespace
-        )
-        return (try? AttributedString(markdown: source, options: options))
-            ?? AttributedString(source)
     }
 
     private var filteredNoteText: String {
