@@ -43,10 +43,17 @@ class TestAppkitPredict(testing.PyMOLTestCase):
         # runs on iOS, so this is the only place that gets checked.
         self._env_backup = {
             k: os.environ.get(k)
-            for k in ('RAYMOL_PREDICT_HOST', 'RAYMOL_PREDICT_RUNTIMES')
+            for k in ('RAYMOL_PREDICT_HOST', 'RAYMOL_PREDICT_RUNTIMES',
+                      'RAYMOL_MSA_DIR', 'RAYMOL_MSA_SERVER')
         }
         os.environ['RAYMOL_PREDICT_HOST'] = '1'
         os.environ['RAYMOL_PREDICT_RUNTIMES'] = 'boltz'
+        # emit() also resolves the MSA server (#598), which reads the saved server and
+        # RAYMOL_MSA_SERVER. Point both away from the developer's own, so this class can
+        # neither see nor depend on them.
+        self._msa_dir = tempfile.TemporaryDirectory()
+        os.environ['RAYMOL_MSA_DIR'] = self._msa_dir.name
+        os.environ.pop('RAYMOL_MSA_SERVER', None)
 
     def tearDown(self):
         for key, value in getattr(self, '_env_backup', {}).items():
@@ -54,6 +61,8 @@ class TestAppkitPredict(testing.PyMOLTestCase):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+        if hasattr(self, '_msa_dir'):
+            self._msa_dir.cleanup()
         super().tearDown()
 
     def test_predictors_are_listed_with_msa_capability(self):
@@ -225,6 +234,13 @@ class TestAppkitPredictMSAServer(testing.PyMOLTestCase):
         self.assertEqual(_payload()['msa_server'],
                          {'url': 'https://api.colabfold.com', 'origin': 'default',
                           'public': True, 'error': None})
+
+    def test_an_invalid_environment_server_is_an_error_naming_the_variable(self):
+        os.environ[self.colabfold.SERVER_ENV] = 'not a url'
+        appkit_predict.emit('')
+        server = _payload()['msa_server']
+        self.assertEqual(server['url'], '')
+        self.assertIn(self.colabfold.SERVER_ENV, server['error'])
 
     def test_an_unusable_saved_server_is_an_error_not_a_throw(self):
         path = os.path.join(self._tmp.name, 'server.json')

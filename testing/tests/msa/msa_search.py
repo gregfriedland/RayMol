@@ -562,6 +562,15 @@ class MSAServerSettingTest(MSASearchTestCase):
                          'https://other.example')
         self.assertEqual(cmd.msa_server(), 'https://other.example')
 
+    def testAnInvalidEnvironmentServerSaysItIsTheVariable(self):
+        # Review on #599: an unusable server can come from RAYMOL_MSA_SERVER as well as
+        # from the saved file, and the message must say which, or the fix is a guess.
+        colabfold.set_server('')
+        os.environ[colabfold.SERVER_ENV] = 'not a url'
+        with self.assertRaises(MSAInputError) as caught:
+            colabfold.resolve()
+        self.assertIn(colabfold.SERVER_ENV, str(caught.exception))
+
     def testANonUrlIsRefused(self):
         self.assertRaises(MSAInputError, cmd.msa_server, 'not a url')
         self.assertRaises(MSAInputError, cmd.msa_server, 'ftp://nope.example')

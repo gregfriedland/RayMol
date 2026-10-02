@@ -606,7 +606,25 @@ final class PredictControllerRunTests: XCTestCase {
         XCTAssertNil(c.selectedServer)
         c.run()
         XCTAssertEqual(cmds.count, 0)
-        guard case .error = c.phase else { return XCTFail("expected an error, got \(c.phase)") }
+        guard case let .error(message) = c.phase else {
+            return XCTFail("expected an error, got \(c.phase)")
+        }
+        // Python's own reason, which says whether the saved file or RAYMOL_MSA_SERVER
+        // is at fault (review on #599) -- the bar must not guess.
+        XCTAssertTrue(message.contains("the saved MSA server in x"), message)
+        XCTAssertFalse(message.contains("Error:"), message)
+    }
+
+    func testEditRecoversFromAnUnusableSavedServer() {
+        // Review on #599: the damaged default must be fixable from the UI. Edit's
+        // ColabFold row forgets it; a private row overwrites it.
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        c.loadFormPayload(payload(server: unusableSaved))
+        c.setDefaultServer(colab)
+        XCTAssertEqual(msaServerCommands(cmds),
+                       ["from pymol import cmd as _c\n_c.msa_server('reset', quiet=0)"])
+        XCTAssertEqual(c.selectedServer, colab)
     }
 
     // MARK: public-server warning

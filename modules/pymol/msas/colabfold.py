@@ -221,7 +221,13 @@ def resolve(server=''):
         return saved, 'saved'
     from_env = os.environ.get(SERVER_ENV)
     if from_env:
-        return normalize(from_env), SERVER_ENV
+        try:
+            return normalize(from_env), SERVER_ENV
+        except MSAInputError as exc:
+            # Said to be the variable, so nobody goes looking for a saved setting.
+            raise MSAInputError('%s is not a usable MSA server (%s). Fix or unset it,'
+                                ' or save a server with "msa_server https://your.server".'
+                                % (SERVER_ENV, str(exc).strip()))
     return PUBLIC_SERVER, 'default'
 
 

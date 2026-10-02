@@ -108,6 +108,16 @@ extension PredictController {
         return text
     }
 
+    /// A Python error message without the "Error:" prefix PyMOL puts on it.
+    nonisolated static func plainError(_ text: String) -> String {
+        var message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if message.hasPrefix("Error:") {
+            message = String(message.dropFirst("Error:".count))
+                .trimmingCharacters(in: .whitespaces)
+        }
+        return message
+    }
+
     /// Host and port of `url`, for the dropdown and the "sent to" line.
     nonisolated static func hostLabel(_ url: String) -> String {
         guard let parts = URLComponents(string: url), let name = parts.host, !name.isEmpty
@@ -363,9 +373,12 @@ final class PredictController: ObservableObject {
                            + "selection, or object.")
             return
         }
-        if useMSAEffective, selectedServer == nil, msaServer?.error != nil {
-            phase = .error("The saved MSA server cannot be used. Pick a server, or fix "
-                           + "the default under Edit….")
+        if useMSAEffective, selectedServer == nil, let problem = msaServer?.error {
+            // Python's reason says which setting is at fault -- the saved file or
+            // RAYMOL_MSA_SERVER -- so it is passed on rather than guessed at here.
+            phase = .error("The MSA server setting cannot be used: "
+                           + PredictController.plainError(problem)
+                           + " Pick a server, or set a default under Edit….")
             return
         }
         // Size guard (per predictor). A warn stops for confirmation; a refusal is fatal.

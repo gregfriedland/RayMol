@@ -242,7 +242,7 @@ struct PredictCompactPanel: View {
             if controller.selectedServer == nil, controller.msaServer?.error != nil {
                 // Searches are refused rather than sent to the public server; the
                 // settings sheet's Server row is where this gets fixed.
-                Label("Saved MSA server unusable", systemImage: "exclamationmark.triangle")
+                Label("MSA server setting unusable", systemImage: "exclamationmark.triangle")
                     .font(.system(size: 10)).foregroundColor(.red).lineLimit(1)
             } else {
                 Text("Sent to \(PredictController.serverLabel(controller.selectedServer)).")

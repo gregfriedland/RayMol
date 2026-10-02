@@ -155,12 +155,14 @@ struct PredictBar: View {
             }
             Spacer(minLength: 0)
             if controller.selectedServer == nil, let problem = controller.msaServer?.error {
-                // msa_search refuses to search past an unusable saved server rather than
-                // fall back to the public one; say so here, not only in the console.
-                Label("The saved MSA server cannot be used, so searches are stopped.",
+                // msa_search refuses to search past an unusable server setting rather
+                // than fall back to the public one; say so here, not only in the
+                // console. Which setting (saved file or RAYMOL_MSA_SERVER) is Python's
+                // to say, in the tooltip.
+                Label("The MSA server setting cannot be used, so searches are stopped.",
                       systemImage: "exclamationmark.triangle")
                     .font(.system(size: 10)).foregroundColor(.red).lineLimit(1)
-                    .help(problem)
+                    .help(PredictController.plainError(problem))
             } else {
                 Text("Sequences are sent to "
                      + "\(PredictController.serverLabel(controller.selectedServer)).")
