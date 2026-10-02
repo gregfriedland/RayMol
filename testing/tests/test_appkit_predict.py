@@ -227,13 +227,28 @@ class TestAppkitPredictMSAServer(testing.PyMOLTestCase):
         appkit_predict.emit('')
         self.assertEqual(_payload()['msa_server'],
                          {'url': self.SAVED, 'origin': 'saved', 'public': False,
-                          'error': None})
+                          'error': None,
+                          'default': self.SAVED, 'default_origin': 'saved'})
 
     def test_the_public_default_is_flagged_public(self):
         appkit_predict.emit('')
         self.assertEqual(_payload()['msa_server'],
                          {'url': 'https://api.colabfold.com', 'origin': 'default',
-                          'public': True, 'error': None})
+                          'public': True, 'error': None,
+                          'default': 'https://api.colabfold.com',
+                          'default_origin': 'default'})
+
+    def test_a_session_server_is_not_reported_as_the_default(self):
+        # Review on #599: the bar marked a save=0 server as the default, and deleting
+        # it in Edit then ran `msa_server reset` -- erasing the server actually saved.
+        cmd.msa_server(self.SAVED)
+        cmd.msa_server('https://just-today.example', save=0)
+        appkit_predict.emit('')
+        server = _payload()['msa_server']
+        self.assertEqual((server['url'], server['origin']),
+                         ('https://just-today.example', 'msa_server'))
+        self.assertEqual((server['default'], server['default_origin']),
+                         (self.SAVED, 'saved'))
 
     def test_an_invalid_environment_server_is_an_error_naming_the_variable(self):
         os.environ[self.colabfold.SERVER_ENV] = 'not a url'

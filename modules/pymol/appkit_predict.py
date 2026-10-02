@@ -97,10 +97,14 @@ def _msa_server():
     from pymol.msas import colabfold
     try:
         url, origin = colabfold.resolve()
+        # What new sessions use, which the bar marks as the default. Differs from `url`
+        # under a save=0 override (#599 review); see colabfold.resolve_default.
+        default, default_origin = colabfold.resolve_default()
     except Exception as exc:
-        return {'url': '', 'origin': '', 'public': False, 'error': str(exc).strip()}
+        return {'url': '', 'origin': '', 'public': False, 'error': str(exc).strip(),
+                'default': '', 'default_origin': ''}
     return {'url': url, 'origin': origin, 'public': colabfold.is_public(url),
-            'error': None}
+            'error': None, 'default': default, 'default_origin': default_origin}
 
 
 def emit(input_str=''):

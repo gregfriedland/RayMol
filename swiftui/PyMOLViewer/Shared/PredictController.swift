@@ -22,8 +22,15 @@ struct MSAServerInfo: Codable, Equatable {
     let origin: String     // "saved" | "msa_server" | "RAYMOL_MSA_SERVER" | "default"
     let isPublic: Bool
     let error: String?     // a saved server that cannot be used; searches are refused
+    /// What a NEW session would use: `url` without a `save=0` override (#599 review).
+    /// The bar marks this one as the default. Absent from payloads older than that.
+    var defaultURL: String? = nil
+    var defaultOrigin: String? = nil  // "saved" | "RAYMOL_MSA_SERVER" | "default"
 
-    enum CodingKeys: String, CodingKey { case url, origin, isPublic = "public", error }
+    enum CodingKeys: String, CodingKey {
+        case url, origin, isPublic = "public", error
+        case defaultURL = "default", defaultOrigin = "default_origin"
+    }
 }
 
 struct PredictFormPayload: Codable, Equatable {
@@ -220,9 +227,15 @@ final class PredictController: ObservableObject {
     @Published var pendingPublicWarning = false
     /// Private servers the user has added, in the order added. Persisted in `settings`.
     @Published private(set) var savedServers: [String] = []
-    /// The saved default as Python last reported it; nil before a payload, or when the
-    /// saved file cannot be used.
+    /// The default as Python last reported it: what new sessions start on, which a
+    /// session-only `msa_server URL, save=0` does not change. nil before a payload, or
+    /// when the setting cannot be used.
     @Published private(set) var defaultServer: String?
+    /// `defaultServer` when it is the server saved on disk -- the only one deleting a
+    /// server may `reset`. A RAYMOL_MSA_SERVER default is not saved; neither is ColabFold.
+    private var savedDefault: String?
+    /// The server Python resolved last time, so the pick follows it only when it moves.
+    private var lastEffectiveServer: String?
 
     /// Where the server list and "don't warn again" live. A seam so tests use their own.
     var settings: UserDefaults = .standard {
@@ -291,18 +304,29 @@ final class PredictController: ObservableObject {
             // Python refuses to search past an unusable saved server; picking ColabFold
             // here on its behalf would publish what the user meant to keep private.
             defaultServer = nil
+            savedDefault = nil
             if selectedServer == nil || selectedServer.map(isListed) != true {
                 selectedServer = nil
             }
             return
         }
-        // A server saved from the console (or the env var's) belongs in the list too.
-        if !PredictController.isPublicServer(info.url) { remember(info.url) }
-        let changed = info.url != defaultServer
-        defaultServer = info.url
-        // Follow the default when it changes, or when there is no usable pick; otherwise
-        // the user's pick stands (a payload also arrives on every input edit).
-        if changed || selectedServer.map(isListed) != true { selectedServer = info.url }
+        // `url` is what this session resolves to; the default is what new sessions do.
+        // They differ under a console `msa_server URL, save=0`. An older payload carries
+        // no default, and then the resolved server stands in for it, as it used to.
+        let effective = info.url
+        let theDefault = info.defaultURL.flatMap { $0.isEmpty ? nil : $0 } ?? effective
+        let defaultOrigin = info.defaultOrigin ?? info.origin
+        // A server set from the console (or the env var's) belongs in the list too.
+        for url in [effective, theDefault] where !PredictController.isPublicServer(url) {
+            remember(url)
+        }
+        defaultServer = theDefault
+        savedDefault = defaultOrigin == "saved" ? theDefault : nil
+        // Follow what Python resolves when it moves, or when there is no usable pick;
+        // otherwise the user's pick stands (a payload also arrives on every input edit).
+        let moved = effective != lastEffectiveServer
+        lastEffectiveServer = effective
+        if moved || selectedServer.map(isListed) != true { selectedServer = effective }
     }
 
     private func isListed(_ url: String) -> Bool {
@@ -336,17 +360,20 @@ final class PredictController: ObservableObject {
         let isPublic = PredictController.isPublicServer(url)
         runPythonSeam(PredictController.msaServerPython(isPublic ? "" : url))
         defaultServer = isPublic ? PredictController.publicServer : url
+        savedDefault = isPublic ? nil : url
         selectedServer = defaultServer
         refreshTrigger(inputText)   // the payload then reports what Python settled on
     }
 
-    /// Drop a private server from the dropdown. Deleting the default falls back to
-    /// ColabFold; deleting the pick falls back to the default.
+    /// Drop a private server from the dropdown. Deleting the SAVED default falls back to
+    /// ColabFold; deleting the pick falls back to the default. Only the saved one may
+    /// `reset`: a session-only or RAYMOL_MSA_SERVER server is not what server.json
+    /// holds, and resetting for it erased the server that was saved (#599 review).
     func removeServer(_ url: String) {
         guard let index = savedServers.firstIndex(of: url) else { return }
         savedServers.remove(at: index)
         settings.set(savedServers, forKey: Self.serversKey)
-        if url == defaultServer {
+        if url == savedDefault {
             setDefaultServer(PredictController.publicServer)
         } else if url == selectedServer {
             selectedServer = defaultServer

@@ -633,6 +633,14 @@ class MSASavedServerTest(MSASearchTestCase):
         cmd.msa_server('https://just-today.example', save=0)
         self.assertEqual(colabfold.resolve()[0], 'https://just-today.example')
 
+    def testTheDefaultIgnoresASessionServer(self):
+        # Review on #599: what new sessions use is not what THIS session uses once a
+        # save=0 override is in place, and the UI must be able to tell them apart.
+        cmd.msa_server(self.SAVED)
+        cmd.msa_server('https://just-today.example', save=0)
+        self.assertEqual(colabfold.resolve(), ('https://just-today.example', 'msa_server'))
+        self.assertEqual(colabfold.resolve_default(), (self.SAVED, 'saved'))
+
     def testSavingReplacesAnEarlierSessionServer(self):
         # The most recent msa_server wins, whichever layer it went to.
         cmd.msa_server('https://just-today.example', save=0)

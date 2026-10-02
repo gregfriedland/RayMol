@@ -695,15 +695,6 @@ struct AlignmentEntry: Identifiable, Equatable {
     }
 }
 
-/// One MSA search still running (#298).
-///
-/// A search takes MINUTES and produces nothing until it lands, so without a row for it
-/// the panel is silent for the whole time — and because the ALIGNMENTS section hides
-/// itself when empty, a user's first search shows no sign of anything happening at all.
-///
-/// Carries no progress fraction because the ColabFold server reports none. The phase
-/// and the age are what is actually known, and showing a bar derived from neither would
-/// be a plausible-looking lie.
 /// An MSA search that failed or was cancelled (#598), with the server's reason. The
 /// Predict bar needs it because a failed search otherwise just drops out of
 /// `msaSearches`, which looks exactly like one about to land.
@@ -713,6 +704,15 @@ struct MSAFailureEntry: Identifiable, Equatable {
     let error: String
 }
 
+/// One MSA search still running (#298).
+///
+/// A search takes MINUTES and produces nothing until it lands, so without a row for it
+/// the panel is silent for the whole time — and because the ALIGNMENTS section hides
+/// itself when empty, a user's first search shows no sign of anything happening at all.
+///
+/// Carries no progress fraction because the ColabFold server reports none. The phase
+/// and the age are what is actually known, and showing a bar derived from neither would
+/// be a plausible-looking lie.
 struct MSASearchEntry: Identifiable, Equatable {
     let id: String
     /// The name the alignment will land under, so the row and its result read the same.

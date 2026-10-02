@@ -216,6 +216,19 @@ def resolve(server=''):
         return normalize(server), 'argument'
     if _SERVER:
         return _SERVER, 'msa_server'
+    return resolve_default()
+
+
+def resolve_default():
+    """(url, origin) that a NEW session would use: resolve() without the argument and
+    without a server set for this session -- the saved server, then RAYMOL_MSA_SERVER,
+    then the public default.
+
+    Separate because the two differ once `msa_server URL, save=0` is in effect, and the
+    Predict bar has to know which server is the persistent default: treating a
+    session-only override as one, deleting it there ran `msa_server reset` and erased
+    the server that was actually saved. Raises as resolve() does.
+    """
     saved = load_saved()
     if saved:
         return saved, 'saved'

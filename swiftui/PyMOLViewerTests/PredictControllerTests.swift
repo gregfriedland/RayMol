@@ -98,12 +98,15 @@ final class PredictControllerTests: XCTestCase {
         let json = """
         {"predictors":[],"chains":[],"error":null,
          "msa_server":{"url":"https://msa.internal:8080","origin":"saved",
-                       "public":false,"error":null}}
+                       "public":false,"error":null,
+                       "default":"https://msa.internal:8080","default_origin":"saved"}}
         """.data(using: .utf8)!
         let payload = try JSONDecoder().decode(PredictFormPayload.self, from: json)
         XCTAssertEqual(payload.msaServer,
                        MSAServerInfo(url: "https://msa.internal:8080", origin: "saved",
-                                     isPublic: false, error: nil))
+                                     isPublic: false, error: nil,
+                                     defaultURL: "https://msa.internal:8080",
+                                     defaultOrigin: "saved"))
     }
 
     func testMsaServerPythonSaves() {
@@ -409,10 +412,19 @@ final class PredictControllerRunTests: XCTestCase {
     private let colab = "https://api.colabfold.com"
     private let internalServer = "https://msa.internal"
     private let savedServer = MSAServerInfo(url: "https://msa.internal", origin: "saved",
-                                            isPublic: false, error: nil)
+                                            isPublic: false, error: nil,
+                                            defaultURL: "https://msa.internal",
+                                            defaultOrigin: "saved")
     private let publicDefault = MSAServerInfo(url: "https://api.colabfold.com",
                                               origin: "default", isPublic: true,
-                                              error: nil)
+                                              error: nil,
+                                              defaultURL: "https://api.colabfold.com",
+                                              defaultOrigin: "default")
+    /// `msa_server https://msa.today, save=0` over a saved https://msa.internal.
+    private let sessionOverride = MSAServerInfo(url: "https://msa.today", origin: "msa_server",
+                                                isPublic: false, error: nil,
+                                                defaultURL: "https://msa.internal",
+                                                defaultOrigin: "saved")
     private let unusableSaved = MSAServerInfo(url: "", origin: "", isPublic: false,
                                               error: "Error: the saved MSA server in x")
 
@@ -613,6 +625,37 @@ final class PredictControllerRunTests: XCTestCase {
         // is at fault (review on #599) -- the bar must not guess.
         XCTAssertTrue(message.contains("the saved MSA server in x"), message)
         XCTAssertFalse(message.contains("Error:"), message)
+    }
+
+    func testASessionOnlyServerIsPickedButIsNotTheDefault() {
+        // Review on #599: the bar used to mark whatever Python resolved as the default.
+        let c = makeServerController(NSMutableArray())
+        c.loadFormPayload(payload(server: sessionOverride))
+        XCTAssertEqual(c.selectedServer, "https://msa.today")
+        XCTAssertEqual(c.defaultServer, internalServer)
+    }
+
+    func testDeletingASessionOnlyServerLeavesTheSavedDefaultAlone() {
+        // ...and deleting that "default" ran `msa_server reset`, erasing server.json.
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        c.loadFormPayload(payload(server: sessionOverride))
+        c.removeServer("https://msa.today")
+        XCTAssertEqual(msaServerCommands(cmds), [])
+        XCTAssertEqual(c.defaultServer, internalServer)
+        XCTAssertEqual(c.selectedServer, internalServer)
+    }
+
+    func testDeletingAnEnvironmentDefaultDoesNotReset() {
+        // Nothing is saved, so there is nothing for `reset` to forget -- and it would
+        // not make RAYMOL_MSA_SERVER go away either.
+        let cmds = NSMutableArray()
+        let c = makeServerController(cmds)
+        c.loadFormPayload(payload(server: MSAServerInfo(
+            url: "https://msa.env", origin: "RAYMOL_MSA_SERVER", isPublic: false, error: nil,
+            defaultURL: "https://msa.env", defaultOrigin: "RAYMOL_MSA_SERVER")))
+        c.removeServer("https://msa.env")
+        XCTAssertEqual(msaServerCommands(cmds), [])
     }
 
     func testEditRecoversFromAnUnusableSavedServer() {
