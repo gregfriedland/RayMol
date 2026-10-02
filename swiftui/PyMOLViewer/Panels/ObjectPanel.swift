@@ -704,6 +704,15 @@ struct AlignmentEntry: Identifiable, Equatable {
 /// Carries no progress fraction because the ColabFold server reports none. The phase
 /// and the age are what is actually known, and showing a bar derived from neither would
 /// be a plausible-looking lie.
+/// An MSA search that failed or was cancelled (#598), with the server's reason. The
+/// Predict bar needs it because a failed search otherwise just drops out of
+/// `msaSearches`, which looks exactly like one about to land.
+struct MSAFailureEntry: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let error: String
+}
+
 struct MSASearchEntry: Identifiable, Equatable {
     let id: String
     /// The name the alignment will land under, so the row and its result read the same.
@@ -5724,6 +5733,7 @@ struct PanelPayload: Decodable {
     // key does not cost the ALIGNMENTS section, it freezes the ENTIRE object
     // panel on its last list.
     let msa_searches: [MSASearchSummary]?
+    let msa_failures: [MSAFailureSummary]?
     /// Design-mode 'sele' fingerprint, '' while Design mode is off. Optional for
     /// the same reason as every field above: a non-optional would fail the whole
     /// decode against an older bundled appkit_inspector.py and freeze the panel on
@@ -5754,6 +5764,12 @@ struct PanelPayload: Decodable {
         let phase: String
         let server: String
         let elapsed: Int
+    }
+
+    struct MSAFailureSummary: Decodable {
+        let id: String
+        let name: String
+        let error: String
     }
 }
 
@@ -5845,6 +5861,10 @@ extension PyMOLEngine {
                            server: $0.server, elapsed: $0.elapsed)
         }
 
+        let failures = (payload.msa_failures ?? []).map {
+            MSAFailureEntry(id: $0.id, name: $0.name, error: $0.error)
+        }
+
         DispatchQueue.main.async {
             // Guard: the ~500ms poll usually returns the same object list;
             // re-assigning an equal array still fires @Published and re-renders
@@ -5856,6 +5876,8 @@ extension PyMOLEngine {
             // Same guard, and it carries the weight here: with no search running this
             // is empty every tick and must not repaint the panel twice a second.
             if self.msaSearches != searches { self.msaSearches = searches }
+            // Not @Published: only the Predict bar reads it, through `panelPolled`.
+            self.msaFailures = failures
             // The sequence strip rows only enabled objects (#380). This is the
             // core's own view of what is enabled, so it catches every path that
             // can change it and cannot race the optimistic checkbox flip. Track
@@ -5866,6 +5888,9 @@ extension PyMOLEngine {
                 self.lastSequenceEnabled = enabledObjects
                 if self.sequenceVisible { self.fetchSequences() }
             }
+            // Every tick, changed or not: the Predict bar's search state machine needs
+            // to see time pass, and the guarded assignments above publish only changes.
+            self.panelPolled.send()
         }
     }
 }

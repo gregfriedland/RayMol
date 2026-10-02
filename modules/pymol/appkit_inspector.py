@@ -725,6 +725,38 @@ def _alignment_map():
 SEARCH_ELAPSED_BUCKET = 5
 
 
+#: How many failed MSA searches the poll reports, newest kept. Enough to cover every
+#: chain of one Predict run; bounded so a long session does not grow every tick.
+MSA_FAILURES_REPORTED = 8
+
+
+def _failure_map():
+    """Recently failed MSA searches, oldest first: [{'id', 'name', 'error'}] (#598).
+
+    The Predict bar starts searches and waits for their alignments. A search that fails
+    simply drops out of msa_searches, and on its own that looks like one about to land,
+    so without this the bar waited forever. Carried by id so the bar can ignore failures
+    that predate its own run, and with the server's reason so it can say what went
+    wrong. A cancelled search counts: its alignment is not coming either.
+
+    Never raises, for the same reason _search_map() does not.
+    """
+    try:
+        from pymol.msas import searching
+        rows = []
+        for search in searching.all_searches():
+            snapshot = search.snapshot()
+            if snapshot['state'] not in ('error', 'cancelled'):
+                continue
+            error = str(snapshot.get('error') or 'the search did not complete').strip()
+            if error.startswith('Error:'):
+                error = error[len('Error:'):].strip()
+            rows.append({'id': snapshot['id'], 'name': snapshot['name'], 'error': error})
+        return rows[-MSA_FAILURES_REPORTED:]
+    except Exception:
+        return []
+
+
 def _search_map():
     """In-flight MSA searches (#298), oldest first, for the panel's progress rows.
 
@@ -938,6 +970,7 @@ def poll_panel():
             # in the section below it -- never as both a progress row and a result on
             # the same tick.
             'msa_searches': _search_map(),
+            'msa_failures': _failure_map(),
         }
         # Design-mode selection fingerprint. Computed inside raymol_design and
         # GATED there on Design mode being active, so this main-thread 500 ms poll

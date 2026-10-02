@@ -232,6 +232,12 @@ final class PredictController: ObservableObject {
     // Fix A: latest snapshot from onEngineState (updated even while idle).
     private var latestAlignments: [AlignmentEntry] = []
 
+    // #598: failures as of the latest poll, and the ids that already existed when this
+    // run's searches went out. Planned names repeat across runs, so only a failure NEW
+    // since then can be this run's.
+    private var latestFailures: [MSAFailureEntry] = []
+    private var staleFailureIDs: Set<String> = []
+
     // Fix B: one-tick grace so the just-fired search can register before being declared failed.
     private var failGraceTicks = 0
 
@@ -466,6 +472,7 @@ final class PredictController: ObservableObject {
             pendingPublicWarning = true
             return
         }
+        staleFailureIDs = Set(latestFailures.map(\.id))
         searches.forEach(runPythonSeam)
         // Fix B: arm the one-tick grace so the just-fired searches can register.
         failGraceTicks = 1
@@ -478,18 +485,32 @@ final class PredictController: ObservableObject {
 
     /// Called from the engine's 500 ms alignment/search poll. Advances or completes
     /// the search-then-predict pipeline.
-    func onEngineState(alignments: [AlignmentEntry], searches: [MSASearchEntry]) {
+    ///
+    /// Called on EVERY poll (PyMOLEngine.panelPolled), changed or not: the grace tick
+    /// below counts polls, and a failed search changes nothing else (#598).
+    func onEngineState(alignments: [AlignmentEntry], searches: [MSASearchEntry],
+                       failures: [MSAFailureEntry] = []) {
         // Fix A: always record latest state so proceed() can skip already-satisfied chains.
         latestAlignments = alignments
+        latestFailures = failures
         guard case .searching = phase else { return }
         let searchNames = Set(searches.map(\.name))
         var remaining: [String] = []
         var failed: [String] = []
+        var reasons: [String] = []
         for ch in chains where msaChains.contains(ch.id) {
             if isSatisfied(ch, alignments: alignments) { continue }
             let name = plannedNames[ch.id] ?? ""
-            if searchNames.contains(name) { remaining.append(ch.id) }  // still running
-            else { failed.append(ch.id) }                              // gone, no result
+            if let failure = failures.first(where: {
+                $0.name == name && !staleFailureIDs.contains($0.id)
+            }) {
+                reasons.append("chain \(ch.id): \(failure.error)")   // reported: no grace
+            } else if searchNames.contains(name) { remaining.append(ch.id) }  // running
+            else { failed.append(ch.id) }                            // gone, no result
+        }
+        if !reasons.isEmpty {
+            phase = .error("MSA search failed for " + reasons.joined(separator: "; "))
+            return
         }
         if !failed.isEmpty {
             // Fix B: one-tick grace before declaring failure — the just-fired search may

@@ -111,6 +111,13 @@ final class PyMOLEngine: ObservableObject {
     // not an alignment yet — it has no depth, no columns and nothing to attach — and it
     // stops existing the moment it becomes one.
     @Published var msaSearches: [MSASearchEntry] = []
+    // Recently failed MSA searches with their reasons (#598). Read only by the Predict
+    // bar, on `panelPolled`, so not @Published: it must not repaint the panel.
+    var msaFailures: [MSAFailureEntry] = []
+    // Fires once per object-panel poll, whether or not anything changed. The guarded
+    // @Published lists above emit only on change, and a search that fails changes
+    // nothing a state machine waiting on it can see (#598).
+    let panelPolled = PassthroughSubject<Void, Never>()
     @Published var sequences: [SequenceObject] = []
     @Published var selectedResidueKeys: Set<String> = []
     // Set when an iOS long-press identifies an atom/residue (or empty space);
@@ -3001,11 +3008,15 @@ final class PyMOLEngine: ObservableObject {
                 let lit = InferenceJob.pythonLiteral(input)
                 self?.runPython("from pymol import appkit_predict as _ap\n_ap.emit(\(lit))")
             }
-            // Drive the search→predict state machine off the object poll's published state.
-            self.$alignments
-                .combineLatest(self.$msaSearches)
-                .sink { [weak pc] aligns, searches in
-                    pc?.onEngineState(alignments: aligns, searches: searches)
+            // Drive the search→predict state machine off EVERY object poll, not only off
+            // changes to its lists: a failed or refused search changes nothing, and the
+            // bar then waited on "Building 1 alignment…" for good (#598).
+            self.panelPolled
+                .sink { [weak self, weak pc] in
+                    guard let self else { return }
+                    pc?.onEngineState(alignments: self.alignments,
+                                      searches: self.msaSearches,
+                                      failures: self.msaFailures)
                 }
                 .store(in: &self.predictCancellables)
             return pc

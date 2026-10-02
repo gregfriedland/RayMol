@@ -280,6 +280,50 @@ final class PredictControllerRunTests: XCTestCase {
         XCTAssertEqual(cmds.count, 1)   // predict was never submitted
     }
 
+    // #598: a failed search used to leave the bar on "Building 1 alignment…" for good.
+
+    private func literalRunNeedingSearch(_ cmds: NSMutableArray) -> (PredictController, String) {
+        let c = makeController(captured: cmds)
+        c.loadFormPayload(PredictFormPayload(
+            predictors: [PredictorInfo(id: "boltz2", msa: true)],
+            chains: [chain("A", 24)], error: nil))
+        c.inputText = "MKTAYIAKQRQISFVKSHFSRQLE"; c.predictor = "boltz2"
+        c.useMSA = true; c.msaChains = ["A"]
+        let planned = PredictController.alignmentBaseName(
+            for: chain("A", 24), literalSequence: "MKTAYIAKQRQISFVKSHFSRQLE")
+        return (c, planned)
+    }
+
+    func testAReportedFailureStopsTheBarWithTheServersReason() {
+        let cmds = NSMutableArray()
+        let (c, planned) = literalRunNeedingSearch(cmds)
+        c.run()
+        XCTAssertEqual(c.phase, .searching(remaining: 1))
+        let failure = MSAFailureEntry(
+            id: "msa-1", name: planned,
+            error: "cannot reach the MSA server at msa.internal: Connection refused.")
+        c.onEngineState(alignments: [], searches: [], failures: [failure])
+        guard case let .error(message) = c.phase else {
+            return XCTFail("a failed search must end the run, got \(c.phase)")
+        }
+        XCTAssertTrue(message.contains("cannot reach the MSA server at msa.internal"), message)
+        XCTAssertEqual(cmds.count, 1)   // the search; predict was never submitted
+    }
+
+    func testAFailureFromAnEarlierRunDoesNotFailThisOne() {
+        // The planned name is deterministic, so a re-run plans the SAME name as the run
+        // that failed. Only a failure new since this run's searches went out counts.
+        let cmds = NSMutableArray()
+        let (c, planned) = literalRunNeedingSearch(cmds)
+        let old = MSAFailureEntry(id: "msa-old", name: planned, error: "refused")
+        c.onEngineState(alignments: [], searches: [], failures: [old])   // idle tick
+        c.run()
+        let running = MSASearchEntry(id: "msa-new", name: planned, phase: "search",
+                                     server: "https://msa.internal", elapsed: 0)
+        c.onEngineState(alignments: [], searches: [running], failures: [old])
+        XCTAssertEqual(c.phase, .searching(remaining: 1))
+    }
+
     func testAlreadySatisfiedChainSkipsSearchAndPredictsDirect() {
         // Fix A: if the alignment is already present when run() is called, no msa_search
         // is fired and predict is submitted immediately (no .searching phase).
