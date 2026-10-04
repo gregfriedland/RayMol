@@ -84,6 +84,9 @@ Z* -------------------------------------------------------------------
 #include "MoleculeExporter.h"
 #include "MetalPick.h"
 
+#include "LightRigPy.h"
+#include "SceneLights.h"
+
 #define tmpSele "_tmp"
 #define tmpSele1 "_tmp1"
 #define tmpSele2 "_tmp2"
@@ -5119,6 +5122,164 @@ static PyObject *CmdGetShadowExtent(PyObject * self, PyObject * args)
   return Py_BuildValue("[[fff],[fff]]", mn[0], mn[1], mn[2], mx[0], mx[1], mx[2]);
 }
 
+/* ---- Light rig (#611) ----------------------------------------------------
+ * The native rig lives in CScene (layer1/LightRig.h, SceneLights.h); the dict
+ * conversions are in layer1/LightRigPy.h. Each entry builds or reads Python
+ * objects, so all of them keep the GIL (APIEnterBlocked).
+ */
+
+/// cmd.get_lights(): the rig as a dict, or None when there is no rig.
+static PyObject* CmdGetLights(PyObject* self, PyObject* args)
+{
+  PyMOLGlobals* G = nullptr;
+  API_SETUP_ARGS(G, self, args, "O", &self);
+  APIEnterBlocked(G);
+  const auto* rig = SceneGetLightRig(G);
+  PyObject* result = rig ? LightRigAsPyDict(*rig) : APIAutoNone(Py_None);
+  APIExitBlocked(G);
+  return result;
+}
+
+/// cmd.set_lights(dict | None): replace the rig, or remove it. Strict: an
+/// error raises CmdException naming the key and leaves the rig unchanged.
+static PyObject* CmdSetLights(PyObject* self, PyObject* args)
+{
+  PyMOLGlobals* G = nullptr;
+  PyObject* obj = nullptr;
+  API_SETUP_ARGS(G, self, args, "OO", &self, &obj);
+  APIEnterBlocked(G);
+  pymol::Result<> result;
+  if (obj == Py_None) {
+    SceneSetLightRig(G, std::nullopt);
+  } else if (auto rig = LightRigFromPyDict(obj)) {
+    result = SceneLightsReplace(G, std::move(*rig));
+  } else {
+    result = rig.error_move();
+  }
+  APIExitBlocked(G);
+  if (!result)
+    result = pymol::make_error("set_lights: ", result.error().what());
+  return APIResult(G, result);
+}
+
+/// Capture the rig's centre and 1x size again (`lights recenter`).
+static PyObject* CmdLightsRecenter(PyObject* self, PyObject* args)
+{
+  PyMOLGlobals* G = nullptr;
+  API_SETUP_ARGS(G, self, args, "O", &self);
+  APIEnterBlocked(G);
+  auto result = SceneLightsRecenter(G);
+  APIExitBlocked(G);
+  return APIResult(G, result);
+}
+
+/// The rig's field table: [(scope, name, kind, default, min, max), ...]
+static PyObject* CmdGetLightFields(PyObject* self, PyObject* args)
+{
+  PyMOLGlobals* G = nullptr;
+  API_SETUP_ARGS(G, self, args, "O", &self);
+  return LightFieldsAsPyList();
+}
+
+/// "<status>: <message>", e.g. "refused: at most 3 lights can cast shadows"
+static PyObject* APILightFailure(
+    PyMOLGlobals* G, pymol::LightSetStatus status, const std::string& msg)
+{
+  std::string text = pymol::LightSetStatusName(status);
+  if (!msg.empty())
+    text += ": " + msg;
+  return APIFailure(G, text.c_str());
+}
+
+/// The rig resolved to eye space (LightRigResolve, as the app bridge does):
+/// with the live camera when `matrix` is None, else with `matrix`, a
+/// column-major world->eye 4x4 (16 numbers). None when there is no rig.
+static PyObject* CmdGetLightsEye(PyObject* self, PyObject* args)
+{
+  PyMOLGlobals* G = nullptr;
+  PyObject* matrix = nullptr;
+  API_SETUP_ARGS(G, self, args, "OO", &self, &matrix);
+  std::optional<glm::dmat4> m;
+  if (matrix != Py_None) {
+    auto parsed = LightMatrixFromPy(matrix);
+    if (!parsed)
+      return APIFailure(G, parsed.error());
+    m = *parsed;
+  }
+  APIEnterBlocked(G);
+  PyObject* result = nullptr;
+  if (const auto* rig = SceneGetLightRig(G)) {
+    auto eye = SceneLightsResolve(G, m ? &*m : nullptr);
+    result = LightRigEyeAsPyDict(*rig, *eye);
+  } else {
+    result = APIAutoNone(Py_None);
+  }
+  APIExitBlocked(G);
+  return result;
+}
+
+/// Set one field of light `index` (-1: the rig and its air) through
+/// LightRigSet, the setter the app bridge calls per drag tick. `value` is a
+/// number or 3 numbers. Raises CmdException("<status>: <message>").
+static PyObject* CmdLightSet(PyObject* self, PyObject* args)
+{
+  PyMOLGlobals* G = nullptr;
+  int index = 0;
+  const char* field = nullptr;
+  PyObject* value = nullptr;
+  API_SETUP_ARGS(G, self, args, "OisO", &self, &index, &field, &value);
+  double v[3] = {0.0, 0.0, 0.0};
+  int n = 0;
+  auto parsed = LightSetValueFromPy(value, v, n);
+  if (!parsed) {
+    return APILightFailure(
+        G, pymol::LightSetStatus::BadValue, parsed.error().what());
+  }
+  APIEnterBlocked(G);
+  std::string msg;
+  auto status = SceneLightSet(G, index, field, v, n, &msg);
+  APIExitBlocked(G);
+  if (status != pymol::LightSetStatus::Ok)
+    return APILightFailure(G, status, msg);
+  return APISuccess();
+}
+
+/// One field of light `index` (-1: the rig and its air), as the dict holds
+/// it. Raises CmdException("<status>: <message>").
+static PyObject* CmdLightGet(PyObject* self, PyObject* args)
+{
+  PyMOLGlobals* G = nullptr;
+  int index = 0;
+  const char* field = nullptr;
+  API_SETUP_ARGS(G, self, args, "Ois", &self, &index, &field);
+  APIEnterBlocked(G);
+  std::string msg;
+  pymol::LightValue value;
+  const pymol::LightField* info = nullptr;
+  auto status = SceneLightGet(G, index, field, value, &info, &msg);
+  PyObject* result = status == pymol::LightSetStatus::Ok
+                         ? LightValueAsPy(*info, value)
+                         : nullptr;
+  APIExitBlocked(G);
+  if (status != pymol::LightSetStatus::Ok)
+    return APILightFailure(G, status, msg);
+  return result;
+}
+
+/// The rig as JSON (what PyMOLBridge_LightsJSON returns), or None.
+static PyObject* CmdGetLightsJson(PyObject* self, PyObject* args)
+{
+  PyMOLGlobals* G = nullptr;
+  API_SETUP_ARGS(G, self, args, "O", &self);
+  APIEnterBlocked(G);
+  auto json = SceneLightsJSON(G);
+  PyObject* result = json ? PyUnicode_DecodeUTF8(json->data(),
+                                Py_ssize_t(json->size()), "strict")
+                          : APIAutoNone(Py_None);
+  APIExitBlocked(G);
+  return result;
+}
+
 static PyObject *CmdGetMinMax(PyObject * self, PyObject * args)
 {
   PyMOLGlobals *G = nullptr;
@@ -7097,6 +7258,16 @@ static PyMethodDef Cmd_methods[] = {
 //  {"get_matrix", CmdGetMatrix, METH_VARARGS},
   {"get_min_max", CmdGetMinMax, METH_VARARGS},
   {"get_shadow_extent", CmdGetShadowExtent, METH_VARARGS},
+  /* light rig (#611) */
+  {"get_lights", CmdGetLights, METH_VARARGS},
+  {"set_lights", CmdSetLights, METH_VARARGS},
+  {"lights_recenter", CmdLightsRecenter, METH_VARARGS},
+  {"get_light_fields", CmdGetLightFields, METH_VARARGS},
+  {"get_lights_eye", CmdGetLightsEye, METH_VARARGS},
+  {"light_set", CmdLightSet, METH_VARARGS},
+  {"light_get", CmdLightGet, METH_VARARGS},
+  {"get_lights_json", CmdGetLightsJson, METH_VARARGS},
+  /* end light rig */
   {"get_mtl_obj", CmdGetMtlObj, METH_VARARGS},
   {"get_model", CmdGetModel, METH_VARARGS},
   {"get_property", CmdGetProperty, METH_VARARGS},
