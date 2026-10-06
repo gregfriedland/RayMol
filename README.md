@@ -1,3 +1,24 @@
+# Additions in This Fork
+
+This branch adds experimental **macOS protein-ligand energy analysis**:
+
+- **Energy terms:** Amber ff14SB / OpenFF Sage electrostatics, van der Waals
+  attraction and repulsion, ligand conformational strain, and OBC2+ACE
+  implicit-solvent contributions.
+- **Direct 3D visualization:** selective hydrogen bonds, salt bridges, clashes,
+  favorable packing, strain highlights, and solvation markers, with individually
+  toggleable components and interactive picking.
+- **Reusable chemistry and results:** ligand input from SMILES or SDF; PSE
+  sessions retain ligand chemistry, preparation settings, and calculated results
+  for automatic reuse. The inspector also displays per-state object metadata.
+- **Recent sessions:** File > Open Recent with persistent PSE/PSW history and
+  Clear Menu.
+
+Energy analysis requires the separate scientific helper. The upstream releases
+and installation instructions below do not include this branch's additions.
+
+---
+
 <img src="./swiftui/PyMOLViewer/Resources/RayMol.svg" height="100" align="right" />
 
 # RayMol
