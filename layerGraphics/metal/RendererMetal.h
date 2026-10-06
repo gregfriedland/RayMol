@@ -24,6 +24,13 @@ class RendererMetal : public Renderer {
 public:
   RendererMetal(id<MTLDevice> device, id<MTLCommandQueue> queue);
   ~RendererMetal() override;
+  bool enableMarkerPicking() override;
+  void invalidateMarkerPicking() override;
+  void beginMarkerScene() override { _markerFrameEpoch = _markerEpoch; }
+  bool suspendMarkerInvalidation(bool value) override
+  { bool old = _markerInvalidationSuspended; _markerInvalidationSuspended = value; return old; }
+  void setMarkerPickContext(const char*, int) override;
+  MarkerPick markerPick(int, int, uint64_t) override;
 
   // Live frame setup, deliberately split in two (#396). Only the FINAL post
   // pass writes to the drawable, so the drawable is acquired as late as
@@ -360,6 +367,7 @@ private:
   // specialisation must not stop the other families, nor make every frame
   // recompile the library to retry it.
   bool _sphereImpostorsBuilt = false;
+  id<MTLRenderPipelineState> _sphereMarkerPipeline = nil;
   // Cylinder impostor pipelines are cached PER VERTEX LAYOUT — (stride, a_cap
   // offset) — not in a single slot. a_cap's offset is part of the vertex
   // descriptor, so a stick VBO (per-vertex a_cap) and a CGO VBO (one constant
@@ -373,12 +381,47 @@ private:
     id<MTLRenderPipelineState> oit = nil;
     id<MTLRenderPipelineState> shadow = nil;
     id<MTLRenderPipelineState> peel = nil;   // depth-only, peel-depth format
+    id<MTLRenderPipelineState> marker = nil;
   };
   // Keyed by (stride, a_cap offset, MATERIAL FAMILY): a marble stick and a
   // default stick at the same layout need different pipelines, and whichever
   // drew first would otherwise decide how both looked.
   std::map<std::tuple<NSUInteger, int, int>, CylinderPipelines> _cylinderPipelines;
   id<MTLRenderPipelineState> _cylinderImpostorPipeline = nil; // alias, not owned
+  id<MTLRenderPipelineState> _cylinderMarkerPipeline = nil; // alias, not owned
+
+  struct MarkerDraw {
+    id<MTLBuffer> vertices = nil, indices = nil, tokens = nil;
+    id<MTLRenderPipelineState> pipeline = nil;
+    std::vector<uint8_t> uniforms;
+    MTLViewport viewport;
+    MTLScissorRect scissor;
+    MTLCullMode cull;
+    NSUInteger count = 0;
+    ~MarkerDraw();
+  };
+  struct MarkerSnapshot {
+    id<MTLBuffer> pixels = nil;
+    id<MTLCommandBuffer> command = nil;
+    uint64_t generation = 0;
+    int width = 0, height = 0, samples = 0;
+    std::vector<MarkerPick> records;
+    std::string error;
+    ~MarkerSnapshot();
+  };
+  bool _markerEnabled = false;
+  bool _markerInvalidationSuspended = false;
+  uint64_t _markerEpoch = 1, _markerFrameEpoch = 0;
+  std::string _markerObject, _markerError;
+  int _markerState = -1;
+  std::vector<std::shared_ptr<MarkerDraw>> _markerDraws;
+  std::vector<MarkerPick> _markerRecords;
+  std::shared_ptr<MarkerSnapshot> _markerPending, _markerReady;
+  id<MTLDepthStencilState> _markerDepthState = nil;
+  id<MTLComputePipelineState> _markerReadSingle = nil, _markerReadMulti = nil;
+  void recordMarkerDraw(id<MTLBuffer>, id<MTLBuffer>, NSUInteger,
+      id<MTLRenderPipelineState>, const void*, size_t, const int*, int, int);
+  void encodeMarkerPicking();
 
   // Post-processing: the scene renders to offscreen color+depth, then
   // fullscreen passes (SSAO, fog/depth-cue, FXAA) composite to the drawable.

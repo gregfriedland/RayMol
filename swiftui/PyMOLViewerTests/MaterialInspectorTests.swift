@@ -2,6 +2,57 @@ import XCTest
 import SwiftUI
 @testable import RayMol
 
+final class StateMetadataTests: XCTestCase {
+    func testTypedPropertiesAreParsedWithoutLosingIdentifiersOrFalse() {
+        let meta = PyMOLEngine.parseObjMeta([
+            "state": 2, "property_state": 2, "titles": ["one", "two"],
+            "properties": ["compound_id": "00123", "rank": 2, "active": false, "GPS": 0.938765],
+        ])
+        XCTAssertEqual(meta.tags(forState: 2)["compound_id"], "00123")
+        XCTAssertEqual(meta.tags(forState: 2)["rank"], "2")
+        XCTAssertEqual(meta.tags(forState: 2)["active"], "false")
+        XCTAssertEqual(meta.tags(forState: 2)["GPS"], "0.938765")
+        XCTAssertEqual(meta.displayTitle(forState: 2), "00123")
+        XCTAssertTrue(meta.tags(forState: 1).isEmpty)
+    }
+
+    func testLegacyTitleIsSplitWithoutRewritingOrTruncatingValues() {
+        let title = "r=1|or=37|id=Life Chemicals:F2090-0313|P=2523.5|dG=-31.8|GPS=0.9|VA=-10.7|pid=abc=def"
+        let meta = ObjStateMeta(titles: [title])
+        XCTAssertEqual(meta.displayTitle(forState: 1), "Life Chemicals:F2090-0313")
+        XCTAssertEqual(meta.tags(forState: 1)["pid"], "abc=def")
+        XCTAssertEqual(meta.title(forState: 1), title)
+        XCTAssertEqual(ObjStateMeta.summaryKeys(in: meta.tags(forState: 1)), ["r", "dG", "GPS", "VA"])
+    }
+
+    func testNativePropertiesWinAndDoNotLeakWhileScrubbing() {
+        let meta = ObjStateMeta(state: 1, titles: ["id=old|dG=-1", "id=second|dG=-2"],
+                                propertyState: 1, properties: ["compound_id": "new", "dG": "-3.123456"])
+        XCTAssertEqual(meta.displayTitle(forState: 1), "new")
+        XCTAssertEqual(meta.tags(forState: 1)["dG"], "-3.123456")
+        XCTAssertEqual(meta.tags(forState: 2)["dG"], "-2")
+        XCTAssertEqual(meta.displayTitle(forState: 2), "second")
+    }
+
+    func testOrdinaryOrMalformedTitlesStayReadable() {
+        for title in ["plain compound", "compound | notes", "r=1|r=2", "=bad|id=x"] {
+            let meta = ObjStateMeta(titles: [title])
+            XCTAssertEqual(meta.displayTitle(forState: 1), title)
+            XCTAssertTrue(meta.tags(forState: 1).isEmpty)
+        }
+        XCTAssertNil(ObjStateMeta().displayTitle(forState: 1))
+    }
+
+    func testErrorsDoNotDisplayStaleScoresAndFullValuesStayAvailable() {
+        let meta = ObjStateMeta(titles: ["id=legacy|dG=-1"], propertyState: 1,
+                                properties: ["dG": "-3"], propertyError: "query failed")
+        XCTAssertTrue(meta.tags(forState: 1).isEmpty)
+        XCTAssertEqual(ObjStateMeta.summaryValue("0.938765", key: "GPS"), "0.9388")
+        XCTAssertEqual(ObjStateMeta.summaryValue("12345", key: "rank"), "12345")
+        XCTAssertEqual(ObjStateMeta.summaryValue("not numeric", key: "GA"), "not numeric")
+    }
+}
+
 /// The Inspector's OBJECT-wide material controls (#498): the peel tri-state
 /// and the two scene-wide material rows. (The legacy reflection group was
 /// removed in #565.)

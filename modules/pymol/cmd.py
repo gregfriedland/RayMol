@@ -130,6 +130,12 @@ def _deferred_init_pymol_internals(_pymol):
 
     # take care of some deferred initialization
 
+    from .energy_view import EnergyView
+    if EnergyView.session_save not in _pymol._session_save_tasks:
+        _pymol._session_save_tasks.append(EnergyView.session_save)
+    if EnergyView.session_restore not in _pymol._session_restore_tasks:
+        _pymol._session_restore_tasks.append(EnergyView.session_restore)
+
     _pymol._view_dict_sc = Shortcut()
 
     #

@@ -15088,6 +15088,7 @@ void ExecutiveManageObject(
     strcpy(rec->name, obj->Name);
     rec->type = cExecObject;
     rec->obj = obj;
+    rec->object_incarnation = 0;
     previousVisible = rec->visible;
     if (previousObjType == rec->obj->type) {
       // skip

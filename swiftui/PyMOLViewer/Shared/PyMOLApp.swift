@@ -188,6 +188,9 @@ struct PyMOLApp: App {
                 // Bring the app/window to the front on launch (a GUI app should
                 // foreground itself; also lets it be launched from a terminal).
                 .onAppear { NSApplication.shared.activate(ignoringOtherApps: true) }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    engine.refreshRecentSessions()
+                }
                 // Window title reflects the open .pse document (falls back to the
                 // app name when nothing is tracked).
                 .navigationTitle(engine.currentSessionURL?.lastPathComponent ?? "RayMol")
@@ -297,6 +300,16 @@ struct PyMOLApp: App {
                 Button("Open…") {
                     NotificationCenter.default.post(name: .raymolOpenFile, object: nil)
                 }.keyboardShortcut("o", modifiers: .command)
+                Menu("Open Recent") {
+                    ForEach(engine.recentSessionURLs, id: \.self) { url in
+                        Button(url.lastPathComponent) { loadOpenedFile(url, into: engine) }
+                            .help(url.path)
+                            .disabled(!FileManager.default.fileExists(atPath: url.path))
+                    }
+                    Divider()
+                    Button("Clear Menu") { engine.clearRecentSessions() }
+                }
+                .disabled(engine.recentSessionURLs.isEmpty)
                 Button("Fetch from PDB…") {
                     NotificationCenter.default.post(name: .raymolFetch, object: nil)
                 }.keyboardShortcut("o", modifiers: [.command, .shift])
@@ -557,7 +570,7 @@ func loadOpenedFile(_ url: URL, into engine: PyMOLEngine, attempt: Int = 0) {
     engine.loadStructure(path: path, name: name)
     // Publish the original document URL only after PyMOL has restored the PSE,
     // so observers read the newly restored embedded Analysis Notes payload.
-    engine.currentSessionURL = (ext.lowercased() == "pse") ? url : nil
+    engine.currentSessionURL = PyMOLEngine.isSessionFile(url.path) ? url : nil
 }
 
 // Opening a session file REPLACES the whole current session — PyMOL sessions are

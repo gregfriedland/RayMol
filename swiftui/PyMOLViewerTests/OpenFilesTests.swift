@@ -84,4 +84,79 @@ final class OpenFilesTests: XCTestCase {
         let pdb = URL(fileURLWithPath: "/tmp/5hbh.pdb")
         XCTAssertFalse(openWouldReplaceSession(pdb, hasObjects: true))
     }
+
+    #if os(macOS)
+    private func recentSessionFixtures() throws -> (URL, URL) {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("run_261005_open_recent/test-fixtures/\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let first = root.appendingPathComponent("first session.pse")
+        let second = root.appendingPathComponent("second.PSW")
+        try Data().write(to: first)
+        try Data().write(to: second)
+        return (first, second)
+    }
+
+    func testRecentSessionsPublishNativeHistoryAndKeepOriginalURLs() throws {
+        let engine = PyMOLEngine.shared
+        defer { engine.refreshRecentSessions() }
+        let controller = RecentDocumentSpy()
+        let (first, second) = try recentSessionFixtures()
+        engine.rememberRecentSession(first, using: controller)
+        engine.rememberRecentSession(second, using: controller)
+        XCTAssertEqual(engine.recentSessionURLs, [second, first])
+        engine.rememberRecentSession(first, using: controller)
+        XCTAssertEqual(engine.recentSessionURLs, [first, second])
+    }
+
+    func testRecentSessionsIgnoreCoordinatesAndRemoteURLs() {
+        let engine = PyMOLEngine.shared
+        defer { engine.refreshRecentSessions() }
+        let controller = RecentDocumentSpy()
+        engine.rememberRecentSession(URL(fileURLWithPath: "/sessions/structure.pdb"), using: controller)
+        engine.rememberRecentSession(URL(string: "https://example.com/session.pse")!, using: controller)
+        engine.rememberRecentSession(URL(fileURLWithPath: "/sessions/missing.pse"), using: controller)
+        XCTAssertEqual(controller.recentDocumentURLs, [])
+    }
+
+    func testRecentSessionsReadExistingHistoryAndFilterCoordinateFiles() {
+        let engine = PyMOLEngine.shared
+        defer { engine.refreshRecentSessions() }
+        let controller = RecentDocumentSpy()
+        let session = URL(fileURLWithPath: "/sessions/previous.pse")
+        controller.urls = [session, URL(fileURLWithPath: "/sessions/structure.pdb")]
+        engine.refreshRecentSessions(using: controller)
+        XCTAssertEqual(engine.recentSessionURLs, [session])
+    }
+
+    func testClearRecentSessionsClearsOnlyHistoryNotCurrentDocument() throws {
+        let engine = PyMOLEngine.shared
+        defer { engine.refreshRecentSessions() }
+        let original = engine.currentSessionURL
+        let controller = RecentDocumentSpy()
+        let (session, _) = try recentSessionFixtures()
+        engine.rememberRecentSession(session, using: controller)
+        engine.clearRecentSessions(using: controller)
+        XCTAssertTrue(controller.cleared)
+        XCTAssertEqual(engine.recentSessionURLs, [])
+        XCTAssertEqual(engine.currentSessionURL, original)
+    }
+    #endif
 }
+
+#if os(macOS)
+private final class RecentDocumentSpy: RecentSessionHistory {
+    var urls: [URL] = []
+    var cleared = false
+    var recentDocumentURLs: [URL] { urls }
+    func noteNewRecentDocumentURL(_ url: URL) {
+        urls.removeAll { $0 == url }
+        urls.insert(url, at: 0)
+    }
+    func clearRecentDocuments(_ sender: Any?) {
+        cleared = true
+        urls.removeAll()
+    }
+}
+#endif

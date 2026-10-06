@@ -137,6 +137,9 @@ struct ObjStateMeta: Equatable {
     // Per-state titles (e.g. compound names from a multi-record SDF). Empty
     // unless at least one state carries a title. Indexed by state-1 (issue #203).
     var titles: [String] = []
+    var propertyState: Int = 0
+    var properties: [String: String] = [:]
+    var propertyError: String? = nil
 
     // MARK: object-wide material row (#498)
     // `transparency_peel` is OBJECT-scoped, so it belongs on the object header
@@ -167,6 +170,119 @@ struct ObjStateMeta: Equatable {
         guard state >= 1, state <= titles.count else { return nil }
         let t = titles[state - 1]
         return t.isEmpty ? nil : t
+    }
+
+    func legacyProperties(forState state: Int) -> [String: String] {
+        guard let title = title(forState: state) else { return [:] }
+        let parts = title.split(separator: "|", omittingEmptySubsequences: false)
+        guard parts.count > 1 else { return [:] }
+        var tags: [String: String] = [:]
+        for part in parts {
+            let pair = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard pair.count == 2 else { return [:] }
+            let key = pair[0].trimmingCharacters(in: .whitespaces)
+            guard !key.isEmpty, tags[key] == nil else { return [:] }
+            tags[key] = String(pair[1])
+        }
+        return tags
+    }
+
+    func tags(forState state: Int) -> [String: String] {
+        if propertyState == state {
+            if propertyError != nil { return [:] }
+            if !properties.isEmpty { return properties }
+        }
+        // Old PSEs packed tags into titles. Read them without rewriting the PSE.
+        return legacyProperties(forState: state)
+    }
+
+    func displayTitle(forState state: Int) -> String? {
+        let tags = tags(forState: state)
+        for key in ["compound_id", "id"] {
+            if let value = tags[key], !value.isEmpty { return value }
+        }
+        return legacyProperties(forState: state).isEmpty ? title(forState: state) : nil
+    }
+
+    static func summaryKeys(in tags: [String: String]) -> [String] {
+        [["rank", "r"], ["dG", "dg"], ["GA", "ga"], ["GPS", "gps"], ["VA", "va"]]
+            .compactMap { aliases in aliases.first { tags[$0] != nil } }
+    }
+
+    static func tagLabel(_ key: String) -> String {
+        switch key {
+        case "r", "rank": return "Rank"
+        case "compound_id", "id": return "Compound"
+        case "pose_id", "pid": return "Pose ID"
+        default: return key.replacingOccurrences(of: "_", with: " ")
+        }
+    }
+
+    static func summaryValue(_ value: String, key: String) -> String {
+        guard key != "rank", key != "r", let number = Double(value), number.isFinite
+        else { return value }
+        return String(format: "%.4g", number)
+    }
+}
+
+private struct ObjectStateMetadata: View {
+    let meta: ObjStateMeta
+    let state: Int
+
+    var body: some View {
+        let tags = meta.tags(forState: state)
+        let summary = ObjStateMeta.summaryKeys(in: tags)
+        VStack(alignment: .leading, spacing: 5) {
+            if let title = meta.displayTitle(forState: state) {
+                HStack(alignment: .top, spacing: 6) {
+                    Text("Name").frame(width: 78, alignment: .leading)
+                    Text(title)
+                        .foregroundColor(TimelineTheme.accent)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled).help(title)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if !summary.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 90))], spacing: 4) {
+                    ForEach(summary, id: \.self) { key in
+                        HStack(spacing: 4) {
+                            Text(ObjStateMeta.tagLabel(key)).foregroundColor(PanelTheme.headerColor)
+                            Spacer(minLength: 0)
+                            Text(ObjStateMeta.summaryValue(tags[key]!, key: key))
+                                .monospacedDigit().foregroundColor(PanelTheme.textColor)
+                        }
+                        .lineLimit(1).minimumScaleFactor(0.85)
+                        .help("\(ObjStateMeta.tagLabel(key)): \(tags[key]!)")
+                    }
+                }
+            }
+            if !tags.isEmpty {
+                DisclosureGroup("Metadata") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(tags.keys.sorted(), id: \.self) { key in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text(ObjStateMeta.tagLabel(key))
+                                    .foregroundColor(PanelTheme.headerColor)
+                                    .frame(width: 90, alignment: .leading)
+                                Text(tags[key]!)
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            if meta.propertyState == state, let error = meta.propertyError {
+                Text("Metadata unavailable: \(error)").foregroundColor(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .font(.system(size: 10))
+        .foregroundColor(PanelTheme.textColor)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -3707,6 +3823,10 @@ private struct ObjectCard: View {
                         stateRow()
                         Divider().background(PanelTheme.disabledColor.opacity(0.3))
                     }
+                    if let meta = engine.objectMeta[entry.name] {
+                        let state = min(max(scrubState ?? meta.state, 1), max(entry.stateCount, 1))
+                        ObjectStateMetadata(meta: meta, state: state)
+                    }
                     // Object/layer-level coloring (by element/chain/ss/spectrum/
                     // named) is the structure row's "C" button — not duplicated
                     // here. The per-rep grid below controls per-rep color overrides.
@@ -3801,23 +3921,6 @@ private struct ObjectCard: View {
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(PanelTheme.textColor)
                     .frame(width: 42, alignment: .trailing)
-            }
-            // Compound name for this state, when present (e.g. a multi-record
-            // SDF's per-record title), so docking-pose / library sets can be
-            // navigated by name while scrubbing states (issue #203).
-            if let name = meta?.title(forState: cur) {
-                HStack(spacing: 6) {
-                    Text("Name")
-                        .font(.system(size: 10)).foregroundColor(PanelTheme.textColor)
-                        .frame(width: 78, alignment: .leading)
-                    Text(name)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(TimelineTheme.accent)
-                        .lineLimit(1).truncationMode(.middle)
-                        .textSelection(.enabled)
-                        .help(name)
-                    Spacer(minLength: 0)
-                }
             }
             // Play/pause + per-object fps — animates THIS object's models (via a
             // Swift timer + `set state`), independent of the movie and other objects.

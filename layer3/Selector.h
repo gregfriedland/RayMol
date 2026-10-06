@@ -88,9 +88,17 @@ float SelectorSumVDWOverlap(PyMOLGlobals * G, int sele1, int state1,
 int SelectorVdwFit(PyMOLGlobals * G, int sele1, int state1, int sele2, int state2,
                    float buffer, int quiet);
 
+struct SelectorHBondRecord {
+  struct Atom {
+    std::string object;
+    int index = 0, state = 0, uniqueID = 0;
+  } donor, hydrogen, acceptor;
+};
+
 DistSet *SelectorGetDistSet(PyMOLGlobals * G, DistSet * ds,
                             int sele1, int state1, int sele2,
-                            int state2, int mode, float cutoff, float *result);
+                            int state2, int mode, float cutoff, float *result,
+                            std::vector<SelectorHBondRecord>* hbondRecords = nullptr);
 DistSet *SelectorGetAngleSet(PyMOLGlobals * G, DistSet * ds,
                              int sele1, int state1,
                              int sele2, int state2,

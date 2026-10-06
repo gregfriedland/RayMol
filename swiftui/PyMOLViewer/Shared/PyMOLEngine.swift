@@ -5,6 +5,17 @@ import Foundation
 import Combine
 import SwiftUI
 import MetalKit
+#if os(macOS)
+import AppKit
+
+protocol RecentSessionHistory: AnyObject {
+    var recentDocumentURLs: [URL] { get }
+    func noteNewRecentDocumentURL(_ url: URL)
+    func clearRecentDocuments(_ sender: Any?)
+}
+
+extension NSDocumentController: RecentSessionHistory {}
+#endif
 #if os(iOS)
 import UIKit
 #endif
@@ -103,6 +114,9 @@ final class PyMOLEngine: ObservableObject {
     // Published state for UI binding
     @Published var feedbackLog: [String] = []
     @Published var objects: [MoleculeObject] = []
+    #if os(macOS)
+    @MainActor lazy var energyViewport = EnergyViewportController(engine: self)
+    #endif
     // Loaded multiple-sequence alignments (#296). Not objects: they carry no geometry
     // and the Executive knows nothing about them, so they ride the same OBJPANEL:
     // payload but live in their own list and their own panel section.
@@ -374,7 +388,34 @@ final class PyMOLEngine: ObservableObject {
     // Open… of a .pse, or the destination of a Save As). nil = never-saved session
     // (or a non-.pse structure was opened). Drives ⌘S overwrite vs Save As, and the
     // macOS window title. Cleared by Clear Session.
-    @Published var currentSessionURL: URL? = nil
+    @Published var currentSessionURL: URL? = nil {
+        didSet {
+            #if os(macOS)
+            // File-open and save actions assign this on the main thread.
+            if let url = currentSessionURL { rememberRecentSession(url) }
+            #endif
+        }
+    }
+
+    #if os(macOS)
+    @Published private(set) var recentSessionURLs: [URL] = []
+
+    func refreshRecentSessions(using controller: any RecentSessionHistory = NSDocumentController.shared) {
+        recentSessionURLs = controller.recentDocumentURLs.filter { Self.isSessionFile($0.path) }
+    }
+
+    func rememberRecentSession(_ url: URL, using controller: any RecentSessionHistory = NSDocumentController.shared) {
+        guard url.isFileURL, Self.isSessionFile(url.path),
+              FileManager.default.fileExists(atPath: url.path) else { return }
+        controller.noteNewRecentDocumentURL(url)
+        refreshRecentSessions(using: controller)
+    }
+
+    func clearRecentSessions(using controller: any RecentSessionHistory = NSDocumentController.shared) {
+        controller.clearRecentDocuments(nil)
+        refreshRecentSessions(using: controller)
+    }
+    #endif
 
     // MARK: Timeline / playback (states · trajectories · movies)
     // In PyMOL these are ONE concept: a 1-based movie frame index that maps
@@ -504,6 +545,9 @@ final class PyMOLEngine: ObservableObject {
     #endif
 
     private init() {
+        #if os(macOS)
+        refreshRecentSessions()
+        #endif
         #if os(iOS)
         preloadRestoreSnapshot()
         #endif
@@ -563,6 +607,79 @@ final class PyMOLEngine: ObservableObject {
                 runCommand(one.trimmingCharacters(in: .whitespaces))
             }
         }
+
+        #if os(macOS) && DEBUG
+        if let input = ProcessInfo.processInfo.environment["RAYMOL_ENERGY_ACCEPTANCE_INPUT"] {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard let self,
+                      let data = try? Data(contentsOf: URL(fileURLWithPath: input)),
+                      let values = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return }
+                let energy = self.energyViewport
+                energy.refreshInputs()
+                var inputChecks = ["loaded_molecules": energy.moleculeNames.contains("protein") && energy.moleculeNames.contains("ligand"),
+                                   "empty_receptor_blocked": energy.reviewIssue == "Select a receptor"]
+                energy.receptor = values["receptor"] ?? ""
+                energy.ligand = values["ligand"] ?? ""
+                energy.ligandFormat = "SDF"
+                inputChecks["missing_sdf_blocked"] = energy.reviewIssue == "Ligand SDF required" && energy.analyzeIssue == "Ligand SDF required"
+                energy.receptor = "missing_input_object"
+                inputChecks["missing_receptor_blocked"] = energy.reviewIssue == "Receptor is no longer available"
+                energy.receptor = values["receptor"] ?? ""
+                energy.ligand = energy.receptor
+                inputChecks["same_object_blocked"] = energy.reviewIssue == "Receptor and ligand must differ"
+                energy.ligand = values["ligand"] ?? ""
+                energy.sdf = values["sdf"] ?? ""
+                inputChecks["unreviewed_enabled"] = energy.reviewIssue == nil && energy.analyzeIssue == nil
+                energy.expanded = true
+                energy.running = true
+                inputChecks["running_blocked"] = energy.analyzeIssue == "Analysis is running" && energy.reviewIssue == "Analysis is running"
+                energy.running = false
+                energy.ligandFormat = "SMILES"
+                inputChecks["missing_smiles_blocked"] = energy.reviewIssue == "Ligand SMILES required"
+                inputChecks["switch_invalidates_review"] = !energy.reviewed && !energy.confirmed
+                energy.sdf = ""
+                energy.smiles = "not_a_smiles"
+                energy.analyze()
+                let reviewDeadline = Date().addingTimeInterval(50)
+                while energy.reviewing && Date() < reviewDeadline { try? await Task.sleep(nanoseconds: 100_000_000) }
+                inputChecks["error_retains_inputs"] = !energy.reviewed && !energy.running && energy.smiles == "not_a_smiles" && energy.receptor == values["receptor"] && energy.ligand == values["ligand"]
+                inputChecks["error_has_cause"] = energy.message.contains("Invalid ligand SMILES")
+                energy.smiles = values["smiles"] ?? "CC(=O)Nc1ccccc1"
+                inputChecks["retry_enabled"] = energy.analyzeIssue == nil
+                energy.analyze()
+                let analysisDeadline = Date().addingTimeInterval(50)
+                while energy.reviewing && Date() < analysisDeadline { try? await Task.sleep(nanoseconds: 100_000_000) }
+                inputChecks["one_click_without_sdf"] = energy.reviewed && energy.confirmed && energy.sdf.isEmpty && energy.running
+                inputChecks["recorded_default_ph"] = energy.ph == 7
+                if let status = ProcessInfo.processInfo.environment["RAYMOL_ENERGY_ACCEPTANCE_STATUS"],
+                   let report = try? JSONSerialization.data(withJSONObject: inputChecks) {
+                    try? report.write(to: URL(fileURLWithPath: status).deletingLastPathComponent().appendingPathComponent("input-checks.json"), options: .atomic)
+                }
+                energy.recordAcceptanceStatus()
+            }
+        }
+        if let output = ProcessInfo.processInfo.environment["RAYMOL_MARKER_RESULT"] {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                let deadline = Date().addingTimeInterval(130)
+                var captured = false
+                while Date() < deadline && !FileManager.default.fileExists(atPath: output) {
+                    self?.runPython("import pymol; pymol.NativeMarkerAcceptance.tick()")
+                    if !captured, let image = ProcessInfo.processInfo.environment["RAYMOL_MARKER_IMAGE"],
+                       FileManager.default.fileExists(atPath: image + ".request") {
+                        self?.capturePNG(image)
+                        captured = true
+                    }
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+            }
+        }
+        if let output = ProcessInfo.processInfo.environment["RAYMOL_ENERGY_PILOT_RESULT"],
+           let sandbox = ProcessInfo.processInfo.environment["RAYMOL_ENERGY_PILOT_SANDBOX"] {
+            Task { @MainActor in await EnergyControllerPilot.run(output: output, sandbox: sandbox) }
+        }
+        #endif
 
         // Blank-on-launch guard: the on-demand draw gate can leave the very first
         // frame — where deferred rep geometry (cartoon/surface) is still being
@@ -1278,6 +1395,7 @@ final class PyMOLEngine: ObservableObject {
     func capturePNG(_ path: String) {
         guard let inst = instance else { return }
         PyMOLBridge_CapturePNG(inst, path)
+        requestViewportRedraw()
     }
 
     // Render the full Metal pipeline offscreen at an arbitrary resolution and
@@ -3388,6 +3506,9 @@ final class PyMOLEngine: ObservableObject {
 
     // Tap-to-select via metal_pick (NDC in [-1,1], aspect = width/height).
     func pick(ndcX: Float, ndcY: Float, aspect: Float) {
+        #if os(macOS)
+        if MainActor.assumeIsolated({ energyViewport.select(ndcX, ndcY) }) { return }
+        #endif
         guard let inst = instance else { return }
         PyMOLBridge_Pick(inst, ndcX, ndcY, aspect)
     }
@@ -3420,7 +3541,12 @@ final class PyMOLEngine: ObservableObject {
         // Either output is reason enough to pick: the highlight (#165) and the
         // top-right readout (#359) are separately toggleable but share this one
         // pick, so only BOTH being off makes hovering free.
-        guard isReady, hoverPreviewEnabled || hoverReadoutEnabled else { return }
+        #if os(macOS)
+        let energyActive = MainActor.assumeIsolated { energyViewport.hasAnalysis }
+        #else
+        let energyActive = false
+        #endif
+        guard isReady, hoverPreviewEnabled || hoverReadoutEnabled || energyActive else { return }
         if let last = lastHoverNDC {
             let dx = ndcX - last.0, dy = ndcY - last.1
             if abs(dx) < kHoverMinNDC && abs(dy) < kHoverMinNDC { return }
@@ -3430,6 +3556,9 @@ final class PyMOLEngine: ObservableObject {
         let fire: () -> Void = { [weak self] in
             guard let self = self else { return }
             self.lastHoverFire = Date()
+            #if os(macOS)
+            if MainActor.assumeIsolated({ self.energyViewport.hover(ndcX, ndcY) }) { return }
+            #endif
             let wantsPreview = self.hoverPreviewEnabled
             let wantsInfo = self.hoverReadoutEnabled
             self.runPython(
@@ -3449,10 +3578,8 @@ final class PyMOLEngine: ObservableObject {
         }
     }
 
-    /// Cancel any pending hover pick and empty the preview selection. Cheap and
-    /// idempotent — safe to call from mouse-down / drag-start / mouse-exit and
-    /// when the user toggles the feature off.
-    func clearHoverPreview() {
+    /// Cancel pending hover work without invalidating the frame needed by a click.
+    func cancelHoverPreview() {
         hoverWork?.cancel()
         hoverWork = nil
         lastHoverNDC = nil
@@ -3467,6 +3594,10 @@ final class PyMOLEngine: ObservableObject {
         lastDesignHoverNDC = nil
         if designMode { MainActor.assumeIsolated { designController.clearHover() } }
         #endif
+    }
+
+    func clearHoverPreview() {
+        cancelHoverPreview()
         guard isReady else { return }
         // enable=0: never enable '_preselect' — enabling a selection is exclusive
         // and would disable the committed 'sele', hiding its markers. (The
@@ -4041,10 +4172,22 @@ final class PyMOLEngine: ObservableObject {
     /// particular defaults to -1 (AUTO) and not 0 — 0 means the user turned
     /// peeling off, which is a different claim.
     static func parseObjMeta(_ m: [String: Any]) -> ObjStateMeta {
-        ObjStateMeta(
+        var properties: [String: String] = [:]
+        for (key, value) in m["properties"] as? [String: Any] ?? [:] {
+            if let text = value as? String {
+                properties[key] = text
+            } else if let number = value as? NSNumber, number.doubleValue.isFinite {
+                properties[key] = String(cString: number.objCType) == "c"
+                    ? (number.boolValue ? "true" : "false") : number.stringValue
+            }
+        }
+        return ObjStateMeta(
             state: (m["state"] as? NSNumber)?.intValue ?? 1,
             overlayAll: ((m["all"] as? NSNumber)?.intValue ?? 0) != 0,
             titles: (m["titles"] as? [Any])?.map { $0 as? String ?? "" } ?? [],
+            propertyState: (m["property_state"] as? NSNumber)?.intValue ?? 0,
+            properties: properties,
+            propertyError: m["property_error"] as? String,
             peel: (m["peel"] as? NSNumber)?.intValue ?? -1,
             peelResolved: ((m["peel_resolved"] as? NSNumber)?.intValue ?? 0) != 0,
             // This one breaks the "default to the setting's own" rule above, on

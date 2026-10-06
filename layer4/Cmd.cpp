@@ -57,6 +57,7 @@ Z* -------------------------------------------------------------------
 #include"Rep.h"
 #include"Material.h"
 #include"Executive.h"
+#include"SpecRec.h"
 #include"ExecutivePython.h"
 #include"Selector.h"
 #include"main.h"
@@ -83,6 +84,7 @@ Z* -------------------------------------------------------------------
 
 #include "MoleculeExporter.h"
 #include "MetalPick.h"
+#include "Renderer.h"
 
 #include "LightRigPy.h"
 #include "SceneLights.h"
@@ -2340,6 +2342,32 @@ static PyObject *CmdMetalPick(PyObject * self, PyObject * args)
   return result;
 }
 
+static PyObject *CmdMetalMarkerPick(PyObject* self, PyObject* args)
+{
+  PyMOLGlobals* G = nullptr;
+  int x, y;
+  unsigned long long generation;
+  API_SETUP_ARGS(G, self, args, "OiiK", &self, &x, &y, &generation);
+  if (!PIsGlutThread()) {
+    PyErr_SetString(PyExc_RuntimeError, "metal_marker_pick requires the render thread");
+    return nullptr;
+  }
+  API_ASSERT(APIEnterBlockedNotModal(G));
+  pymol::Renderer::MarkerPick hit;
+  if (G->Renderer) {
+    if (G->Renderer->enableMarkerPicking())
+      SceneInvalidate(G);
+    hit = G->Renderer->markerPick(x, y, generation);
+  }
+  auto* result = Py_BuildValue("{s:s,s:K,s:i,s:i,s:s,s:i,s:I,s:K,s:i}",
+      "status", hit.status.c_str(), "generation", (unsigned long long)hit.generation,
+      "width", hit.width, "height", hit.height, "object", hit.object.c_str(),
+      "state", hit.state, "index", hit.index,
+      "frame_generation", (unsigned long long)hit.frameGeneration, "samples", hit.samples);
+  APIExitBlocked(G);
+  return result;
+}
+
 static PyObject *CmdGetType(PyObject * self, PyObject * args)
 {
   PyMOLGlobals *G = nullptr;
@@ -4413,6 +4441,129 @@ static PyObject *CmdIndex(PyObject * self, PyObject * args)
     PyList_SetItem(result, a, tuple);
   }
   return result;
+}
+
+static PyObject* CmdEnergyObjectRecords(PyObject* self, PyObject* args)
+{
+  PyMOLGlobals* G = nullptr;
+  API_SETUP_ARGS(G, self, args, "O", &self);
+  if (!PIsGlutThread()) {
+    PyErr_SetString(PyExc_ValueError, "energy_object_records requires render-thread ownership");
+    return nullptr;
+  }
+  API_ASSERT(APIEnterBlockedNotModal(G));
+  static std::uint64_t next_incarnation = 1;
+  auto* result = PyList_New(0);
+  auto names = ExecutiveGetNames(G, 1, 0, "");
+  if (!names) {
+    APIExitBlocked(G);
+    return APIResult(G, names);
+  }
+  for (const auto* name : *names) {
+    auto* rec = ExecutiveFindSpec(G, name);
+    if (!rec->obj)
+      continue;
+    if (!rec->object_incarnation)
+      rec->object_incarnation = next_incarnation++;
+    auto* record = Py_BuildValue("(sKiss)", rec->obj->Name,
+        static_cast<unsigned long long>(rec->object_incarnation),
+        rec->visible, rec->group_name, rec->obj->type == cObjectMolecule ? "molecule" : "other");
+    PyList_Append(result, record);
+    Py_DECREF(record);
+  }
+  APIExitBlocked(G);
+  return result;
+}
+
+static PyObject* CmdEnergyAtomRecords(PyObject* self, PyObject* args)
+{
+  PyMOLGlobals* G = nullptr;
+  const char* name;
+  int state;
+  API_SETUP_ARGS(G, self, args, "Osi", &self, &name, &state);
+  if (!PIsGlutThread() || state < 0) {
+    PyErr_SetString(PyExc_ValueError,
+        "energy_atom_records requires render-thread ownership and an explicit state");
+    return nullptr;
+  }
+  API_ASSERT(APIEnterBlockedNotModal(G));
+  auto* obj = ExecutiveFindObjectMoleculeByName(G, name);
+  if (!obj || state >= obj->NCSet || !obj->CSet[state]) {
+    APIExitBlocked(G);
+    PyErr_SetString(PyExc_ValueError, "energy_atom_records: missing molecule/state");
+    return nullptr;
+  }
+  auto* result = PyList_New(0);
+  for (int index = 0; index < obj->NAtom; ++index) {
+    float xyz[3];
+    if (!ObjectMoleculeGetAtomTxfVertex(obj, state, index, xyz))
+      continue;
+    // Core IDs survive rename and cannot be reused by delete/recreate. This
+    // allocates bookkeeping only; coordinates and molecular settings are untouched.
+    int uid = AtomInfoCheckUniqueID(G, obj->AtomInfo + index);
+    auto* record = Py_BuildValue("(ii(fff))", index + 1, uid, xyz[0], xyz[1], xyz[2]);
+    PyList_Append(result, record);
+    Py_DECREF(record);
+  }
+  APIExitBlocked(G);
+  return result;
+}
+
+static PyObject* CmdHBondRecords(PyObject* self, PyObject* args)
+{
+  PyMOLGlobals* G = nullptr;
+  const char *selection1, *selection2;
+  int state1, state2;
+  float cutoff;
+  API_SETUP_ARGS(G, self, args, "Ossiif", &self, &selection1, &selection2,
+      &state1, &state2, &cutoff);
+  if (!PIsGlutThread() || state1 < 0 || state2 < 0 || !std::isfinite(cutoff) || cutoff <= 0) {
+    PyErr_SetString(PyExc_ValueError,
+        "hbond_records requires render-thread ownership, explicit zero-based states and a finite positive cutoff");
+    return nullptr;
+  }
+  API_ASSERT(APIEnterBlockedNotModal(G));
+  auto result = [&]() -> pymol::Result<PyObject*> {
+    auto s1 = SelectorTmp::make(G, selection1);
+    p_return_if_error(s1);
+    auto s2 = SelectorTmp::make(G, selection2);
+    p_return_if_error(s2);
+    for (auto item : {std::make_pair(s1->getName(), state1), std::make_pair(s2->getName(), state2)}) {
+      auto objects = ExecutiveGetObjectMoleculeVLA(G, item.first);
+      for (auto* object : objects) {
+        if (item.second >= object->NCSet || !object->CSet[item.second])
+          return pymol::make_error("hbond_records: selected object has no requested coordinate state");
+      }
+    }
+    std::vector<SelectorHBondRecord> records;
+    float ignored;
+    std::unique_ptr<DistSet> distances(SelectorGetDistSet(G, nullptr,
+        s1->getIndex(), state1, s2->getIndex(), state2, 2, cutoff, &ignored, &records));
+    for (const auto& record : records)
+      if (!record.hydrogen.uniqueID)
+        return pymol::make_error("hbond_records: accepted bond has no explicit hydrogen; use a prepared analysis copy");
+    auto* list = PyList_New(records.size());
+    if (!list) return list;
+    for (size_t i = 0; i < records.size(); ++i) {
+      const auto& r = records[i];
+      auto* row = Py_BuildValue("{s:(siii),s:(siii),s:(siii)}",
+          "donor", r.donor.object.c_str(), r.donor.index, r.donor.state, r.donor.uniqueID,
+          "hydrogen", r.hydrogen.object.c_str(), r.hydrogen.index, r.hydrogen.state, r.hydrogen.uniqueID,
+          "acceptor", r.acceptor.object.c_str(), r.acceptor.index, r.acceptor.state, r.acceptor.uniqueID);
+      if (!row) { Py_DECREF(list); return row; }
+      PyList_SET_ITEM(list, i, row);
+    }
+    HBondCriteria criteria;
+    ObjectMoleculeInitHBondCriteria(G, &criteria);
+    return Py_BuildValue("{s:N,s:f,s:i,s:{s:f,s:f,s:f,s:f,s:f,s:f}}",
+        "records", list, "cutoff", cutoff,
+        "exclusion", SettingGetGlobal_i(G, cSetting_h_bond_exclusion),
+        "criteria", "max_angle", criteria.maxAngle, "cutoff_edge", criteria.maxDistAtMaxAngle,
+        "cutoff_center", criteria.maxDistAtZero, "power_a", criteria.power_a,
+        "power_b", criteria.power_b, "cone_cosine", criteria.cone_dangle);
+  }();
+  APIExitBlocked(G);
+  return APIResult(G, result);
 }
 
 static PyObject *CmdFindPairs(PyObject * self, PyObject * args)
@@ -7221,6 +7372,9 @@ static PyMethodDef Cmd_methods[] = {
   {"torsion", CmdTorsion, METH_VARARGS},
   {"feedback", CmdFeedback, METH_VARARGS},
   {"find_pairs", CmdFindPairs, METH_VARARGS},
+  {"hbond_records", CmdHBondRecords, METH_VARARGS},
+  {"energy_atom_records", CmdEnergyAtomRecords, METH_VARARGS},
+  {"energy_object_records", CmdEnergyObjectRecords, METH_VARARGS},
   {"find_molfile_plugin", CmdFindMolfilePlugin, METH_VARARGS},
   {"finish_object", CmdFinishObject, METH_VARARGS},
   {"fit", CmdFit, METH_VARARGS},
@@ -7366,6 +7520,7 @@ static PyMethodDef Cmd_methods[] = {
   {"memory_available", CmdMemoryAvailable, METH_VARARGS},
   {"memory_usage", CmdMemoryUsage, METH_VARARGS},
   {"metal_pick", CmdMetalPick, METH_VARARGS},
+  {"metal_marker_pick", CmdMetalMarkerPick, METH_VARARGS},
   {"mmodify", CmdMModify, METH_VARARGS},
   {"move", CmdMove, METH_VARARGS},
   {"mset", CmdMSet, METH_VARARGS},

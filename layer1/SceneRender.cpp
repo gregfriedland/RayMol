@@ -2238,6 +2238,8 @@ void SceneRenderMetal(PyMOLGlobals* G)
   // plays out across frames from here.
   SceneUpdateAnimation(G);
 
+  G->Renderer->beginMarkerScene();
+
   // --- Matrix setup ---
   auto aspRat = SceneGetAspectRatio(G);
 

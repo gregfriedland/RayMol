@@ -2242,6 +2242,8 @@ void SceneDirty(PyMOLGlobals * G)
    needs to be updated */
 {
   CScene *I = G->Scene;
+  if (G->Renderer)
+    G->Renderer->invalidateMarkerPicking();
 
   PRINTFD(G, FB_Scene)
     " %s: called.\n", __func__ ENDFD;

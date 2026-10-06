@@ -852,8 +852,7 @@ PyObject* PropertyAsPyList(PyMOLGlobals* G, int unique_id, int include_type)
             pyvalue = PyInt_FromLong(std::get<int>(src_entry->value));
             break;
           case PropertyType::Boolean:
-            pyvalue = std::holds_alternative<int>(src_entry->value) ? Py_True
-                                                                    : Py_False;
+            pyvalue = std::get<int>(src_entry->value) ? Py_True : Py_False;
             Py_INCREF(pyvalue);
             break;
           case PropertyType::Float:

@@ -1,0 +1,32 @@
+{
+  "id": "raymol-ff14sb-sage23-nagl100-obc2-ace",
+  "version": "1.0.0",
+  "decision_date": "2026-10-04",
+  "decision": "Retain Cl/Br/I using explicitly named upstream mbondi2/OBC2 conventions; no empirical-accuracy claim.",
+  "model": {"protein": "ff14SB", "ligand": "openff_unconstrained-2.3.0", "charges": "openff-gnn-am1bcc-1.0.0", "solvent": "OBC2+ACE", "solute_dielectric": 1.0, "solvent_dielectric": 78.5, "kappa_per_nm": 0.0, "offset_nm": 0.009, "ace_coefficient_kj_mol_nm2": 28.3919551, "ace_probe_nm": 0.14},
+  "assets": {
+    "openforcefields/offxml/openff_unconstrained-2.3.0.offxml": "65b926cf38ae4bc2f6f9cac907c3cadba154cc84988dd10ab2c3895aaf2dd995",
+    "openff/nagl_models/models/am1bcc/openff-gnn-am1bcc-1.0.0.pt": "7981e7f5b0b1e424c9e10a40d9e7606d96dcd3dd2b095cb4eeff6829f92238ee",
+    "openmm/app/data/amber14/protein.ff14SB.xml": "d9f9779c09d67cd5f8bc657692f174ffab14c469dfd06d560ac1899fa7e976b8",
+    "openmm/app/data/implicit/obc2.xml": "d8449fe91218c3e158c12f283367666976b2626d07b52cc1dfd241e5c21c6c6d"
+  },
+  "sources": [
+    {"package": "openmm", "version": "8.6.1", "path": "openmm/app/internal/customgbforces.py", "sha256": "f96a49a9e9ef0528e937481b1c1331b43ad03e6ec3018b478c642b301f07391a", "symbols": ["_mbondi2_radii", "_SCREEN_PARAMETERS", "_screen_parameter", "GBSAOBC2Force", "CustomAmberGBForceBase.addParticle"]},
+    {"package": "parmed", "version": "4.3.1", "path": "parmed/tools/changeradii.py", "sha256": "9b698f84ac764fc9d49061d77e6f50357b308093ab125a789bfcdc653bfb58d0", "symbols": ["mbondi2", "_screen1"]}
+  ],
+  "elements": {
+    "H": {"radius_angstrom": 1.2, "bonded_to_N_radius_angstrom": 1.3, "screen": 0.85, "provenance": "explicit upstream connectivity rule; require exactly one bonded parent"},
+    "C": {"radius_angstrom": 1.7, "screen": 0.72, "provenance": "explicit upstream rules"},
+    "N": {"radius_angstrom": 1.55, "screen": 0.79, "provenance": "explicit upstream rules"},
+    "O": {"radius_angstrom": 1.5, "screen": 0.85, "provenance": "explicit upstream rules"},
+    "F": {"radius_angstrom": 1.5, "screen": 0.88, "provenance": "explicit upstream rules"},
+    "P": {"radius_angstrom": 1.85, "screen": 0.86, "provenance": "explicit upstream rules"},
+    "S": {"radius_angstrom": 1.8, "screen": 0.96, "provenance": "explicit upstream rules"},
+    "Cl": {"radius_angstrom": 1.7, "screen": 0.8, "provenance": "explicit upstream radius; upstream generic screen made explicit for Cl"},
+    "Br": {"radius_angstrom": 1.5, "screen": 0.8, "provenance": "upstream generic radius and screen made explicit for Br"},
+    "I": {"radius_angstrom": 1.5, "screen": 0.8, "provenance": "upstream generic radius and screen made explicit for I"}
+  },
+  "unknown_elements": "reject; no default radius or screening",
+  "limitations": ["Implementation-consistency validation only, not hydration or binding free-energy accuracy.", "Generic halogen conventions are not halogen-specific fitted solvation parameters.", "Fixed point charges do not explicitly represent anisotropic halogen sigma holes or polarization.", "Element coverage does not guarantee NAGL/Sage coverage for every bonding, valence, charge or chemical environment.", "Do not substitute PB3 radii or another solvent model under this profile ID."],
+  "validation": {"component_absolute_kcal_mol": 0.0001, "component_relative": 0.000001, "solvent_absolute_kcal_mol": 0.001, "solvent_relative": 0.0000001, "solvent_difference_absolute_kcal_mol": 0.001}
+}

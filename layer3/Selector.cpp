@@ -10114,7 +10114,8 @@ CSelector::CSelector(PyMOLGlobals* G, CSelectorManager* mgr)
 
 DistSet *SelectorGetDistSet(PyMOLGlobals * G, DistSet * ds,
                             int sele1, int state1, int sele2, int state2,
-                            int mode, float cutoff, float *result)
+                            int mode, float cutoff, float *result,
+                            std::vector<SelectorHBondRecord>* hbondRecords)
 {
   CSelector *I = G->Selector;
   std::vector<int> vla;
@@ -10323,6 +10324,7 @@ DistSet *SelectorGetDistSet(PyMOLGlobals * G, DistSet * ds,
             if(dist < cutoff) {
               float h_crd[3];
               h_ai = nullptr;
+              bool donor_is_first = true;
 
               a_keeper = true;
               if(exclusion && (obj1 == obj2)) {
@@ -10360,6 +10362,7 @@ DistSet *SelectorGetDistSet(PyMOLGlobals * G, DistSet * ds,
                       &h_ai, h_crd, obj2, at2, state2, obj1, at1, state1, hbc);
 
                   if (a_keeper) {
+                    donor_is_first = false;
                     if (h_ai && from_proton) {
                       don_vv = h_crd;
                       ai2 = h_ai;
@@ -10375,6 +10378,26 @@ DistSet *SelectorGetDistSet(PyMOLGlobals * G, DistSet * ds,
                 a_keeper = false;
 
               if(a_keeper) {
+
+                if (hbondRecords && mode == 2) {
+                  // Original atoms remain authoritative even when display endpoints use H.
+                  auto* donor = donor_is_first ? obj1 : obj2;
+                  auto* acceptor = donor_is_first ? obj2 : obj1;
+                  int di = donor_is_first ? at1 : at2;
+                  int ai = donor_is_first ? at2 : at1;
+                  int ds = donor_is_first ? state1 : state2;
+                  int as = donor_is_first ? state2 : state1;
+                  SelectorHBondRecord record;
+                  record.donor = {donor->Name, di + 1, ds,
+                      AtomInfoCheckUniqueID(G, donor->AtomInfo + di)};
+                  record.acceptor = {acceptor->Name, ai + 1, as,
+                      AtomInfoCheckUniqueID(G, acceptor->AtomInfo + ai)};
+                  if (h_ai)
+                    record.hydrogen = {donor->Name,
+                        static_cast<int>(h_ai - donor->AtomInfo.data()) + 1, ds,
+                        AtomInfoCheckUniqueID(G, h_ai)};
+                  hbondRecords->push_back(std::move(record));
+                }
 
 		/* Insert DistInfo records for updating distances */
 		/* Init/Add the elem to the DistInfo list */
@@ -11100,4 +11123,3 @@ bool SelectorSelectionExists(PyMOLGlobals* G, pymol::zstring_view sname)
         return WordMatchExact(G, rec.name.c_str(), sname.c_str(), ignore_case);
       });
 }
-

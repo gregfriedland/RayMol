@@ -1106,6 +1106,13 @@ struct ContentView: View {
             // Design mode runs its own hover path — so it can never collide with
             // the mode bars that occupy the top edge above.
             .overlay(alignment: .topTrailing) { hoverReadoutOverlay }
+            .overlay(alignment: .topLeading) {
+                GeometryReader { geometry in
+                    EnergyCompactPanel(controller: engine.energyViewport, engine: engine,
+                                       availableHeight: geometry.size.height-90, availableWidth: geometry.size.width)
+                        .padding(.leading, 12).padding(.top, 64)
+                }.allowsHitTesting(true)
+            }
             // Mouse-mode legend as a compact floating card at the bottom-trailing
             // corner, so it's reachable even when the right column is collapsed
             // (where MousePanel used to live). Minimizable to free up the view.
@@ -1230,7 +1237,7 @@ struct ContentView: View {
         engine.loadStructure(path: url.path, name: name)
         // Track an opened .pse as the current document so ⌘S overwrites it; a
         // non-.pse structure clears the tracked document.
-        engine.currentSessionURL = (url.pathExtension.lowercased() == "pse") ? url : nil
+        engine.currentSessionURL = PyMOLEngine.isSessionFile(url.path) ? url : nil
     }
 
     private func macFetch() {

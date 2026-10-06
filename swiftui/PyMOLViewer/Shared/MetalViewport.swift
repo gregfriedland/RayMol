@@ -764,9 +764,8 @@ extension MetalViewport {
             // PyMOL's mouse handling for an actual drag (rotate), so the
             // button-down is deferred to the first drag event (below). A pure
             // click selects via metal_pick in mouseUp instead.
-            // A committing click starts: drop any hover preview so it can't
-            // linger under (or fight) the committed selection.
-            engine?.clearHoverPreview()
+            // Stop hover work, but keep the marker frame until mouse-up has picked it.
+            engine?.cancelHoverPreview()
             lastHoverLoc = .zero
             mouseDownLoc = view.convert(event.locationInWindow, from: nil)
             didDrag = false
@@ -863,6 +862,7 @@ extension MetalViewport {
         }
 
         func handleMouseUp(_ event: NSEvent, in view: MTKView) {
+            defer { engine?.clearHoverPreview() }
             // Clear the drag flag on exit so passive hover (which is gated on
             // !didDrag) resumes immediately after a drag, not only after the next
             // mouse-down.

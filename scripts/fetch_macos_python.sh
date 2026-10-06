@@ -20,5 +20,7 @@ rm -f py.tar.gz
 
 test -f python/lib/libpython3.13.dylib || { echo "ERROR: libpython3.13.dylib missing"; exit 1; }
 test -d python/lib/python3.13          || { echo "ERROR: stdlib dir missing"; exit 1; }
+"$DEST/python/bin/python3.13" -m pip install --no-deps --only-binary=:all: \
+    --require-hashes -r "$REPO/scripts/requirements-macos-viewer.txt"
 echo "OK: $DEST/python"
 lipo -archs python/lib/libpython3.13.dylib

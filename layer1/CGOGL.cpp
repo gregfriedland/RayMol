@@ -281,6 +281,8 @@ static void drawSphereImpostorsViaMetal(
   call.dataSize = vbo->cpuDataSize();
   call.stride = vbo->cpuStride();
   call.sphereCount = sp->num_spheres;
+  if (I->markerPickable)
+    call.markerPickPairs = reinterpret_cast<const int*>(sp->floatdata);
   for (const auto& d : vbo->getDesc().descs) {
     int off = static_cast<int>(d.offset);
     if (d.attr_name == "a_vertex_radius")
@@ -332,7 +334,8 @@ static bool vboLooksLikeCylinders(VertexBufferGL* vbo)
 // emits its VBO via a generic CGO_DRAW_CUSTOM op, so this is called from
 // CGO_gl_draw_custom once the VBO is recognized as cylinders.
 static void drawCylinderImpostorsViaMetal(CCGORenderer* I, VertexBufferGL* vbo,
-    IndexBufferGL* ibo, int indexCount)
+    IndexBufferGL* ibo, int indexCount, const int* pickPairs = nullptr,
+    int pickPairStride = 0)
 {
   auto* G = I->G;
   if (!vbo || !vbo->hasCPUData() || !ibo || !ibo->hasCPUData())
@@ -348,6 +351,9 @@ static void drawCylinderImpostorsViaMetal(CCGORenderer* I, VertexBufferGL* vbo,
       ? indexCount
       : static_cast<int>(ibo->cpuDataSize() / sizeof(VertexIndex_t));
   call.cylinderCount = call.indexCount / 36; // 36 indices per cylinder box
+  if (I->markerPickable)
+    call.markerPickPairs = pickPairs;
+  call.markerPickPairStride = pickPairStride;
   for (const auto& d : vbo->getDesc().descs) {
     int off = static_cast<int>(d.offset);
     if (d.attr_name == "attr_vertex1")
@@ -404,7 +410,7 @@ static void drawSphereImpostorsViaMetal(
     CCGORenderer* I, const cgo::draw::sphere_buffers* sp);
 static bool vboLooksLikeCylinders(VertexBufferGL* vbo);
 static void drawCylinderImpostorsViaMetal(CCGORenderer* I, VertexBufferGL* vbo,
-    IndexBufferGL* ibo, int indexCount);
+    IndexBufferGL* ibo, int indexCount, const int* pickPairs, int pickPairStride);
 
 constexpr unsigned VERTEX_PICKCOLOR_RGBA_SIZE = 1;  // 4 unsigned bytes
 constexpr unsigned VERTEX_PICKCOLOR_INDEX_SIZE = 2; // index + bond
@@ -1084,7 +1090,9 @@ static void CGO_gl_draw_custom(CCGORenderer* I, CGO_op_data pc)
       auto* ibo = sp->iboid
           ? I->G->ShaderMgr->getGPUBuffer<IndexBufferGL>(sp->iboid)
           : nullptr;
-      drawCylinderImpostorsViaMetal(I, vbo, ibo, sp->nindices);
+      drawCylinderImpostorsViaMetal(I, vbo, ibo, sp->nindices,
+          sp->vertsperpickinfo == 8 ? reinterpret_cast<const int*>(sp->floatdata) : nullptr,
+          sp->npickbufs * 2);
       return;
     }
     if (sp->iboid) {
@@ -2906,6 +2914,8 @@ void CGORenderGL(CGO* I, const float* color, CSetting* set1, CSetting* set2,
     R->rep = rep;
     R->color = color;
     R->alpha = 1.0F - SettingGet_f(G, set1, set2, cSetting_cgo_transparency);
+    R->markerPickable = !I->no_pick && R->alpha == 1.0f &&
+        SettingGet_b(G, set1, set2, cSetting_pickable);
     R->set1 = set1;
     R->set2 = set2;
     // normals should be initialized to the view vector

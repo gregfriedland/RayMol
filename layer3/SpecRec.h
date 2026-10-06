@@ -2,6 +2,7 @@
 
 #include"PyMOLObject.h"
 #include"CGO.h"
+#include <cstdint>
 
 /**
  * Specification record (a row in the object menu panel)
@@ -12,6 +13,8 @@ public:
   int type;
   WordType name;                /*only used for selections */
   pymol::CObject* obj;
+  // Runtime-only identity, reset when the managed object is replaced.
+  std::uint64_t object_incarnation;
   SpecRec *next;
   int visible;            /* This is actually when object is "Enabled", not visible */
 
@@ -35,4 +38,3 @@ public:
   bool isHiddenNotRecursive(bool hide_underscore_names) const;
   bool isChildOf(SpecRec const*) const;
 };
-

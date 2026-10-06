@@ -54,3 +54,9 @@ RayMol-1.3.1-portable-test.zip
 
 # Subagent-driven-development scratch (briefs, reports, diffs, ledger)
 /.superpowers/
+
+# Local energy development: environments, builds, logs and private structures.
+/run_261003_energy_feasibility/
+/run_261005_state_metadata/
+/run_261005_open_recent/
+/run_261005_fork_push/

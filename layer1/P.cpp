@@ -355,6 +355,7 @@ static
 PyObject * PImportModuleOrFatal(const char * name) {
   PyObject * mod = PyImport_ImportModule(name);
   if(!mod) {
+    PyErr_Print();
     fprintf(stderr, "PyMOL-Error: can't find '%s'\n", name);
     exit(EXIT_FAILURE);
   }

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EAE001000000000000000001 /* EnergyAnalysisController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAE001000000000000000002 /* EnergyAnalysisController.swift */; };
+		EAE002000000000000000001 /* EnergyCompactPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAE002000000000000000002 /* EnergyCompactPanel.swift */; };
 		020822B7AD61092433C2F78E /* whatsnew-170-move.png in Resources */ = {isa = PBXBuildFile; fileRef = 4C570F9CAC877E201F237016 /* whatsnew-170-move.png */; };
 		0289EAA2F61546F2DD2430BA /* LightRigBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED82B93C6739F52D7124AE90 /* LightRigBridge.swift */; };
 		042F08F899EE19B73EFEC143 /* CommandPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B50D264C420888CBF7FDE633 /* CommandPanel.swift */; };
@@ -299,6 +301,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		EAE001000000000000000002 /* EnergyAnalysisController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyAnalysisController.swift; sourceTree = "<group>"; };
+		EAE002000000000000000002 /* EnergyCompactPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyCompactPanel.swift; sourceTree = "<group>"; };
 		00A00E2879DD065A94A31D21 /* whatsnew-1120-looks.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "whatsnew-1120-looks.jpg"; sourceTree = "<group>"; };
 		02F1DF5E9689EFF422BE279A /* RayMolIOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RayMolIOS.entitlements; sourceTree = "<group>"; };
 		0524B98BE939981AFC5DBFDA /* ColorMenuTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorMenuTests.swift; sourceTree = "<group>"; };
@@ -648,6 +652,8 @@
 				4EE8A26A41F551AB296B2F8E /* ProtenixSizeGuard.swift */,
 				D965CB609C447033E5DB0046 /* PyMOLApp.swift */,
 				33D6A753E4525628B96C259C /* PyMOLEngine.swift */,
+				EAE001000000000000000002 /* EnergyAnalysisController.swift */,
+				EAE002000000000000000002 /* EnergyCompactPanel.swift */,
 				9371B6FFB30D6166234C678B /* RayMolMain.swift */,
 				F607D204A410CA38B84223BE /* RayMolUpdater.swift */,
 				8746A760E75B98C92A547404 /* RFD3JobManager.swift */,
@@ -1622,6 +1628,8 @@
 				5C923361D76329D2A466FFA9 /* PyMOLApp.swift in Sources */,
 				5D4BC69196C1256F5164E56A /* PyMOLBridge.mm in Sources */,
 				8852A9FA93BDAAB188D4103C /* PyMOLEngine.swift in Sources */,
+				EAE001000000000000000001 /* EnergyAnalysisController.swift in Sources */,
+				EAE002000000000000000001 /* EnergyCompactPanel.swift in Sources */,
 				356D80E89042BF1D497A5AEF /* RFD3JobManager.swift in Sources */,
 				2D81E4A3FB5DCDD98FC189FB /* RFD3ResultWriter.swift in Sources */,
 				D0BB5840BDEAA557F5B8F387 /* RFD3Runtime.swift in Sources */,

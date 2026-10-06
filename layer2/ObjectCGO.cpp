@@ -27,6 +27,7 @@ Z* -------------------------------------------------------------------
 #include "Feedback.h"
 #include "MemoryDebug.h"
 #include "ObjectCGO.h"
+#include "Renderer.h"
 #include "PConv.h"
 #include "Scene.h"
 #include "Setting.h"
@@ -534,8 +535,12 @@ void ObjectCGO::render(RenderInfo* info)
         if (!ray)
           ObjectCGOGenerateCGO(
               G, I, sobj, use_shader, cgo_lighting, color, ramp, iter.state);
+        if (G->Renderer)
+          G->Renderer->setMarkerPickContext(sobj->hasTransparency ? nullptr : I->Name, iter.state);
         ObjectCGORenderState(
             G, pass, ray, I, info, sobj, color, ramp, use_shader, cgo_lighting);
+        if (G->Renderer)
+          G->Renderer->setMarkerPickContext(nullptr, -1);
       }
     }
   }

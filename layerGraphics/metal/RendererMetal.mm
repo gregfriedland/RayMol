@@ -380,6 +380,7 @@ void RendererMetal::rebuildDrawPipelines()
     [_sphereOitPipeline[f] release];      _sphereOitPipeline[f] = nil;
   }
   _sphereImpostorsBuilt = false;
+  [_sphereMarkerPipeline release]; _sphereMarkerPipeline = nil;
   releaseCylinderPipelines();
   // buildImpostorPipelines' guard is reset above, so it re-runs and
   // re-assigns these two over live +1 references.
@@ -449,6 +450,10 @@ void RendererMetal::setSampleCount(NSUInteger n)
 
 RendererMetal::~RendererMetal()
 {
+  [_sphereMarkerPipeline release];
+  [_markerDepthState release];
+  [_markerReadSingle release];
+  [_markerReadMulti release];
   // MRC (no ARC, no autorelease pool): every +1-owned Metal/CF object created
   // via alloc/init or a -new* method must be released here, or the entire GPU
   // resource set leaks each time the renderer is torn down (device/context loss,
@@ -960,6 +965,10 @@ bool RendererMetal::renderAOExemptMask()
 
 void RendererMetal::beginFrame()
 {
+  _markerFrameEpoch = 0; // Latched after deferred input, scene updates and animation.
+  _markerDraws.clear();
+  _markerRecords.clear();
+  _markerError.clear();
   // Ray tracing: (re)build the atom-sphere acceleration structure from the
   // PREVIOUS frame's accumulated geometry, BEFORE this frame's command buffer
   // exists — building (with its own cmd buffer + wait) must not happen while a
@@ -1033,6 +1042,8 @@ void RendererMetal::endFrame()
     _encoder = nil;
   }
 
+  encodeMarkerPicking();
+
   // The scene was rendered to _sceneColor/_sceneDepth; run the post-process
   // chain, whose final pass writes to the drawable.
   //
@@ -1089,6 +1100,225 @@ void RendererMetal::endFrame()
   _drawable = nil;
   _passDesc = nil;
   _screenPassDesc = nil;
+}
+
+RendererMetal::MarkerDraw::~MarkerDraw()
+{
+  [vertices release]; [indices release]; [tokens release]; [pipeline release];
+}
+
+RendererMetal::MarkerSnapshot::~MarkerSnapshot()
+{
+  [pixels release]; [command release];
+}
+
+bool RendererMetal::enableMarkerPicking()
+{
+  if (_markerEnabled) return false;
+  _markerEnabled = true;
+  return true;
+}
+
+void RendererMetal::invalidateMarkerPicking()
+{
+  if (!_markerInvalidationSuspended) ++_markerEpoch;
+}
+
+void RendererMetal::setMarkerPickContext(const char* name, int state)
+{
+  _markerObject = name ? name : "";
+  _markerState = state;
+}
+
+Renderer::MarkerPick RendererMetal::markerPick(int x, int y, uint64_t generation)
+{
+  MarkerPick hit;
+  hit.generation = _markerEpoch;
+  hit.status = "pending";
+  if (_markerPending && _markerPending->command.status == MTLCommandBufferStatusCompleted) {
+    _markerReady = _markerPending;
+    _markerPending.reset();
+  }
+  if (_markerPending && _markerPending->command.status == MTLCommandBufferStatusError) {
+    hit.status = "gpu_error";
+    return hit;
+  }
+  if (generation && generation != _markerEpoch) {
+    hit.status = "stale";
+    return hit;
+  }
+  if (_markerReady) hit.frameGeneration = _markerReady->generation;
+  if (!_markerReady || _markerReady->generation != _markerEpoch) return hit;
+  auto& snapshot = *_markerReady;
+  hit.width = snapshot.width;
+  hit.height = snapshot.height;
+  hit.samples = snapshot.samples;
+  if (!snapshot.error.empty()) {
+    hit.status = snapshot.error;
+    return hit;
+  }
+  hit.status = "miss";
+  if (x < 0 || y < 0 || x >= hit.width || y >= hit.height) return hit;
+  auto token = static_cast<const uint32_t*>(snapshot.pixels.contents)[y * hit.width + x];
+  if (!token) return hit;
+  if (token > snapshot.records.size()) {
+    hit.status = "invalid_token";
+    return hit;
+  }
+  auto record = snapshot.records[token - 1];
+  record.status = "hit";
+  record.width = hit.width; record.height = hit.height;
+  record.samples = hit.samples; record.frameGeneration = snapshot.generation;
+  return record;
+}
+
+void RendererMetal::recordMarkerDraw(id<MTLBuffer> vertices, id<MTLBuffer> indices,
+    NSUInteger count, id<MTLRenderPipelineState> pipeline, const void* uniforms,
+    size_t uniformSize, const int* pairs, int pairStride, int primitiveCount)
+{
+  if (!_markerEnabled || _markerObject.empty() || _shadowMode || _peelMode || _oitActive)
+    return;
+  if (!pairs) return; // Ordinary, untagged CGOs have no marker identity.
+  if ((pairStride != 2 && pairStride != 4) || primitiveCount <= 0) {
+    _markerError = "unsupported_marker_layout";
+    return;
+  }
+  std::vector<uint32_t> tokens(primitiveCount, 0);
+  bool any = false;
+  for (int i = 0; i < primitiveCount; ++i) {
+    const int* pair = pairs + i * pairStride;
+    if (pair[0] <= 0 || pair[1] != -3) continue; // Explicit CGO gadget IDs only.
+    if (pairStride == 4 && (pair[0] != pair[2] || pair[1] != pair[3])) {
+      _markerError = "split_marker_identity";
+      return;
+    }
+    if (_markerRecords.size() >= UINT32_MAX) {
+      _markerError = "marker_token_overflow";
+      return;
+    }
+    MarkerPick record;
+    record.object = _markerObject; record.state = _markerState;
+    record.index = static_cast<unsigned>(pair[0]); record.generation = _markerFrameEpoch;
+    _markerRecords.push_back(std::move(record));
+    tokens[i] = static_cast<uint32_t>(_markerRecords.size());
+    any = true;
+  }
+  if (!any) return;
+  if (!pipeline) { _markerError = "marker_pipeline_unavailable"; return; }
+  auto draw = std::make_shared<MarkerDraw>();
+  draw->vertices = [vertices retain]; draw->indices = [indices retain];
+  draw->pipeline = [pipeline retain]; draw->count = count;
+  draw->uniforms.assign(static_cast<const uint8_t*>(uniforms),
+      static_cast<const uint8_t*>(uniforms) + uniformSize);
+  draw->tokens = [_device newBufferWithBytes:tokens.data() length:tokens.size() * sizeof(uint32_t)
+                                   options:MTLResourceStorageModeShared];
+  if (!draw->tokens) { _markerError = "marker_allocation_failed"; return; }
+  draw->viewport = _viewport;
+  draw->scissor = _scissorEnabled ? _scissorRect : MTLScissorRect{
+      (NSUInteger)_viewport.originX, (NSUInteger)_viewport.originY,
+      (NSUInteger)_viewport.width, (NSUInteger)_viewport.height};
+  draw->cull = _cullFaceEnabled ? MTLCullModeBack : MTLCullModeNone;
+  _markerDraws.push_back(std::move(draw));
+}
+
+void RendererMetal::encodeMarkerPicking()
+{
+  if (!_markerEnabled || !_cmdBuffer || !_sceneDepth || _offscreen) return;
+  if (_markerPending && _markerPending->command.status == MTLCommandBufferStatusCompleted)
+    _markerReady = _markerPending;
+  auto snapshot = std::make_shared<MarkerSnapshot>();
+  snapshot->generation = _markerFrameEpoch;
+  snapshot->samples = static_cast<int>(_sampleCount);
+  snapshot->width = (int)_sceneDepth.width;
+  snapshot->height = (int)_sceneDepth.height;
+  snapshot->records = _markerRecords;
+  snapshot->error = _markerError;
+  snapshot->command = [_cmdBuffer retain];
+  _markerPending = snapshot;
+  if (!snapshot->error.empty()) return;
+  if (![_device supportsFamily:MTLGPUFamilyApple7] && ![_device supportsFamily:MTLGPUFamilyMac2]) {
+    snapshot->error = "unsupported_marker_gpu"; return;
+  }
+  if (!_markerReadSingle) {
+    NSString* source = @R"(
+#include <metal_stdlib>
+using namespace metal;
+kernel void marker_single(texture2d<uint, access::read> tex [[texture(0)]],
+    device uint* out [[buffer(0)]], uint2 p [[thread_position_in_grid]]) {
+  if (p.x < tex.get_width() && p.y < tex.get_height())
+    out[p.y * tex.get_width() + p.x] = tex.read(p).r;
+}
+kernel void marker_multi(texture2d_ms<uint, access::read> tex [[texture(0)]],
+    device uint* out [[buffer(0)]], uint2 p [[thread_position_in_grid]]) {
+  if (p.x < tex.get_width() && p.y < tex.get_height())
+    out[p.y * tex.get_width() + p.x] = tex.read(p, 0).r;
+}
+)";
+    NSError* error = nil;
+    id<MTLLibrary> library = [_device newLibraryWithSource:source options:nil error:&error];
+    id<MTLFunction> single = [library newFunctionWithName:@"marker_single"];
+    id<MTLFunction> multi = [library newFunctionWithName:@"marker_multi"];
+    if (single) _markerReadSingle = [_device newComputePipelineStateWithFunction:single error:&error];
+    if (multi) _markerReadMulti = [_device newComputePipelineStateWithFunction:multi error:&error];
+    [single release]; [multi release]; [library release];
+    MTLDepthStencilDescriptor* depth = [MTLDepthStencilDescriptor new];
+    depth.depthCompareFunction = MTLCompareFunctionEqual;
+    depth.depthWriteEnabled = NO;
+    _markerDepthState = [_device newDepthStencilStateWithDescriptor:depth];
+    [depth release];
+  }
+  if (!_markerReadSingle || !_markerReadMulti || !_markerDepthState) {
+    snapshot->error = "marker_readback_pipeline_unavailable"; return;
+  }
+  MTLTextureDescriptor* descriptor = [MTLTextureDescriptor
+      texture2DDescriptorWithPixelFormat:MTLPixelFormatR32Uint
+      width:snapshot->width height:snapshot->height mipmapped:NO];
+  descriptor.sampleCount = _sampleCount;
+  if (_sampleCount > 1) descriptor.textureType = MTLTextureType2DMultisample;
+  descriptor.storageMode = MTLStorageModePrivate;
+  descriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+  id<MTLTexture> ids = [_device newTextureWithDescriptor:descriptor];
+  snapshot->pixels = [_device newBufferWithLength:(NSUInteger)snapshot->width * snapshot->height * 4
+                                        options:MTLResourceStorageModeShared];
+  if (!ids || !snapshot->pixels) {
+    [ids release]; snapshot->error = "marker_allocation_failed"; return;
+  }
+  MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
+  pass.colorAttachments[0].texture = ids;
+  pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+  pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0);
+  pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+  pass.depthAttachment.texture = _sampleCount > 1 ? _sceneDepthMS : _sceneDepth;
+  pass.depthAttachment.loadAction = MTLLoadActionLoad;
+  pass.depthAttachment.storeAction = MTLStoreActionStore;
+  pass.stencilAttachment.texture = pass.depthAttachment.texture;
+  pass.stencilAttachment.loadAction = MTLLoadActionDontCare;
+  pass.stencilAttachment.storeAction = MTLStoreActionDontCare;
+  id<MTLRenderCommandEncoder> encoder = [_cmdBuffer renderCommandEncoderWithDescriptor:pass];
+  [encoder setDepthStencilState:_markerDepthState];
+  for (const auto& draw : _markerDraws) {
+    [encoder setRenderPipelineState:draw->pipeline];
+    [encoder setViewport:draw->viewport]; [encoder setScissorRect:draw->scissor];
+    [encoder setCullMode:draw->cull];
+    [encoder setVertexBuffer:draw->vertices offset:0 atIndex:0];
+    [encoder setVertexBytes:draw->uniforms.data() length:draw->uniforms.size() atIndex:1];
+    [encoder setFragmentBytes:draw->uniforms.data() length:draw->uniforms.size() atIndex:1];
+    [encoder setFragmentBuffer:draw->tokens offset:0 atIndex:3];
+    if (draw->indices)
+      [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:draw->count
+          indexType:MTLIndexTypeUInt32 indexBuffer:draw->indices indexBufferOffset:0];
+    else
+      [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:draw->count];
+  }
+  [encoder endEncoding];
+  id<MTLComputeCommandEncoder> compute = [_cmdBuffer computeCommandEncoder];
+  [compute setComputePipelineState:_sampleCount > 1 ? _markerReadMulti : _markerReadSingle];
+  [compute setTexture:ids atIndex:0];
+  [compute setBuffer:snapshot->pixels offset:0 atIndex:0];
+  [compute dispatchThreads:MTLSizeMake(snapshot->width, snapshot->height, 1)
+      threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+  [compute endEncoding];
+  [ids release];
 }
 
 // ---------------------------------------------------------------------------
@@ -8901,6 +9131,14 @@ fragment SphereShadowOut sphere_impostor_fragment_shadow(
   sphere_shade(in, u, rgb, a, depth, n, pt, intensity, specular, lit);  // discards on ray miss
   SphereShadowOut out; out.depth = depth; return out;
 }
+struct SphereMarkerOut { uint token [[color(0)]]; float depth [[depth(any)]]; };
+fragment SphereMarkerOut sphere_impostor_fragment_marker(
+    SphereVOut in [[stage_in]], constant SphereU& u [[buffer(1)]],
+    const device uint* tokens [[buffer(3)]], uint primitive [[primitive_id]]) {
+  float3 rgb, n, pt; float a, depth, intensity, specular; bool lit;
+  sphere_shade(in, u, rgb, a, depth, n, pt, intensity, specular, lit);
+  return {tokens[primitive / 2], depth};
+}
 )";
 
 void RendererMetal::buildImpostorPipelines()
@@ -8939,6 +9177,16 @@ void RendererMetal::buildImpostorPipelines()
   psd.rasterSampleCount = _sampleCount;
   psd.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
   psd.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+  {
+    MTLRenderPipelineDescriptor* pick = [psd copy];
+    id<MTLFunction> fn = [lib newFunctionWithName:@"sphere_impostor_fragment_marker"];
+    pick.fragmentFunction = fn;
+    pick.colorAttachments[0].pixelFormat = MTLPixelFormatR32Uint;
+    pick.colorAttachments[0].blendingEnabled = NO;
+    _sphereMarkerPipeline = [_device newRenderPipelineStateWithDescriptor:pick error:&err];
+    if (!_sphereMarkerPipeline) NSLog(@"RendererMetal: sphere marker pipeline failed: %@", err);
+    [fn release]; [pick release];
+  }
   for (int f = 0; f < cMaterialFamily_count; ++f) {
     id<MTLFunction> fn = materialFragmentFunction(lib, @"sphere_impostor_fragment", f);
     if (!fn) {
@@ -9164,6 +9412,11 @@ void RendererMetal::drawSphereImpostors(const SphereImpostorDrawCall& call)
   [_encoder drawPrimitives:MTLPrimitiveTypeTriangle
                vertexStart:0
                vertexCount:vertexCount];
+  if (vertexCount == static_cast<NSUInteger>(call.sphereCount) * 6)
+    recordMarkerDraw(vbo, nil, vertexCount, _sphereMarkerPipeline, &u, sizeof(u),
+        call.markerPickPairs, 2, call.sphereCount);
+  else if (_markerEnabled && !_markerObject.empty() && call.markerPickPairs)
+    _markerError = "unsupported_sphere_marker_layout";
 }
 
 // ---------------------------------------------------------------------------
@@ -9519,6 +9772,14 @@ fragment CylShadowOut cyl_impostor_fragment_shadow(CylVOut in [[stage_in]],
   cyl_shade(in, u, rgb, a, depth, n, pt, base, intensity, specular, lit);  // discards on ray miss
   CylShadowOut o; o.depth = depth; return o;
 }
+struct CylMarkerOut { uint token [[color(0)]]; float depth [[depth(any)]]; };
+fragment CylMarkerOut cyl_impostor_fragment_marker(CylVOut in [[stage_in]],
+    constant CylU& u [[buffer(1)]], const device uint* tokens [[buffer(3)]],
+    uint primitive [[primitive_id]]) {
+  float3 rgb, n, pt, base; float a, depth, intensity, specular; bool lit;
+  cyl_shade(in, u, rgb, a, depth, n, pt, base, intensity, specular, lit);
+  return {tokens[primitive / 12], depth};
+}
 )";
 
 void RendererMetal::buildCylinderImpostorPipeline(
@@ -9546,6 +9807,7 @@ void RendererMetal::buildCylinderImpostorPipeline(
       _cylinderOitPipeline = it->second.oit;
       _cylinderShadowPipeline = it->second.shadow;
       _cylinderPeelPipeline = it->second.peel;
+      _cylinderMarkerPipeline = it->second.marker;
       return;
     }
   }
@@ -9553,6 +9815,7 @@ void RendererMetal::buildCylinderImpostorPipeline(
   _cylinderOitPipeline = nil;
   _cylinderShadowPipeline = nil;
   _cylinderPeelPipeline = nil;
+  _cylinderMarkerPipeline = nil;
 
   NSError* err = nil;
   id<MTLLibrary> lib = [_device newLibraryWithSource:[[kMaterialSrc stringByAppendingString:kMaterialImpostorSrc]
@@ -9678,6 +9941,17 @@ void RendererMetal::buildCylinderImpostorPipeline(
     [pp release];
   }
 
+  {
+    MTLRenderPipelineDescriptor* pick = [psd copy];
+    id<MTLFunction> fn = [lib newFunctionWithName:@"cyl_impostor_fragment_marker"];
+    pick.fragmentFunction = fn;
+    pick.colorAttachments[0].pixelFormat = MTLPixelFormatR32Uint;
+    pick.colorAttachments[0].blendingEnabled = NO;
+    _cylinderMarkerPipeline = [_device newRenderPipelineStateWithDescriptor:pick error:&err];
+    if (!_cylinderMarkerPipeline) NSLog(@"RendererMetal: cylinder marker pipeline failed: %@", err);
+    [fn release]; [pick release];
+  }
+
   // The map takes ownership of the +1 pipelines; the ivars stay as aliases.
   // Only cache a layout whose opaque pipeline compiled, so a transient failure
   // is retried rather than cached forever.
@@ -9694,11 +9968,12 @@ void RendererMetal::buildCylinderImpostorPipeline(
   if (_cylinderImpostorPipeline) {
     _cylinderPipelines[layout] = CylinderPipelines{
         _cylinderImpostorPipeline, _cylinderOitPipeline, _cylinderShadowPipeline,
-        _cylinderPeelPipeline};
+        _cylinderPeelPipeline, _cylinderMarkerPipeline};
   } else {
     [_cylinderOitPipeline release];    _cylinderOitPipeline = nil;
     [_cylinderShadowPipeline release]; _cylinderShadowPipeline = nil;
     [_cylinderPeelPipeline release];   _cylinderPeelPipeline = nil;
+    [_cylinderMarkerPipeline release]; _cylinderMarkerPipeline = nil;
   }
 }
 
@@ -9711,12 +9986,14 @@ void RendererMetal::releaseCylinderPipelines()
     [kv.second.oit release];
     [kv.second.shadow release];
     [kv.second.peel release];
+    [kv.second.marker release];
   }
   _cylinderPipelines.clear();
   _cylinderImpostorPipeline = nil;
   _cylinderOitPipeline = nil;
   _cylinderShadowPipeline = nil;
   _cylinderPeelPipeline = nil;
+  _cylinderMarkerPipeline = nil;
 }
 
 void RendererMetal::drawCylinderImpostors(const CylinderImpostorDrawCall& call)
@@ -9854,6 +10131,20 @@ void RendererMetal::drawCylinderImpostors(const CylinderImpostorDrawCall& call)
                         indexType:MTLIndexTypeUInt32
                       indexBuffer:ibo
                 indexBufferOffset:0];
+  if (_markerEnabled && !_markerObject.empty() && call.markerPickPairs &&
+      !_shadowMode && !_peelMode && !_oitActive) {
+    bool canonical = call.indexCount == call.cylinderCount * 36 &&
+        call.vdataSize == static_cast<size_t>(call.cylinderCount) * 8 * call.stride &&
+        call.idataSize >= static_cast<size_t>(call.indexCount) * sizeof(uint32_t);
+    const auto* indices = static_cast<const uint32_t*>(call.idata);
+    for (int i = 0; canonical && i < call.indexCount; ++i)
+      canonical = indices[i] / 8 == static_cast<uint32_t>(i / 36);
+    if (canonical)
+      recordMarkerDraw(vbo, ibo, call.indexCount, _cylinderMarkerPipeline, &u, sizeof(u),
+          call.markerPickPairs, call.markerPickPairStride, call.cylinderCount);
+    else
+      _markerError = "unsupported_cylinder_marker_layout";
+  }
 }
 
 // ---------------------------------------------------------------------------

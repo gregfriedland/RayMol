@@ -3,6 +3,7 @@
 #include "Material.h"
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace pymol {
 
@@ -358,6 +359,7 @@ public:
   // center+radius), a_Color (UByte4Norm), a_rightUpFlags (corner code).
   // Offsets are byte offsets within `stride` (-1 = absent). Default: no-op.
   struct SphereImpostorDrawCall {
+    const int* markerPickPairs = nullptr;
     int sphereCount = 0;
     const void* data = nullptr;
     size_t dataSize = 0;
@@ -379,6 +381,8 @@ public:
   // (-1 = absent). `a_cap` is supplied as a constant (capConst), not a VBO
   // attribute, in the common case. Default: no-op.
   struct CylinderImpostorDrawCall {
+    const int* markerPickPairs = nullptr;
+    int markerPickPairStride = 0;
     int cylinderCount = 0;
     const void* vdata = nullptr;  size_t vdataSize = 0;  size_t stride = 0;
     const void* idata = nullptr;  size_t idataSize = 0;  int indexCount = 0;
@@ -401,6 +405,20 @@ public:
     int interiorCap = 0;     // 1 = fill the slab cross-section with interior color
   };
   virtual void drawCylinderImpostors(const CylinderImpostorDrawCall&) {}
+
+  // Framebuffer pixels, top-left origin. Only opaque CGO impostors participate.
+  struct MarkerPick {
+    std::string status = "unavailable", object;
+    uint64_t generation = 0, frameGeneration = 0;
+    unsigned index = 0;
+    int state = -1, width = 0, height = 0, samples = 0;
+  };
+  virtual bool enableMarkerPicking() { return false; }
+  virtual void invalidateMarkerPicking() {}
+  virtual void beginMarkerScene() {}
+  virtual bool suspendMarkerInvalidation(bool) { return false; }
+  virtual void setMarkerPickContext(const char*, int) {}
+  virtual MarkerPick markerPick(int, int, uint64_t) { return {}; }
 
   // Per-frame post-process parameters (depth-cue/fog + SSAO + screen-space
   // shadows). fogStart/fogEnd are eye-space distances; projA/projB are

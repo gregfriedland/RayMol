@@ -531,7 +531,10 @@ void PyMOLBridge_RunPythonQuiet(PyMOLHandle h, const char *code)
     if (!h) { PyMOLBridge_RunPython(code); return; }
     // Peek (reset=0) so a redisplay that was already pending stays pending.
     int const pendingBefore = PyMOL_GetRedisplay(INST(h), 0);
+    auto* renderer = PyMOL_GetGlobals(INST(h))->Renderer;
+    bool const wasSuspended = renderer ? renderer->suspendMarkerInvalidation(true) : false;
     PyMOLBridge_RunPython(code);
+    if (renderer) renderer->suspendMarkerInvalidation(wasSuspended);
     // Only what the poll itself raised is dropped. The polls are read-only by
     // contract (appkit_inspector.poll_panel / poll, appkit_movie.poll): their
     // temp-selection churn changes nothing visible, so the frame it would
@@ -540,6 +543,7 @@ void PyMOLBridge_RunPythonQuiet(PyMOLHandle h, const char *code)
     if (!pendingBefore)
         (void) PyMOL_GetRedisplay(INST(h), 1);
 }
+
 
 void PyMOLBridge_Pick(PyMOLHandle h, float ndcX, float ndcY, float aspect)
 {

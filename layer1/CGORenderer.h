@@ -13,6 +13,7 @@ struct CCGORenderer {
   float alpha{};
   short sphere_quality{};
   bool isPicking{};
+  bool markerPickable{};
   unsigned pick_pass() const noexcept;
   bool use_shader{}; // OpenGL 1.4+, e.g., glEnableVertexAttribArray() (on) vs.
                      // glEnableClientState() (off)

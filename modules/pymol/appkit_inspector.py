@@ -548,6 +548,28 @@ def _build(objs):
                 entry['titles'] = _titles
         except Exception:
             pass
+        if kind == 'object:molecule':
+            # Query only the displayed state, never every state's property table.
+            # A positive state also disambiguates an all-states overlay.
+            try:
+                import math
+                state = int(round(_num('state', o))) or cmd.get_state()
+                state = 1 if cmd.count_states(o) == 1 else state
+                entry['state'] = state
+                entry['property_state'] = state
+                properties = {}
+                for name in cmd.get_property_list(o, state=state) or []:
+                    value = cmd.get_property(name, o, state=state)
+                    if value is None:
+                        continue
+                    if type(value) not in (str, int, float, bool) or (
+                        type(value) is float and not math.isfinite(value)
+                    ):
+                        raise ValueError('Invalid metadata property: ' + name)
+                    properties[name] = value
+                entry['properties'] = properties
+            except Exception as e:
+                entry['property_error'] = str(e)
         objmeta[o] = entry
     # Saved scenes (ordered) + the current one, for the Scenes strip.
     try:
